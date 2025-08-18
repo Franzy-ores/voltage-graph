@@ -39,9 +39,8 @@ export const MapView = () => {
 
     const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13); // Bruxelles par défaut
 
-    // Utiliser le géoportail wallon comme carte de base
-    L.tileLayer('https://geoservices.wallonie.be/arcgis/rest/services/CARTES_FOND/FOND_PLAN/MapServer/tile/{z}/{y}/{x}', {
-      attribution: '© SPW - Géoportail de la Wallonie',
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
       maxZoom: 18
     }).addTo(map);
 
