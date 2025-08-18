@@ -21,7 +21,7 @@ export const MapView = () => {
   const [routingActive, setRoutingActive] = useState(false);
   const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
   const [routingToNode, setRoutingToNode] = useState<string | null>(null);
-  const [routingPoints, setRoutingPoints] = useState<{ lat: number; lng: number }[]>([]);
+  const routingPointsRef = useRef<{ lat: number; lng: number }[]>([]);
   const tempMarkersRef = useRef<L.Marker[]>([]);
   const tempLineRef = useRef<L.Polyline | null>(null);
   
@@ -76,12 +76,9 @@ export const MapView = () => {
         // La finalisation se fait en cliquant directement sur le nœud de destination
         const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
         console.log('Adding intermediate point:', newPoint);
-        console.log('Current routingPoints before adding:', routingPoints);
-        setRoutingPoints(prev => {
-          const updated = [...prev, newPoint];
-          console.log('Updated routingPoints:', updated);
-          return updated;
-        });
+        console.log('Current routingPoints before adding:', routingPointsRef.current);
+        routingPointsRef.current = [...routingPointsRef.current, newPoint];
+        console.log('Updated routingPoints:', routingPointsRef.current);
         
         // Ajouter un marqueur temporaire
         const marker = L.marker([e.latlng.lat, e.latlng.lng], {
@@ -102,7 +99,7 @@ export const MapView = () => {
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [selectedTool, addNode, routingActive, routingPoints, routingFromNode, routingToNode, selectedCableType, currentProject]);
+  }, [selectedTool, addNode, routingActive, routingFromNode, routingToNode, selectedCableType, currentProject]);
 
   // Gérer les touches clavier pendant le routage
   useEffect(() => {
@@ -125,9 +122,9 @@ export const MapView = () => {
       map.removeLayer(tempLineRef.current);
     }
     
-    if (routingPoints.length > 1) {
+    if (routingPointsRef.current.length > 1) {
       tempLineRef.current = L.polyline(
-        routingPoints.map(p => [p.lat, p.lng]),
+        routingPointsRef.current.map(p => [p.lat, p.lng]),
         { 
           color: '#3b82f6', 
           weight: 3, 
@@ -144,7 +141,7 @@ export const MapView = () => {
     if (!map) return;
     
     console.log('=== CLEARING ROUTING ===');
-    console.log('routingPoints before clear:', routingPoints);
+    console.log('routingPoints before clear:', routingPointsRef.current);
     
     // Nettoyer les marqueurs temporaires
     tempMarkersRef.current.forEach(marker => {
@@ -170,7 +167,7 @@ export const MapView = () => {
     setRoutingActive(false);
     setRoutingFromNode(null);
     setRoutingToNode(null);
-    setRoutingPoints([]);
+    routingPointsRef.current = [];
     setSelectedNode(null);
     
     console.log('Routing cleared');
@@ -263,11 +260,11 @@ export const MapView = () => {
         if (routingActive && routingToNode === node.id) {
           // Finaliser le routage en cliquant précisément sur le nœud de destination
           console.log('=== FINALIZING ROUTE ===');
-          console.log('routingPoints at finalization:', routingPoints);
-          console.log('routingPoints length:', routingPoints.length);
+          console.log('routingPoints at finalization:', routingPointsRef.current);
+          console.log('routingPoints length:', routingPointsRef.current.length);
           
           // IMPORTANT: Utiliser les routingPoints actuels + point final
-          const finalCoords = [...routingPoints, { lat: node.lat, lng: node.lng }];
+          const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final coordinates for cable:', finalCoords);
           console.log('Total points in final cable:', finalCoords.length);
           
@@ -297,7 +294,7 @@ export const MapView = () => {
               setRoutingToNode(node.id);
               // CRUCIAL: Initialiser routingPoints avec le point de départ
               const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
-              setRoutingPoints(initialPoints);
+              routingPointsRef.current = initialPoints;
               console.log('Initialized routing with start point:', initialPoints);
               setRoutingActive(true);
               
