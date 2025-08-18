@@ -196,8 +196,10 @@ export const MapView = () => {
             // Câble souterrain : démarrer le routage manuel
             console.log('Starting underground cable routing from', selectedNodeId, 'to', node.id);
             setRoutingFromNode(selectedNodeId);
+            // Stocker temporairement le nœud de destination
+            const destinationNodeId = node.id;
+            setSelectedNode(destinationNodeId); // Mettre le nœud destination dans selectedNodeId
             setRoutingActive(true);
-            // Garder selectedNodeId pour que le CableRouter connaisse la destination
           }
           
         } else if (selectedTool === 'addCable' && !routingActive) {
@@ -286,7 +288,8 @@ export const MapView = () => {
 
   // Gérer le routage des câbles
   const handleRouteComplete = (coordinates: { lat: number; lng: number }[]) => {
-    if (routingFromNode && selectedNodeId) {
+    if (routingFromNode && selectedNodeId && routingFromNode !== selectedNodeId) {
+      console.log('Route completed, creating cable from', routingFromNode, 'to', selectedNodeId);
       addCable(routingFromNode, selectedNodeId, selectedCableType, coordinates);
       setSelectedNode(null);
     }
@@ -306,7 +309,7 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
-      {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && (
+      {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && routingFromNode !== selectedNodeId && (
         <CableRouter
           map={mapInstanceRef.current}
           isActive={routingActive}
