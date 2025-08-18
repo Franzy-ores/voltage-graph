@@ -143,6 +143,9 @@ export const MapView = () => {
     const map = mapInstanceRef.current;
     if (!map) return;
     
+    console.log('=== CLEARING ROUTING ===');
+    console.log('routingPoints before clear:', routingPoints);
+    
     // Nettoyer les marqueurs temporaires
     tempMarkersRef.current.forEach(marker => {
       try {
@@ -169,6 +172,8 @@ export const MapView = () => {
     setRoutingToNode(null);
     setRoutingPoints([]);
     setSelectedNode(null);
+    
+    console.log('Routing cleared');
   };
 
   // Update markers when nodes change
@@ -251,16 +256,22 @@ export const MapView = () => {
         
         if (routingActive && routingToNode === node.id) {
           // Finaliser le routage en cliquant précisément sur le nœud de destination
-          console.log('Finalizing route at destination node with', routingPoints.length, 'intermediate points');
-          console.log('Current routing points:', routingPoints);
+          console.log('=== FINALIZING ROUTE ===');
+          console.log('routingPoints at finalization:', routingPoints);
+          console.log('routingPoints length:', routingPoints.length);
           
-          // IMPORTANT: Inclure TOUS les points du tracé (départ + intermédiaires + arrivée)
+          // IMPORTANT: Utiliser les routingPoints actuels + point final
           const finalCoords = [...routingPoints, { lat: node.lat, lng: node.lng }];
           console.log('Final coordinates for cable:', finalCoords);
           console.log('Total points in final cable:', finalCoords.length);
           
-          if (routingFromNode) {
+          if (routingFromNode && finalCoords.length >= 2) {
+            console.log('Creating cable with', finalCoords.length, 'points');
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
+          } else {
+            console.error('ERROR: Not enough points or missing fromNode');
+            console.error('routingFromNode:', routingFromNode);
+            console.error('finalCoords.length:', finalCoords.length);
           }
           clearRouting();
           return;
