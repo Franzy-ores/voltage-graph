@@ -164,27 +164,23 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive, routingFromNode });
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
         
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
-          // Démarrer le routage du câble
-          console.log('Starting cable routing from', selectedNodeId, 'to', node.id);
-          setRoutingFromNode(selectedNodeId);
-          // Mettre le nouveau nœud comme destination
-          const secondNodeId = node.id;
-          setSelectedNode(null); // Réinitialiser pour éviter les conflits
-          setRoutingActive(true);
+          // Créer directement le câble entre les deux nœuds
+          console.log('Creating cable from', selectedNodeId, 'to', node.id);
           
-          // Passer directement les IDs corrects au routage
-          setTimeout(() => {
+          const fromNode = currentProject!.nodes.find(n => n.id === selectedNodeId);
+          const toNode = currentProject!.nodes.find(n => n.id === node.id);
+          
+          if (fromNode && toNode) {
             const routeCoords = [
-              { lat: currentProject!.nodes.find(n => n.id === selectedNodeId)!.lat, lng: currentProject!.nodes.find(n => n.id === selectedNodeId)!.lng },
-              { lat: node.lat, lng: node.lng }
+              { lat: fromNode.lat, lng: fromNode.lng },
+              { lat: toNode.lat, lng: toNode.lng }
             ];
-            addCable(selectedNodeId, secondNodeId, selectedCableType, routeCoords);
-            setRoutingActive(false);
-            setRoutingFromNode(null);
-          }, 100);
+            addCable(selectedNodeId, node.id, selectedCableType, routeCoords);
+            setSelectedNode(null); // Réinitialiser pour le prochain câble
+          }
           
         } else if (selectedTool === 'addCable') {
           console.log('Selecting first node for cable:', node.id);
@@ -292,6 +288,7 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
+      {/* CableRouter désactivé temporairement pour éviter les erreurs
       {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && (
         <CableRouter
           map={mapInstanceRef.current}
@@ -302,6 +299,7 @@ export const MapView = () => {
           onCancel={handleRoutingCancel}
         />
       )}
+      */}
       
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
