@@ -1,20 +1,50 @@
 import { useRef, useEffect } from 'react';
 import L from 'leaflet';
+import { useNetworkStore } from '@/store/networkStore';
 
 interface CableRouterProps {
   map: L.Map;
   isActive: boolean;
+  fromNodeId: string;
+  toNodeId: string;
   onRouteComplete: (coordinates: { lat: number; lng: number }[]) => void;
   onCancel: () => void;
 }
 
-export const CableRouter = ({ map, isActive, onRouteComplete, onCancel }: CableRouterProps) => {
+export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComplete, onCancel }: CableRouterProps) => {
+  const { currentProject, selectedCableType } = useNetworkStore();
   const routingPointsRef = useRef<{ lat: number; lng: number }[]>([]);
   const tempMarkersRef = useRef<L.Marker[]>([]);
   const tempLineRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
-    if (!isActive || !map) return;
+    if (!isActive || !map || !currentProject) return;
+
+    // Obtenir les nœuds source et destination
+    const fromNode = currentProject.nodes.find(n => n.id === fromNodeId);
+    const toNode = currentProject.nodes.find(n => n.id === toNodeId);
+    if (!fromNode || !toNode) return;
+
+    // Obtenir le type de câble sélectionné
+    const cableType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
+    if (!cableType) return;
+
+    // Déterminer le type de pose
+    const isAerial = cableType.posesPermises.includes('AÉRIEN');
+    const isUnderground = cableType.posesPermises.includes('SOUTERRAIN');
+
+    // Si câble aérien uniquement, créer ligne droite immédiatement
+    if (isAerial && !isUnderground) {
+      const directRoute = [
+        { lat: fromNode.lat, lng: fromNode.lng },
+        { lat: toNode.lat, lng: toNode.lng }
+      ];
+      onRouteComplete(directRoute);
+      return;
+    }
+
+    // Pour câbles souterrains ou mixtes, permettre le routage manuel
+    routingPointsRef.current = [{ lat: fromNode.lat, lng: fromNode.lng }];
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       // Ajouter un point de routage
@@ -33,11 +63,15 @@ export const CableRouter = ({ map, isActive, onRouteComplete, onCancel }: CableR
       tempMarkersRef.current.push(marker);
 
       // Mettre à jour la ligne temporaire
+      updateTempLine();
+    };
+
+    const updateTempLine = () => {
+      if (tempLineRef.current) {
+        map.removeLayer(tempLineRef.current);
+      }
+      
       if (routingPointsRef.current.length > 1) {
-        if (tempLineRef.current) {
-          map.removeLayer(tempLineRef.current);
-        }
-        
         tempLineRef.current = L.polyline(
           routingPointsRef.current.map(p => [p.lat, p.lng]),
           { 
@@ -50,11 +84,23 @@ export const CableRouter = ({ map, isActive, onRouteComplete, onCancel }: CableR
       }
     };
 
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && routingPointsRef.current.length >= 2) {
-        // Terminer le routage
+    const handleDoubleClick = (e: L.LeafletMouseEvent) => {
+      // Ajouter le nœud de destination et terminer
+      if (toNode) {
+        routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
         onRouteComplete([...routingPointsRef.current]);
         clearRouting();
+      }
+    };
+
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && routingPointsRef.current.length >= 1) {
+        // Ajouter le nœud de destination et terminer
+        if (toNode) {
+          routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
+          onRouteComplete([...routingPointsRef.current]);
+          clearRouting();
+        }
       } else if (e.key === 'Escape') {
         // Annuler le routage
         onCancel();
@@ -77,15 +123,39 @@ export const CableRouter = ({ map, isActive, onRouteComplete, onCancel }: CableR
       routingPointsRef.current = [];
     };
 
+    // Ajouter les marqueurs de départ et d'arrivée
+    const startMarker = L.marker([fromNode.lat, fromNode.lng], {
+      icon: L.divIcon({
+        className: 'routing-start',
+        html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      })
+    }).addTo(map);
+    
+    const endMarker = L.marker([toNode.lat, toNode.lng], {
+      icon: L.divIcon({
+        className: 'routing-end',
+        html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      })
+    }).addTo(map);
+    
+    tempMarkersRef.current.push(startMarker, endMarker);
+    updateTempLine();
+
     map.on('click', handleMapClick);
+    map.on('dblclick', handleDoubleClick);
     document.addEventListener('keydown', handleKeyPress);
 
     return () => {
       map.off('click', handleMapClick);
+      map.off('dblclick', handleDoubleClick);
       document.removeEventListener('keydown', handleKeyPress);
       clearRouting();
     };
-  }, [isActive, map, onRouteComplete, onCancel]);
+  }, [isActive, map, fromNodeId, toNodeId, onRouteComplete, onCancel, currentProject, selectedCableType]);
 
   return null;
 };

@@ -34,6 +34,7 @@ export const MapView = () => {
     setSelectedNode,
     setSelectedCable,
     selectedNodeId,
+    selectedCableType,
     openEditPanel,
     calculationResults,
     selectedScenario,
@@ -252,7 +253,7 @@ export const MapView = () => {
   // Gérer le routage des câbles
   const handleRouteComplete = (coordinates: { lat: number; lng: number }[]) => {
     if (routingFromNode && selectedNodeId) {
-      addCable(routingFromNode, selectedNodeId, currentProject!.cableTypes[0].id, coordinates);
+      addCable(routingFromNode, selectedNodeId, selectedCableType, coordinates);
       setSelectedNode(null);
     }
     setRoutingActive(false);
@@ -270,10 +271,12 @@ export const MapView = () => {
       
       <VoltageDisplay />
       
-      {mapInstanceRef.current && (
+      {mapInstanceRef.current && routingFromNode && selectedNodeId && (
         <CableRouter
           map={mapInstanceRef.current}
           isActive={routingActive}
+          fromNodeId={routingFromNode}
+          toNodeId={selectedNodeId}
           onRouteComplete={handleRouteComplete}
           onCancel={handleRoutingCancel}
         />
@@ -284,7 +287,9 @@ export const MapView = () => {
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && 'Cliquez sur le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
-        {routingActive && 'Cliquez pour définir le tracé du câble, ENTRÉE pour valider, ÉCHAP pour annuler'}
+        {routingActive && (currentProject?.cableTypes.find(ct => ct.id === selectedCableType)?.posesPermises.includes('SOUTERRAIN') 
+          ? 'Cliquez pour définir les points intermédiaires, double-clic ou ENTRÉE pour terminer' 
+          : 'Câble aérien - ligne droite automatique')}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}

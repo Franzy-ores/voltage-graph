@@ -3,6 +3,10 @@ import { NetworkState, Project, Node, Cable, CalculationScenario, CalculationRes
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
+interface NetworkStoreState extends NetworkState {
+  selectedCableType: string;
+}
+
 interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
@@ -24,6 +28,7 @@ interface NetworkActions {
   setSelectedScenario: (scenario: CalculationScenario) => void;
   setSelectedNode: (nodeId: string | null) => void;
   setSelectedCable: (cableId: string | null) => void;
+  setSelectedCableType: (cableTypeId: string) => void;
   openEditPanel: (target: 'node' | 'cable' | 'project') => void;
   closeEditPanel: () => void;
   
@@ -47,7 +52,7 @@ const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Proje
   cableTypes: [...defaultCableTypes]
 });
 
-export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) => ({
+export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
   // State
   currentProject: null,
   selectedScenario: 'MIXTE',
@@ -59,6 +64,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   selectedTool: 'select',
   selectedNodeId: null,
   selectedCableId: null,
+  selectedCableType: 'baxb-95', // Par défaut, câble aérien
   editPanelOpen: false,
   editTarget: null,
   showVoltages: false,
@@ -220,6 +226,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   setSelectedScenario: (scenario) => set({ selectedScenario: scenario }),
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
   setSelectedCable: (cableId) => set({ selectedCableId: cableId }),
+  setSelectedCableType: (cableTypeId) => set({ selectedCableType: cableTypeId }),
 
   openEditPanel: (target) => set({ 
     editPanelOpen: true, 
