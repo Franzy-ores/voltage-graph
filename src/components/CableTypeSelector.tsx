@@ -19,9 +19,9 @@ export const CableTypeSelector = () => {
   const selectedType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
 
   return (
-    <div className="absolute top-16 left-20 bg-background border rounded-lg p-4 min-w-[280px] shadow-xl z-50">
+    <div className="fixed top-20 left-20 bg-white border-2 border-blue-500 rounded-lg p-4 min-w-[300px] shadow-2xl z-[1000]">
       <div className="space-y-3">
-        <div className="text-sm font-medium">Type de câble</div>
+        <div className="text-lg font-bold text-blue-600">🔌 Sélection du type de câble</div>
         
         <Select value={selectedCableType} onValueChange={setSelectedCableType}>
           <SelectTrigger className="w-full">
