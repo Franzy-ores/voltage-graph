@@ -50,6 +50,12 @@ export const Toolbar = () => {
       icon: Edit,
       label: 'Éditer',
       description: 'Modifier les propriétés'
+    },
+    {
+      id: 'delete' as const,
+      icon: Trash2,
+      label: 'Supprimer',
+      description: 'Supprimer un élément'
     }
   ];
 

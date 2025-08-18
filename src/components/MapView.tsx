@@ -5,6 +5,8 @@ import 'leaflet-draw/dist/leaflet.draw.css';
 import 'leaflet-draw';
 import { useNetworkStore } from '@/store/networkStore';
 import { Cable, Node } from '@/types/network';
+import { VoltageDisplay } from './VoltageDisplay';
+import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
 // Fix for default markers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -19,6 +21,7 @@ export const MapView = () => {
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const cablesRef = useRef<Map<string, L.Polyline>>(new Map());
+  const voltageMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   
   const {
     currentProject,
@@ -30,7 +33,10 @@ export const MapView = () => {
     selectedNodeId,
     openEditPanel,
     calculationResults,
-    selectedScenario
+    selectedScenario,
+    deleteNode,
+    deleteCable,
+    showVoltages
   } = useNetworkStore();
 
   // Initialize map
@@ -83,16 +89,37 @@ export const MapView = () => {
     // Clear existing markers
     markersRef.current.forEach(marker => map.removeLayer(marker));
     markersRef.current.clear();
+    voltageMarkersRef.current.forEach(marker => map.removeLayer(marker));
+    voltageMarkersRef.current.clear();
 
     // Add new markers
     currentProject.nodes.forEach(node => {
+      // Determine icon based on node type and content
+      let iconContent = 'N';
+      let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
+      
+      if (node.isSource) {
+        iconContent = 'S';
+        iconClass = 'bg-primary border-primary text-primary-foreground';
+      } else {
+        const hasProduction = node.productions.length > 0 && node.productions.some(p => p.S_kVA > 0);
+        const hasLoad = node.clients.length > 0 && node.clients.some(c => c.S_kVA > 0);
+        
+        if (hasProduction && hasLoad) {
+          iconContent = 'M'; // Mixte
+          iconClass = 'bg-yellow-500 border-yellow-600 text-white';
+        } else if (hasProduction) {
+          iconContent = 'P'; // Production
+          iconClass = 'bg-green-500 border-green-600 text-white';
+        } else if (hasLoad) {
+          iconContent = 'C'; // Charge
+          iconClass = 'bg-blue-500 border-blue-600 text-white';
+        }
+      }
+
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${
-          node.isSource 
-            ? 'bg-primary border-primary text-primary-foreground' 
-            : 'bg-secondary border-secondary-foreground text-secondary-foreground'
-        }">${node.isSource ? 'S' : 'N'}</div>`,
+        html: `<div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${iconClass}">${iconContent}</div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12]
       });
@@ -118,12 +145,48 @@ export const MapView = () => {
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
           openEditPanel('node');
+        } else if (selectedTool === 'delete') {
+          if (confirm(`Supprimer le nœud "${node.name}" ?`)) {
+            deleteNode(node.id);
+          }
         }
       });
 
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, addCable, setSelectedNode, openEditPanel]);
+
+    // Add voltage markers if enabled
+    if (showVoltages && calculationResults[selectedScenario]) {
+      const results = calculationResults[selectedScenario];
+      const calculator = new ElectricalCalculator(currentProject.cosPhi);
+      
+      currentProject.nodes.forEach(node => {
+        if (node.isSource) return; // Skip source node
+        
+        // Calculate voltage at this node
+        const baseVoltage = node.connectionType.includes('230V') ? 230 : 400;
+        
+        // Find cable connecting to this node
+        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
+        let nodeVoltage = baseVoltage;
+        
+        if (incomingCable) {
+          nodeVoltage = baseVoltage - (incomingCable.voltageDrop_V || 0);
+        }
+        
+        const voltageMarker = L.marker([node.lat, node.lng], {
+          icon: L.divIcon({
+            className: 'voltage-marker',
+            html: `<div class="bg-background/90 backdrop-blur-sm border rounded px-2 py-1 text-xs font-mono text-foreground whitespace-nowrap">${nodeVoltage.toFixed(1)}V</div>`,
+            iconSize: [60, 20],
+            iconAnchor: [30, -30] // Position above the node
+          })
+        }).addTo(map);
+        
+        voltageMarkersRef.current.set(node.id, voltageMarker);
+      });
+    }
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, addCable, setSelectedNode, openEditPanel, showVoltages, calculationResults, selectedScenario]);
 
   // Update cables when cables change or calculation results change
   useEffect(() => {
@@ -181,6 +244,10 @@ export const MapView = () => {
         if (selectedTool === 'edit') {
           setSelectedCable(cable.id);
           openEditPanel('cable');
+        } else if (selectedTool === 'delete') {
+          if (confirm(`Supprimer le câble "${cable.name}" ?`)) {
+            deleteCable(cable.id);
+          }
         }
       });
 
@@ -192,12 +259,15 @@ export const MapView = () => {
     <div className="flex-1 relative">
       <div ref={mapRef} className="w-full h-full" />
       
+      <VoltageDisplay />
+      
       {/* Tool indicator */}
       <div className="absolute top-4 left-4 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && 'Cliquez sur le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
+        {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}
       </div>
     </div>

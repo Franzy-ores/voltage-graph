@@ -32,6 +32,9 @@ interface NetworkActions {
   
   // Validation
   validateConnectionType: (connectionType: ConnectionType, voltageSystem: VoltageSystem) => boolean;
+  
+  // Display settings
+  setShowVoltages: (show: boolean) => void;
 }
 
 const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Project => ({
@@ -58,6 +61,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   selectedCableId: null,
   editPanelOpen: false,
   editTarget: null,
+  showVoltages: false,
 
   // Actions
   createNewProject: (name, voltageSystem) => {
@@ -260,5 +264,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
     };
     
     return validCombinations[voltageSystem].includes(connectionType);
-  }
+  },
+
+  setShowVoltages: (show) => set({ showVoltages: show })
 }));

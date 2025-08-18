@@ -93,4 +93,5 @@ export interface NetworkState {
   selectedCableId: string | null;
   editPanelOpen: boolean;
   editTarget: 'node' | 'cable' | 'project' | null;
+  showVoltages: boolean;
 }
