@@ -18,7 +18,14 @@ export const VoltageDisplay = () => {
   return (
     <Card className="absolute top-4 right-4 w-80 bg-background/95 backdrop-blur-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Scénario de calcul</CardTitle>
+        <CardTitle className="text-sm">
+          Scénario de calcul
+          {currentProject && (
+            <div className="text-xs font-normal text-muted-foreground mt-1">
+              Système: {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
+            </div>
+          )}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">

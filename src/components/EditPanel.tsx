@@ -139,7 +139,7 @@ export const EditPanel = () => {
 
   return (
     <Sheet open={editPanelOpen} onOpenChange={closeEditPanel}>
-      <SheetContent className="w-96 overflow-y-auto">
+      <SheetContent className="w-96 overflow-y-auto" side="right">
         <SheetHeader>
           <SheetTitle>
             {editTarget === 'node' && 'Éditer le nœud'}

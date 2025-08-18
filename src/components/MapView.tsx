@@ -39,7 +39,8 @@ export const MapView = () => {
     selectedScenario,
     deleteNode,
     deleteCable,
-    showVoltages
+    showVoltages,
+    editPanelOpen
   } = useNetworkStore();
 
   // Initialize map
@@ -194,7 +195,9 @@ export const MapView = () => {
       
       if (node.isSource) {
         iconContent = 'S';
-        iconClass = 'bg-primary border-primary text-primary-foreground';
+        // Source colorée selon la tension du système
+        const isHighVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
+        iconClass = isHighVoltage ? 'bg-green-500 border-green-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
       } else {
         const hasProduction = totalPV > 0;
         const hasLoad = totalCharge > 0;
@@ -367,11 +370,28 @@ export const MapView = () => {
       console.log('Rendering cable:', cable.name, 'with', cable.coordinates.length, 'points');
       console.log('Cable coordinates:', cable.coordinates);
       
+      // Récupérer les résultats de calcul pour la colorisation
+      let cableColor = '#6b7280'; // gris par défaut
+      const results = calculationResults[selectedScenario];
+      if (results) {
+        const calculatedCable = results.cables.find(c => c.id === cable.id);
+        if (calculatedCable) {
+          const dropPercent = Math.abs(calculatedCable.voltageDropPercent || 0);
+          if (dropPercent <= 8) {
+            cableColor = '#22c55e'; // vert - normal
+          } else if (dropPercent <= 10) {
+            cableColor = '#f59e0b'; // orange - warning  
+          } else {
+            cableColor = '#ef4444'; // rouge - critical
+          }
+        }
+      }
+      
       // CRUCIAL: Créer la polyline avec TOUS les points (départ + intermédiaires + arrivée)
       const polyline = L.polyline(
         cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
-          color: '#3b82f6',
+          color: cableColor,
           weight: 4,
           opacity: 0.8
         }
@@ -418,7 +438,7 @@ export const MapView = () => {
 
   return (
     <div className="flex-1 relative">
-      <div ref={mapRef} className="w-full h-full" />
+      <div ref={mapRef} className={`w-full h-full transition-all duration-300 ${editPanelOpen ? 'mr-96' : ''}`} />
       
       <VoltageDisplay />
       <CableTypeSelector />
