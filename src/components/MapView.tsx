@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw/dist/leaflet.draw.css';
@@ -6,6 +6,7 @@ import 'leaflet-draw';
 import { useNetworkStore } from '@/store/networkStore';
 import { Cable, Node } from '@/types/network';
 import { VoltageDisplay } from './VoltageDisplay';
+import { CableRouter } from './CableRouter';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
 // Fix for default markers
@@ -22,6 +23,8 @@ export const MapView = () => {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const cablesRef = useRef<Map<string, L.Polyline>>(new Map());
   const voltageMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const [routingActive, setRoutingActive] = useState(false);
+  const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
   
   const {
     currentProject,
@@ -67,10 +70,7 @@ export const MapView = () => {
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       if (selectedTool === 'addNode') {
-        const connectionType = currentProject?.voltageSystem === 'TRIPHASÉ_230V' 
-          ? 'TRI_230V_3F' 
-          : 'TÉTRA_3P+N_230_400V';
-        addNode(e.latlng.lat, e.latlng.lng, connectionType);
+        addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN'); // Le type sera adapté automatiquement
       }
     };
 
@@ -117,28 +117,44 @@ export const MapView = () => {
         }
       }
 
-      // Calculate voltage for this node if calculations exist
-      let voltageText = '';
-      if (showVoltages && calculationResults[selectedScenario] && !node.isSource) {
-        const results = calculationResults[selectedScenario];
-        const baseVoltage = node.connectionType.includes('230V') ? 230 : 400;
-        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
-        let nodeVoltage = baseVoltage;
+      // Calculate voltage and display info for this node
+      let infoText = '';
+      if (showVoltages) {
+        let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
         
-        if (incomingCable) {
-          nodeVoltage = baseVoltage - (incomingCable.voltageDrop_V || 0);
+        if (calculationResults[selectedScenario] && !node.isSource) {
+          const results = calculationResults[selectedScenario];
+          const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
+          if (incomingCable) {
+            nodeVoltage = nodeVoltage - (incomingCable.voltageDrop_V || 0);
+          }
         }
-        voltageText = `<div class="text-[10px] leading-tight">${nodeVoltage.toFixed(0)}V</div>`;
+
+        // Calculer les totaux de charge et production
+        const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+        const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+
+        if (!node.isSource) {
+          infoText = `<div class="text-[8px] leading-tight text-center">
+            <div>${nodeVoltage.toFixed(0)}V</div>
+            <div>C:${totalCharge}kVA</div>
+            <div>PV:${totalPV}kVA</div>
+          </div>`;
+        } else {
+          infoText = `<div class="text-[8px] leading-tight text-center">
+            <div>${nodeVoltage}V</div>
+          </div>`;
+        }
       }
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-8 h-8 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass}">
+        html: `<div class="w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass}">
           <div class="text-xs">${iconContent}</div>
-          ${voltageText}
+          ${infoText}
         </div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
+        iconSize: [48, 48],
+        iconAnchor: [24, 24]
       });
 
       const marker = L.marker([node.lat, node.lng], { icon })
@@ -147,16 +163,9 @@ export const MapView = () => {
 
       marker.on('click', () => {
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
-          // Create cable between selected node and clicked node
-          const nodeA = currentProject.nodes.find(n => n.id === selectedNodeId);
-          if (nodeA) {
-            const coordinates = [
-              { lat: nodeA.lat, lng: nodeA.lng },
-              { lat: node.lat, lng: node.lng }
-            ];
-            addCable(selectedNodeId, node.id, currentProject.cableTypes[0].id, coordinates);
-            setSelectedNode(null);
-          }
+          // Démarrer le routage du câble
+          setRoutingFromNode(selectedNodeId);
+          setRoutingActive(true);
         } else if (selectedTool === 'addCable') {
           setSelectedNode(node.id);
         } else if (selectedTool === 'edit') {
@@ -240,17 +249,42 @@ export const MapView = () => {
     });
   }, [currentProject?.cables, calculationResults, selectedScenario, selectedTool, setSelectedCable, openEditPanel]);
 
+  // Gérer le routage des câbles
+  const handleRouteComplete = (coordinates: { lat: number; lng: number }[]) => {
+    if (routingFromNode && selectedNodeId) {
+      addCable(routingFromNode, selectedNodeId, currentProject!.cableTypes[0].id, coordinates);
+      setSelectedNode(null);
+    }
+    setRoutingActive(false);
+    setRoutingFromNode(null);
+  };
+
+  const handleRoutingCancel = () => {
+    setRoutingActive(false);
+    setRoutingFromNode(null);
+  };
+
   return (
     <div className="flex-1 relative">
       <div ref={mapRef} className="w-full h-full" />
       
       <VoltageDisplay />
       
+      {mapInstanceRef.current && (
+        <CableRouter
+          map={mapInstanceRef.current}
+          isActive={routingActive}
+          onRouteComplete={handleRouteComplete}
+          onCancel={handleRoutingCancel}
+        />
+      )}
+      
       {/* Tool indicator */}
       <div className="absolute top-4 left-4 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && 'Cliquez sur le premier nœud'}
-        {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
+        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
+        {routingActive && 'Cliquez pour définir le tracé du câble, ENTRÉE pour valider, ÉCHAP pour annuler'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}

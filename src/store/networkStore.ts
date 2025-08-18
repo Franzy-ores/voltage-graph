@@ -98,11 +98,15 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   },
 
   addNode: (lat, lng, connectionType) => {
-    const { currentProject, validateConnectionType } = get();
+    const { currentProject } = get();
     if (!currentProject) return;
 
-    if (!validateConnectionType(connectionType, currentProject.voltageSystem)) {
-      throw new Error('Type de connexion incompatible avec le système de tension du projet');
+    // Déterminer le type de connexion selon le système de tension du projet
+    let nodeConnectionType: ConnectionType;
+    if (currentProject.voltageSystem === 'TRIPHASÉ_230V') {
+      nodeConnectionType = 'TRI_230V_3F'; // 230V par défaut en monophasé
+    } else {
+      nodeConnectionType = 'TÉTRA_3P+N_230_400V'; // 400V par défaut en monophasé
     }
 
     const newNode: Node = {
@@ -110,7 +114,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
       name: `Nœud ${currentProject.nodes.length + 1}`,
       lat,
       lng,
-      connectionType,
+      connectionType: nodeConnectionType,
       clients: currentProject.nodes.length === 0 ? [] : [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
       productions: currentProject.nodes.length === 0 ? [] : [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
