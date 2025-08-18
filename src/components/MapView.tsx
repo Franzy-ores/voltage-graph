@@ -164,9 +164,16 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
         
-        if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
+        // Si on est en train de router et qu'on clique sur un nœud, finaliser le routage
+        if (routingActive && routingFromNode && node.id !== routingFromNode) {
+          console.log('Finalizing cable route at destination node:', node.id);
+          // Le CableRouter gère la finalisation quand on clique sur le nœud destination
+          return;
+        }
+        
+        if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id && !routingActive) {
           // Vérifier le type de câble sélectionné
           const cableType = currentProject!.cableTypes.find(ct => ct.id === selectedCableType);
           const isAerial = cableType?.posesPermises.includes('AÉRIEN') && !cableType?.posesPermises.includes('SOUTERRAIN');
@@ -186,14 +193,14 @@ export const MapView = () => {
               setSelectedNode(null);
             }
           } else {
-            // Câble souterrain : routage manuel
+            // Câble souterrain : démarrer le routage manuel
             console.log('Starting underground cable routing from', selectedNodeId, 'to', node.id);
             setRoutingFromNode(selectedNodeId);
             setRoutingActive(true);
-            // Ne pas réinitialiser selectedNodeId pour que le CableRouter reçoive les bons paramètres
+            // Garder selectedNodeId pour que le CableRouter connaisse la destination
           }
           
-        } else if (selectedTool === 'addCable') {
+        } else if (selectedTool === 'addCable' && !routingActive) {
           console.log('Selecting first node for cable:', node.id);
           setSelectedNode(node.id);
         } else if (selectedTool === 'edit') {
@@ -313,10 +320,10 @@ export const MapView = () => {
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
-        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
+        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le nœud de départ'}
+        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le nœud d\'arrivée'}
         {routingActive && (currentProject?.cableTypes.find(ct => ct.id === selectedCableType)?.posesPermises.includes('SOUTERRAIN') 
-          ? 'Cliquez pour définir les points intermédiaires, double-clic ou ENTRÉE pour terminer' 
+          ? 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur le nœud d\'arrivée pour finaliser' 
           : 'Câble aérien - ligne droite automatique')}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}

@@ -56,8 +56,22 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
     routingPointsRef.current = [{ lat: fromNode.lat, lng: fromNode.lng }];
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
-      // Ajouter un point de routage
+      // Vérifier si on clique sur le nœud de destination
+      const toNode = currentProject.nodes.find(n => n.id === toNodeId);
+      if (toNode) {
+        const distance = map.distance([e.latlng.lat, e.latlng.lng], [toNode.lat, toNode.lng]);
+        if (distance < 50) { // Si on clique près du nœud destination (50m de tolérance)
+          console.log('Clicked near destination node, finishing route');
+          routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
+          onRouteComplete([...routingPointsRef.current]);
+          clearRouting();
+          return;
+        }
+      }
+      
+      // Sinon, ajouter un point de routage intermédiaire
       routingPointsRef.current.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      console.log('Added intermediate point:', { lat: e.latlng.lat, lng: e.latlng.lng });
       
       // Ajouter un marqueur temporaire
       const marker = L.marker([e.latlng.lat, e.latlng.lng], {
@@ -67,9 +81,14 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
           iconSize: [12, 12],
           iconAnchor: [6, 6]
         })
-      }).addTo(map);
+      });
       
-      tempMarkersRef.current.push(marker);
+      try {
+        marker.addTo(map);
+        tempMarkersRef.current.push(marker);
+      } catch (error) {
+        console.warn('Error adding routing marker:', error);
+      }
 
       // Mettre à jour la ligne temporaire
       updateTempLine();
@@ -77,7 +96,11 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
 
     const updateTempLine = () => {
       if (tempLineRef.current) {
-        map.removeLayer(tempLineRef.current);
+        try {
+          map.removeLayer(tempLineRef.current);
+        } catch (error) {
+          console.warn('Error removing temp line:', error);
+        }
       }
       
       if (routingPointsRef.current.length > 1) {
@@ -89,7 +112,13 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
             opacity: 0.7,
             dashArray: '5, 5'
           }
-        ).addTo(map);
+        );
+        
+        try {
+          tempLineRef.current.addTo(map);
+        } catch (error) {
+          console.warn('Error adding temp line:', error);
+        }
       }
     };
 
