@@ -7,6 +7,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { Cable, Node } from '@/types/network';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableRouter } from './CableRouter';
+import { CableTypeSelector } from './CableTypeSelector';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
 // Fix for default markers
@@ -270,6 +271,7 @@ export const MapView = () => {
       <div ref={mapRef} className="w-full h-full" />
       
       <VoltageDisplay />
+      <CableTypeSelector />
       
       {mapInstanceRef.current && routingFromNode && selectedNodeId && (
         <CableRouter
@@ -285,7 +287,7 @@ export const MapView = () => {
       {/* Tool indicator */}
       <div className="absolute top-4 left-4 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && 'Cliquez sur le premier nœud'}
+        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
         {routingActive && (currentProject?.cableTypes.find(ct => ct.id === selectedCableType)?.posesPermises.includes('SOUTERRAIN') 
           ? 'Cliquez pour définir les points intermédiaires, double-clic ou ENTRÉE pour terminer' 
