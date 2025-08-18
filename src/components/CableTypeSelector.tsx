@@ -10,6 +10,8 @@ export const CableTypeSelector = () => {
     selectedTool 
   } = useNetworkStore();
 
+  console.log('CableTypeSelector render:', { selectedTool, hasProject: !!currentProject });
+
   if (!currentProject || selectedTool !== 'addCable') {
     return null;
   }

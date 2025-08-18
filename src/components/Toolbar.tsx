@@ -68,7 +68,10 @@ export const Toolbar = () => {
             key={tool.id}
             variant={selectedTool === tool.id ? "default" : "ghost"}
             size="icon"
-            onClick={() => setSelectedTool(tool.id)}
+            onClick={() => {
+              console.log('Tool selected:', tool.id);
+              setSelectedTool(tool.id);
+            }}
             title={tool.description}
             className="w-12 h-12"
           >

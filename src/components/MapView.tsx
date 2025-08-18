@@ -164,11 +164,15 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
+        
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
           // Démarrer le routage du câble
+          console.log('Starting cable routing from', selectedNodeId, 'to', node.id);
           setRoutingFromNode(selectedNodeId);
           setRoutingActive(true);
         } else if (selectedTool === 'addCable') {
+          console.log('Selecting first node for cable:', node.id);
           setSelectedNode(node.id);
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
