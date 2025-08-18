@@ -1,14 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-draw/dist/leaflet.draw.css';
-import 'leaflet-draw';
 import { useNetworkStore } from '@/store/networkStore';
-import { Cable, Node } from '@/types/network';
 import { VoltageDisplay } from './VoltageDisplay';
-import { CableRouter } from './CableRouter';
 import { CableTypeSelector } from './CableTypeSelector';
-import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
 // Fix for default markers
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -23,9 +18,6 @@ export const MapView = () => {
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const cablesRef = useRef<Map<string, L.Polyline>>(new Map());
-  const voltageMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const [routingActive, setRoutingActive] = useState(false);
-  const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
   
   const {
     currentProject,
@@ -48,7 +40,7 @@ export const MapView = () => {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13); // Bruxelles par défaut
+    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
@@ -65,23 +57,22 @@ export const MapView = () => {
     };
   }, []);
 
-  // Handle map clicks
+  // Handle map clicks for adding nodes
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       if (selectedTool === 'addNode') {
-        addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN'); // Le type sera adapté automatiquement
+        addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN');
       }
     };
 
     map.on('click', handleMapClick);
-
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [selectedTool, currentProject, addNode]);
+  }, [selectedTool, addNode]);
 
   // Update markers when nodes change
   useEffect(() => {
@@ -91,69 +82,21 @@ export const MapView = () => {
     // Clear existing markers
     markersRef.current.forEach(marker => map.removeLayer(marker));
     markersRef.current.clear();
-    voltageMarkersRef.current.forEach(marker => map.removeLayer(marker));
-    voltageMarkersRef.current.clear();
 
     // Add new markers
     currentProject.nodes.forEach(node => {
-      // Determine icon based on node type and content
       let iconContent = 'N';
       let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
       
       if (node.isSource) {
         iconContent = 'S';
         iconClass = 'bg-primary border-primary text-primary-foreground';
-      } else {
-        const hasProduction = node.productions.length > 0 && node.productions.some(p => p.S_kVA > 0);
-        const hasLoad = node.clients.length > 0 && node.clients.some(c => c.S_kVA > 0);
-        
-        if (hasProduction && hasLoad) {
-          iconContent = 'M'; // Mixte
-          iconClass = 'bg-yellow-500 border-yellow-600 text-white';
-        } else if (hasProduction) {
-          iconContent = 'P'; // Production
-          iconClass = 'bg-green-500 border-green-600 text-white';
-        } else if (hasLoad) {
-          iconContent = 'C'; // Charge
-          iconClass = 'bg-blue-500 border-blue-600 text-white';
-        }
-      }
-
-      // Calculate voltage and display info for this node
-      let infoText = '';
-      if (showVoltages) {
-        let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
-        
-        if (calculationResults[selectedScenario] && !node.isSource) {
-          const results = calculationResults[selectedScenario];
-          const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
-          if (incomingCable) {
-            nodeVoltage = nodeVoltage - (incomingCable.voltageDrop_V || 0);
-          }
-        }
-
-        // Calculer les totaux de charge et production
-        const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
-        const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
-
-        if (!node.isSource) {
-          infoText = `<div class="text-[8px] leading-tight text-center">
-            <div>${nodeVoltage.toFixed(0)}V</div>
-            <div>C:${totalCharge}kVA</div>
-            <div>PV:${totalPV}kVA</div>
-          </div>`;
-        } else {
-          infoText = `<div class="text-[8px] leading-tight text-center">
-            <div>${nodeVoltage}V</div>
-          </div>`;
-        }
       }
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass}">
-          <div class="text-xs">${iconContent}</div>
-          ${infoText}
+        html: `<div class="w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${iconClass}">
+          ${iconContent}
         </div>`,
         iconSize: [48, 48],
         iconAnchor: [24, 24]
@@ -164,55 +107,27 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
         
-        // Si on est en train de router et qu'on clique sur un nœud, finaliser le routage
-        if (routingActive && routingFromNode && node.id !== routingFromNode) {
-          console.log('Finalizing cable route at destination node:', node.id);
-          // Le CableRouter gère la finalisation quand on clique sur le nœud destination
-          return;
-        }
-        
-        if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id && !routingActive) {
-          // Vérifier le type de câble sélectionné
-          const cableType = currentProject!.cableTypes.find(ct => ct.id === selectedCableType);
-          const isAerial = cableType?.posesPermises.includes('AÉRIEN') && !cableType?.posesPermises.includes('SOUTERRAIN');
+        if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
+          // Créer un câble entre les deux nœuds
+          console.log('Creating cable from', selectedNodeId, 'to', node.id);
           
-          if (isAerial) {
-            // Câble aérien : connexion directe
-            console.log('Creating direct aerial cable from', selectedNodeId, 'to', node.id);
-            const fromNode = currentProject!.nodes.find(n => n.id === selectedNodeId);
-            const toNode = currentProject!.nodes.find(n => n.id === node.id);
-            
-            if (fromNode && toNode) {
-              const routeCoords = [
-                { lat: fromNode.lat, lng: fromNode.lng },
-                { lat: toNode.lat, lng: toNode.lng }
-              ];
-              addCable(selectedNodeId, node.id, selectedCableType, routeCoords);
-              setSelectedNode(null);
-            }
-          } else {
-            // Câble souterrain : finaliser le routage en cours
-            console.log('Finalizing underground cable at destination node:', node.id);
-            // Cette logique sera gérée par le CableRouter
+          const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
+          const toNode = currentProject.nodes.find(n => n.id === node.id);
+          
+          if (fromNode && toNode) {
+            const coordinates = [
+              { lat: fromNode.lat, lng: fromNode.lng },
+              { lat: toNode.lat, lng: toNode.lng }
+            ];
+            addCable(selectedNodeId, node.id, selectedCableType, coordinates);
+            setSelectedNode(null);
           }
           
-        } else if (selectedTool === 'addCable' && !routingActive) {
-          console.log('Selecting node for cable:', node.id);
+        } else if (selectedTool === 'addCable') {
+          console.log('Selecting first node:', node.id);
           setSelectedNode(node.id);
-          
-          // Si c'est un câble souterrain, commencer le routage immédiatement
-          const cableType = currentProject!.cableTypes.find(ct => ct.id === selectedCableType);
-          const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN');
-          
-          if (isUnderground) {
-            console.log('Starting underground cable routing from node:', node.id);
-            setRoutingFromNode(node.id);
-            setRoutingActive(true);
-            setSelectedNode(null); // On n'a pas encore de destination
-          }
-          
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
           openEditPanel('node');
@@ -225,39 +140,21 @@ export const MapView = () => {
 
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, addCable, setSelectedNode, openEditPanel, showVoltages, calculationResults, selectedScenario]);
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode]);
 
-  // Update cables when cables change or calculation results change
+  // Update cables
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !currentProject) return;
 
-    // Clear existing cables
     cablesRef.current.forEach(cable => map.removeLayer(cable));
     cablesRef.current.clear();
 
-    // Get current calculation results
-    const results = calculationResults[selectedScenario];
-    const calculatedCables = results?.cables || [];
-
-    // Add new cables
     currentProject.cables.forEach(cable => {
-      const calculatedCable = calculatedCables.find(c => c.id === cable.id);
-      const voltageDropPercent = calculatedCable?.voltageDropPercent || 0;
-      
-      // Determine color based on voltage drop
-      let color = 'hsl(var(--muted-foreground))'; // Default gray
-      if (calculatedCable) {
-        const absPercent = Math.abs(voltageDropPercent);
-        if (absPercent < 8) color = 'hsl(142, 76%, 36%)'; // Green
-        else if (absPercent < 10) color = 'hsl(32, 95%, 44%)'; // Orange
-        else color = 'hsl(0, 84%, 60%)'; // Red
-      }
-
       const polyline = L.polyline(
         cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
-          color,
+          color: '#3b82f6',
           weight: 4,
           opacity: 0.8
         }
@@ -270,12 +167,7 @@ export const MapView = () => {
         <div>
           <strong>${cable.name}</strong><br/>
           ${nodeA?.name} → ${nodeB?.name}<br/>
-          Longueur: ${Math.round(cable.length_m || 0)}m<br/>
-          ${calculatedCable ? `
-            Intensité: ${calculatedCable.current_A?.toFixed(1)}A<br/>
-            Chute: ${voltageDropPercent.toFixed(2)}%<br/>
-            Pertes: ${calculatedCable.losses_kW?.toFixed(3)}kW
-          ` : 'Non calculé'}
+          Longueur: ${Math.round(cable.length_m || 0)}m
         </div>
       `);
 
@@ -292,23 +184,7 @@ export const MapView = () => {
 
       cablesRef.current.set(cable.id, polyline);
     });
-  }, [currentProject?.cables, calculationResults, selectedScenario, selectedTool, setSelectedCable, openEditPanel]);
-
-  // Gérer le routage des câbles
-  const handleRouteComplete = (coordinates: { lat: number; lng: number }[], fromNodeId?: string, toNodeId?: string) => {
-    if (fromNodeId && toNodeId && routingFromNode) {
-      console.log('Route completed, creating cable from', fromNodeId, 'to', toNodeId);
-      addCable(fromNodeId, toNodeId, selectedCableType, coordinates);
-    }
-    setRoutingActive(false);
-    setRoutingFromNode(null);
-    setSelectedNode(null);
-  };
-
-  const handleRoutingCancel = () => {
-    setRoutingActive(false);
-    setRoutingFromNode(null);
-  };
+  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable]);
 
   return (
     <div className="flex-1 relative">
@@ -317,23 +193,11 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
-      {mapInstanceRef.current && routingActive && routingFromNode && (
-        <CableRouter
-          map={mapInstanceRef.current}
-          isActive={routingActive}
-          fromNodeId={routingFromNode}
-          toNodeId={""} // Pas de destination fixe, sera déterminée au clic
-          onRouteComplete={handleRouteComplete}
-          onCancel={handleRoutingCancel}
-        />
-      )}
-      
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le type de câble puis cliquez sur le nœud de départ'}
-        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le nœud d\'arrivée'}
-        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur un nœud pour finaliser'}
+        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
+        {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}

@@ -8,7 +8,8 @@ export const Toolbar = () => {
     selectedTool, 
     setSelectedTool, 
     currentProject, 
-    calculateAll 
+    calculateAll,
+    setSelectedNode
   } = useNetworkStore();
 
   const handleCalculate = () => {
@@ -71,6 +72,8 @@ export const Toolbar = () => {
             onClick={() => {
               console.log('Tool selected:', tool.id);
               setSelectedTool(tool.id);
+              // Réinitialiser la sélection de nœud quand on change d'outil
+              setSelectedNode(null);
             }}
             title={tool.description}
             className="w-12 h-12"
