@@ -18,7 +18,7 @@ export const VoltageDisplay = () => {
   if (!currentProject) return null;
 
   return (
-    <Card className="absolute top-4 right-4 w-80 bg-background/95 backdrop-blur-sm z-50">
+    <Card className="fixed top-4 right-4 w-80 bg-background/95 backdrop-blur-sm z-50">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">
           Scénario de calcul
