@@ -246,8 +246,10 @@ export const MapView = () => {
         
         if (routingActive && routingToNode === node.id) {
           // Finaliser le routage en cliquant précisément sur le nœud de destination
-          console.log('Finalizing route at destination node');
+          console.log('Finalizing route at destination node with', routingPoints.length, 'intermediate points');
           const finalCoords = [...routingPoints, { lat: node.lat, lng: node.lng }];
+          console.log('Final coordinates:', finalCoords);
+          
           if (routingFromNode) {
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
           }
@@ -336,6 +338,9 @@ export const MapView = () => {
     cablesRef.current.clear();
 
     currentProject.cables.forEach(cable => {
+      console.log('Rendering cable with coordinates:', cable.coordinates);
+      
+      // Créer la polyline avec TOUS les points (y compris intermédiaires)
       const polyline = L.polyline(
         cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
@@ -345,6 +350,14 @@ export const MapView = () => {
         }
       ).addTo(map);
 
+      // Calculer la longueur réelle en suivant tous les segments
+      let totalLength = 0;
+      for (let i = 0; i < cable.coordinates.length - 1; i++) {
+        const from = L.latLng(cable.coordinates[i].lat, cable.coordinates[i].lng);
+        const to = L.latLng(cable.coordinates[i + 1].lat, cable.coordinates[i + 1].lng);
+        totalLength += from.distanceTo(to);
+      }
+
       const nodeA = currentProject.nodes.find(n => n.id === cable.nodeAId);
       const nodeB = currentProject.nodes.find(n => n.id === cable.nodeBId);
       
@@ -352,7 +365,9 @@ export const MapView = () => {
         <div>
           <strong>${cable.name}</strong><br/>
           ${nodeA?.name} → ${nodeB?.name}<br/>
-          Longueur: ${Math.round(cable.length_m || 0)}m
+          Points: ${cable.coordinates.length}<br/>
+          Longueur réelle: ${Math.round(totalLength)}m<br/>
+          Longueur stockée: ${Math.round(cable.length_m || 0)}m
         </div>
       `);
 
