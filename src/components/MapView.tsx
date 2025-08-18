@@ -193,18 +193,26 @@ export const MapView = () => {
               setSelectedNode(null);
             }
           } else {
-            // Câble souterrain : démarrer le routage manuel
-            console.log('Starting underground cable routing from', selectedNodeId, 'to', node.id);
-            setRoutingFromNode(selectedNodeId);
-            // Stocker temporairement le nœud de destination
-            const destinationNodeId = node.id;
-            setSelectedNode(destinationNodeId); // Mettre le nœud destination dans selectedNodeId
-            setRoutingActive(true);
+            // Câble souterrain : finaliser le routage en cours
+            console.log('Finalizing underground cable at destination node:', node.id);
+            // Cette logique sera gérée par le CableRouter
           }
           
         } else if (selectedTool === 'addCable' && !routingActive) {
-          console.log('Selecting first node for cable:', node.id);
+          console.log('Selecting node for cable:', node.id);
           setSelectedNode(node.id);
+          
+          // Si c'est un câble souterrain, commencer le routage immédiatement
+          const cableType = currentProject!.cableTypes.find(ct => ct.id === selectedCableType);
+          const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN');
+          
+          if (isUnderground) {
+            console.log('Starting underground cable routing from node:', node.id);
+            setRoutingFromNode(node.id);
+            setRoutingActive(true);
+            setSelectedNode(null); // On n'a pas encore de destination
+          }
+          
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
           openEditPanel('node');
@@ -287,14 +295,14 @@ export const MapView = () => {
   }, [currentProject?.cables, calculationResults, selectedScenario, selectedTool, setSelectedCable, openEditPanel]);
 
   // Gérer le routage des câbles
-  const handleRouteComplete = (coordinates: { lat: number; lng: number }[]) => {
-    if (routingFromNode && selectedNodeId && routingFromNode !== selectedNodeId) {
-      console.log('Route completed, creating cable from', routingFromNode, 'to', selectedNodeId);
-      addCable(routingFromNode, selectedNodeId, selectedCableType, coordinates);
-      setSelectedNode(null);
+  const handleRouteComplete = (coordinates: { lat: number; lng: number }[], fromNodeId?: string, toNodeId?: string) => {
+    if (fromNodeId && toNodeId && routingFromNode) {
+      console.log('Route completed, creating cable from', fromNodeId, 'to', toNodeId);
+      addCable(fromNodeId, toNodeId, selectedCableType, coordinates);
     }
     setRoutingActive(false);
     setRoutingFromNode(null);
+    setSelectedNode(null);
   };
 
   const handleRoutingCancel = () => {
@@ -309,12 +317,12 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
-      {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && routingFromNode !== selectedNodeId && (
+      {mapInstanceRef.current && routingActive && routingFromNode && (
         <CableRouter
           map={mapInstanceRef.current}
           isActive={routingActive}
           fromNodeId={routingFromNode}
-          toNodeId={selectedNodeId}
+          toNodeId={""} // Pas de destination fixe, sera déterminée au clic
           onRouteComplete={handleRouteComplete}
           onCancel={handleRoutingCancel}
         />
@@ -323,11 +331,9 @@ export const MapView = () => {
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le nœud de départ'}
+        {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le type de câble puis cliquez sur le nœud de départ'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le nœud d\'arrivée'}
-        {routingActive && (currentProject?.cableTypes.find(ct => ct.id === selectedCableType)?.posesPermises.includes('SOUTERRAIN') 
-          ? 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur le nœud d\'arrivée pour finaliser' 
-          : 'Câble aérien - ligne droite automatique')}
+        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur un nœud pour finaliser'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}

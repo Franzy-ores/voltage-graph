@@ -7,7 +7,7 @@ interface CableRouterProps {
   isActive: boolean;
   fromNodeId: string;
   toNodeId: string;
-  onRouteComplete: (coordinates: { lat: number; lng: number }[]) => void;
+  onRouteComplete: (coordinates: { lat: number; lng: number }[], fromNodeId?: string, toNodeId?: string) => void;
   onCancel: () => void;
 }
 
@@ -22,12 +22,11 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
     
     if (!isActive || !map || !currentProject) return;
 
-    // Obtenir les nœuds source et destination
+    // Obtenir le nœud source - toujours requis
     const fromNode = currentProject.nodes.find(n => n.id === fromNodeId);
-    const toNode = currentProject.nodes.find(n => n.id === toNodeId);
-    console.log('CableRouter nodes:', { fromNode: fromNode?.name, toNode: toNode?.name });
+    console.log('CableRouter nodes:', { fromNode: fromNode?.name, toNodeId });
     
-    if (!fromNode || !toNode) return;
+    if (!fromNode) return;
 
     // Obtenir le type de câble sélectionné
     const cableType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
@@ -40,33 +39,24 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
     const isUnderground = cableType.posesPermises.includes('SOUTERRAIN');
     console.log('CableRouter pose types:', { isAerial, isUnderground });
 
-    // Si câble aérien uniquement, créer ligne droite immédiatement
-    if (isAerial && !isUnderground) {
-      console.log('Creating direct aerial cable connection');
-      const directRoute = [
-        { lat: fromNode.lat, lng: fromNode.lng },
-        { lat: toNode.lat, lng: toNode.lng }
-      ];
-      onRouteComplete(directRoute);
-      return;
-    }
-
-    // Pour câbles souterrains ou mixtes, permettre le routage manuel
+    // Pour câbles souterrains, permettre le routage manuel
     console.log('Starting underground cable routing');
     routingPointsRef.current = [{ lat: fromNode.lat, lng: fromNode.lng }];
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
-      // Vérifier si on clique sur le nœud de destination
-      const toNode = currentProject.nodes.find(n => n.id === toNodeId);
-      if (toNode) {
-        const distance = map.distance([e.latlng.lat, e.latlng.lng], [toNode.lat, toNode.lng]);
-        if (distance < 50) { // Si on clique près du nœud destination (50m de tolérance)
-          console.log('Clicked near destination node, finishing route');
-          routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
-          onRouteComplete([...routingPointsRef.current]);
-          clearRouting();
-          return;
-        }
+      // Vérifier si on clique sur un nœud pour finaliser
+      const clickedNode = currentProject.nodes.find(node => {
+        const distance = map.distance([e.latlng.lat, e.latlng.lng], [node.lat, node.lng]);
+        return distance < 50 && node.id !== fromNodeId; // Pas le nœud de départ
+      });
+      
+      if (clickedNode) {
+        console.log('Clicked on destination node, finishing route:', clickedNode.name);
+        routingPointsRef.current.push({ lat: clickedNode.lat, lng: clickedNode.lng });
+        // Passer aussi l'ID du nœud de destination
+        onRouteComplete([...routingPointsRef.current], fromNodeId, clickedNode.id);
+        clearRouting();
+        return;
       }
       
       // Sinon, ajouter un point de routage intermédiaire
@@ -123,22 +113,19 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
     };
 
     const handleDoubleClick = (e: L.LeafletMouseEvent) => {
-      // Ajouter le nœud de destination et terminer
-      if (toNode) {
-        routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
-        onRouteComplete([...routingPointsRef.current]);
-        clearRouting();
-      }
+      // Double-clic pour terminer le routage sans nœud spécifique
+      console.log('Double-click detected, ending route at current position');
+      routingPointsRef.current.push({ lat: e.latlng.lat, lng: e.latlng.lng });
+      onRouteComplete([...routingPointsRef.current]);
+      clearRouting();
     };
 
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && routingPointsRef.current.length >= 1) {
-        // Ajouter le nœud de destination et terminer
-        if (toNode) {
-          routingPointsRef.current.push({ lat: toNode.lat, lng: toNode.lng });
-          onRouteComplete([...routingPointsRef.current]);
-          clearRouting();
-        }
+        // ENTRÉE pour terminer à la position actuelle
+        console.log('Enter pressed, ending route');
+        onRouteComplete([...routingPointsRef.current]);
+        clearRouting();
       } else if (e.key === 'Escape') {
         // Annuler le routage
         onCancel();
@@ -161,7 +148,7 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
       routingPointsRef.current = [];
     };
 
-    // Ajouter les marqueurs de départ et d'arrivée seulement si la carte existe
+    // Ajouter seulement le marqueur de départ
     if (map && map.getContainer()) {
       const startMarker = L.marker([fromNode.lat, fromNode.lng], {
         icon: L.divIcon({
@@ -172,22 +159,12 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
         })
       });
       
-      const endMarker = L.marker([toNode.lat, toNode.lng], {
-        icon: L.divIcon({
-          className: 'routing-end',
-          html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
-          iconSize: [16, 16],
-          iconAnchor: [8, 8]
-        })
-      });
-      
       // Vérifier que la carte existe avant d'ajouter les marqueurs
       try {
         startMarker.addTo(map);
-        endMarker.addTo(map);
-        tempMarkersRef.current.push(startMarker, endMarker);
+        tempMarkersRef.current.push(startMarker);
       } catch (error) {
-        console.warn('Error adding markers to map:', error);
+        console.warn('Error adding start marker:', error);
       }
     }
     updateTempLine();
