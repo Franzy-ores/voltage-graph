@@ -20,7 +20,7 @@ export const CableTypeSelector = () => {
   console.log('Selected cable type:', selectedCableType, selectedType);
 
   return (
-    <div className="fixed top-20 left-20 bg-white border-2 border-blue-500 rounded-lg p-4 min-w-[300px] shadow-2xl z-[1000]">
+    <div className="fixed top-20 left-20 bg-white border-2 border-blue-500 rounded-lg p-4 min-w-[300px] shadow-2xl z-[9999]">
       <div className="space-y-3">
         <div className="text-lg font-bold text-blue-600">🔌 Sélection du type de câble</div>
         
@@ -32,7 +32,7 @@ export const CableTypeSelector = () => {
           <SelectTrigger className="w-full bg-white border-2">
             <SelectValue placeholder="Sélectionner un type de câble" />
           </SelectTrigger>
-          <SelectContent className="bg-white border-2">
+          <SelectContent className="bg-white border-2 z-[10000]">
             {currentProject.cableTypes.map((cableType) => (
               <SelectItem key={cableType.id} value={cableType.id}>
                 <div className="flex items-center gap-2">

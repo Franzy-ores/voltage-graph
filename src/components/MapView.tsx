@@ -277,7 +277,7 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
-      {mapInstanceRef.current && routingFromNode && selectedNodeId && (
+      {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && (
         <CableRouter
           map={mapInstanceRef.current}
           isActive={routingActive}
