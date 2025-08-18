@@ -167,19 +167,30 @@ export const MapView = () => {
         console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
         
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
-          // Créer directement le câble entre les deux nœuds
-          console.log('Creating cable from', selectedNodeId, 'to', node.id);
+          // Vérifier le type de câble sélectionné
+          const cableType = currentProject!.cableTypes.find(ct => ct.id === selectedCableType);
+          const isAerial = cableType?.posesPermises.includes('AÉRIEN') && !cableType?.posesPermises.includes('SOUTERRAIN');
           
-          const fromNode = currentProject!.nodes.find(n => n.id === selectedNodeId);
-          const toNode = currentProject!.nodes.find(n => n.id === node.id);
-          
-          if (fromNode && toNode) {
-            const routeCoords = [
-              { lat: fromNode.lat, lng: fromNode.lng },
-              { lat: toNode.lat, lng: toNode.lng }
-            ];
-            addCable(selectedNodeId, node.id, selectedCableType, routeCoords);
-            setSelectedNode(null); // Réinitialiser pour le prochain câble
+          if (isAerial) {
+            // Câble aérien : connexion directe
+            console.log('Creating direct aerial cable from', selectedNodeId, 'to', node.id);
+            const fromNode = currentProject!.nodes.find(n => n.id === selectedNodeId);
+            const toNode = currentProject!.nodes.find(n => n.id === node.id);
+            
+            if (fromNode && toNode) {
+              const routeCoords = [
+                { lat: fromNode.lat, lng: fromNode.lng },
+                { lat: toNode.lat, lng: toNode.lng }
+              ];
+              addCable(selectedNodeId, node.id, selectedCableType, routeCoords);
+              setSelectedNode(null);
+            }
+          } else {
+            // Câble souterrain : routage manuel
+            console.log('Starting underground cable routing from', selectedNodeId, 'to', node.id);
+            setRoutingFromNode(selectedNodeId);
+            setRoutingActive(true);
+            // Ne pas réinitialiser selectedNodeId pour que le CableRouter reçoive les bons paramètres
           }
           
         } else if (selectedTool === 'addCable') {
@@ -288,7 +299,6 @@ export const MapView = () => {
       <VoltageDisplay />
       <CableTypeSelector />
       
-      {/* CableRouter désactivé temporairement pour éviter les erreurs
       {mapInstanceRef.current && routingActive && routingFromNode && selectedNodeId && (
         <CableRouter
           map={mapInstanceRef.current}
@@ -299,7 +309,6 @@ export const MapView = () => {
           onCancel={handleRoutingCancel}
         />
       )}
-      */}
       
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">

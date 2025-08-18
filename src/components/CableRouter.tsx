@@ -132,26 +132,35 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
       routingPointsRef.current = [];
     };
 
-    // Ajouter les marqueurs de départ et d'arrivée
-    const startMarker = L.marker([fromNode.lat, fromNode.lng], {
-      icon: L.divIcon({
-        className: 'routing-start',
-        html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-      })
-    }).addTo(map);
-    
-    const endMarker = L.marker([toNode.lat, toNode.lng], {
-      icon: L.divIcon({
-        className: 'routing-end',
-        html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
-        iconSize: [16, 16],
-        iconAnchor: [8, 8]
-      })
-    }).addTo(map);
-    
-    tempMarkersRef.current.push(startMarker, endMarker);
+    // Ajouter les marqueurs de départ et d'arrivée seulement si la carte existe
+    if (map && map.getContainer()) {
+      const startMarker = L.marker([fromNode.lat, fromNode.lng], {
+        icon: L.divIcon({
+          className: 'routing-start',
+          html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })
+      });
+      
+      const endMarker = L.marker([toNode.lat, toNode.lng], {
+        icon: L.divIcon({
+          className: 'routing-end',
+          html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })
+      });
+      
+      // Vérifier que la carte existe avant d'ajouter les marqueurs
+      try {
+        startMarker.addTo(map);
+        endMarker.addTo(map);
+        tempMarkersRef.current.push(startMarker, endMarker);
+      } catch (error) {
+        console.warn('Error adding markers to map:', error);
+      }
+    }
     updateTempLine();
 
     map.on('click', handleMapClick);
