@@ -11,6 +11,24 @@ interface ResultsPanelProps {
 }
 
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
+  // Add safety checks
+  if (!results || !selectedScenario) {
+    return (
+      <div className="w-80 bg-card border-l border-border p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Résultats</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-center py-8">
+              Chargement...
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  
   const currentResult = results[selectedScenario];
 
   const getComplianceBadge = (compliance: 'normal' | 'warning' | 'critical') => {
