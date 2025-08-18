@@ -37,10 +37,12 @@ export const MapView = () => {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    const map = L.map(mapRef.current).setView([46.2044, 6.1432], 13); // Genève par défaut
+    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13); // Bruxelles par défaut
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+    // Utiliser le géoportail wallon comme carte de base
+    L.tileLayer('https://geoservices.wallonie.be/arcgis/rest/services/CARTES_FOND/FOND_PLAN/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '© SPW - Géoportail de la Wallonie',
+      maxZoom: 18
     }).addTo(map);
 
     mapInstanceRef.current = map;
