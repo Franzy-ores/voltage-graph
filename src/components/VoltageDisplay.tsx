@@ -36,7 +36,7 @@ export const VoltageDisplay = () => {
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-background border z-[10000]">
               <SelectItem value="PRÉLÈVEMENT">Prélèvement seul</SelectItem>
               <SelectItem value="MIXTE">Mixte</SelectItem>
               <SelectItem value="PRODUCTION">Production pure</SelectItem>

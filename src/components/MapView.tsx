@@ -434,7 +434,7 @@ export const MapView = () => {
 
       cablesRef.current.set(cable.id, polyline);
     });
-  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable]);
+  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario]);
 
   return (
     <div className="flex-1 relative">
