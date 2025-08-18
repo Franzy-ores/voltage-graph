@@ -164,7 +164,7 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId });
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
         
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
           // Démarrer le routage du câble
