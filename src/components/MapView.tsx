@@ -117,11 +117,28 @@ export const MapView = () => {
         }
       }
 
+      // Calculate voltage for this node if calculations exist
+      let voltageText = '';
+      if (showVoltages && calculationResults[selectedScenario] && !node.isSource) {
+        const results = calculationResults[selectedScenario];
+        const baseVoltage = node.connectionType.includes('230V') ? 230 : 400;
+        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
+        let nodeVoltage = baseVoltage;
+        
+        if (incomingCable) {
+          nodeVoltage = baseVoltage - (incomingCable.voltageDrop_V || 0);
+        }
+        voltageText = `<div class="text-[10px] leading-tight">${nodeVoltage.toFixed(0)}V</div>`;
+      }
+
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs font-bold ${iconClass}">${iconContent}</div>`,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
+        html: `<div class="w-8 h-8 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass}">
+          <div class="text-xs">${iconContent}</div>
+          ${voltageText}
+        </div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
       });
 
       const marker = L.marker([node.lat, node.lng], { icon })
@@ -154,38 +171,6 @@ export const MapView = () => {
 
       markersRef.current.set(node.id, marker);
     });
-
-    // Add voltage markers if enabled
-    if (showVoltages && calculationResults[selectedScenario]) {
-      const results = calculationResults[selectedScenario];
-      const calculator = new ElectricalCalculator(currentProject.cosPhi);
-      
-      currentProject.nodes.forEach(node => {
-        if (node.isSource) return; // Skip source node
-        
-        // Calculate voltage at this node
-        const baseVoltage = node.connectionType.includes('230V') ? 230 : 400;
-        
-        // Find cable connecting to this node
-        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
-        let nodeVoltage = baseVoltage;
-        
-        if (incomingCable) {
-          nodeVoltage = baseVoltage - (incomingCable.voltageDrop_V || 0);
-        }
-        
-        const voltageMarker = L.marker([node.lat, node.lng], {
-          icon: L.divIcon({
-            className: 'voltage-marker',
-            html: `<div class="bg-background/90 backdrop-blur-sm border rounded px-2 py-1 text-xs font-mono text-foreground whitespace-nowrap">${nodeVoltage.toFixed(1)}V</div>`,
-            iconSize: [60, 20],
-            iconAnchor: [30, -30] // Position above the node
-          })
-        }).addTo(map);
-        
-        voltageMarkersRef.current.set(node.id, voltageMarker);
-      });
-    }
   }, [currentProject?.nodes, selectedTool, selectedNodeId, addCable, setSelectedNode, openEditPanel, showVoltages, calculationResults, selectedScenario]);
 
   // Update cables when cables change or calculation results change

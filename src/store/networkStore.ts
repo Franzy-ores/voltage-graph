@@ -111,8 +111,8 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
       lat,
       lng,
       connectionType,
-      clients: [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
-      productions: [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
+      clients: currentProject.nodes.length === 0 ? [] : [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
+      productions: currentProject.nodes.length === 0 ? [] : [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
     };
 

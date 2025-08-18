@@ -18,22 +18,11 @@ export const VoltageDisplay = () => {
   return (
     <Card className="absolute top-4 right-4 w-80 bg-background/95 backdrop-blur-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">Affichage des résultats</CardTitle>
+        <CardTitle className="text-sm">Scénario de calcul</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center space-x-2">
-          <Switch
-            id="voltage-display"
-            checked={showVoltages}
-            onCheckedChange={setShowVoltages}
-          />
-          <Label htmlFor="voltage-display" className="text-sm">
-            Afficher les tensions
-          </Label>
-        </div>
-        
         <div className="space-y-2">
-          <Label className="text-sm">Scénario de calcul</Label>
+          <Label className="text-sm">Scénario actuel</Label>
           <Select value={selectedScenario} onValueChange={setSelectedScenario}>
             <SelectTrigger>
               <SelectValue />
@@ -44,6 +33,17 @@ export const VoltageDisplay = () => {
               <SelectItem value="PRODUCTION">Production pure</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <Switch
+            id="voltage-display"
+            checked={showVoltages}
+            onCheckedChange={setShowVoltages}
+          />
+          <Label htmlFor="voltage-display" className="text-sm">
+            Afficher tensions sur les nœuds
+          </Label>
         </div>
       </CardContent>
     </Card>
