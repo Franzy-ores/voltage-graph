@@ -3,6 +3,7 @@ import { MapView } from "@/components/MapView";
 import { Toolbar } from "@/components/Toolbar";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { EditPanel } from "@/components/EditPanel";
+import { VoltageDisplay } from "@/components/VoltageDisplay";
 import { useNetworkStore } from "@/store/networkStore";
 
 const Index = () => {
@@ -68,9 +69,10 @@ const Index = () => {
         onSettings={handleSettings}
       />
       
-      <div className="flex-1 flex">
+      <div className="flex-1 flex relative">
         <Toolbar />
         <MapView />
+        <VoltageDisplay />
         <ResultsPanel 
           results={calculationResults}
           selectedScenario={selectedScenario}
