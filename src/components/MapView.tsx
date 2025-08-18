@@ -226,7 +226,7 @@ export const MapView = () => {
 
       // Créer le contenu de l'icône avec les informations
       let infoText = '';
-      if (showVoltages || !node.isSource) {
+      if (showVoltages) {
         infoText = `<div class="text-[9px] leading-tight text-center mt-1">
           <div class="font-bold">${Math.round(nodeVoltage)}V</div>
           ${!node.isSource ? `<div>C:${totalCharge}kVA</div>` : ''}
