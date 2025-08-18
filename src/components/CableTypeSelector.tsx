@@ -17,7 +17,7 @@ export const CableTypeSelector = () => {
   const selectedType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
 
   return (
-    <div className="absolute top-16 left-4 bg-background/95 backdrop-blur-sm border rounded-lg p-3 min-w-[250px] shadow-lg">
+    <div className="absolute top-16 left-20 bg-background border rounded-lg p-4 min-w-[280px] shadow-xl z-50">
       <div className="space-y-3">
         <div className="text-sm font-medium">Type de câble</div>
         

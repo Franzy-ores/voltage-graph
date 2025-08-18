@@ -285,7 +285,7 @@ export const MapView = () => {
       )}
       
       {/* Tool indicator */}
-      <div className="absolute top-4 left-4 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm">
+      <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
