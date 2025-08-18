@@ -75,8 +75,13 @@ export const MapView = () => {
         // En mode routage, ajouter des points intermédiaires uniquement
         // La finalisation se fait en cliquant directement sur le nœud de destination
         const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
-        setRoutingPoints(prev => [...prev, newPoint]);
-        console.log('Added routing point:', newPoint);
+        console.log('Adding intermediate point:', newPoint);
+        console.log('Current routingPoints before adding:', routingPoints);
+        setRoutingPoints(prev => {
+          const updated = [...prev, newPoint];
+          console.log('Updated routingPoints:', updated);
+          return updated;
+        });
         
         // Ajouter un marqueur temporaire
         const marker = L.marker([e.latlng.lat, e.latlng.lng], {
@@ -247,8 +252,12 @@ export const MapView = () => {
         if (routingActive && routingToNode === node.id) {
           // Finaliser le routage en cliquant précisément sur le nœud de destination
           console.log('Finalizing route at destination node with', routingPoints.length, 'intermediate points');
+          console.log('Current routing points:', routingPoints);
+          
+          // IMPORTANT: Inclure TOUS les points du tracé (départ + intermédiaires + arrivée)
           const finalCoords = [...routingPoints, { lat: node.lat, lng: node.lng }];
-          console.log('Final coordinates:', finalCoords);
+          console.log('Final coordinates for cable:', finalCoords);
+          console.log('Total points in final cable:', finalCoords.length);
           
           if (routingFromNode) {
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
@@ -269,7 +278,10 @@ export const MapView = () => {
             if (fromNode) {
               setRoutingFromNode(selectedNodeId);
               setRoutingToNode(node.id);
-              setRoutingPoints([{ lat: fromNode.lat, lng: fromNode.lng }]);
+              // CRUCIAL: Initialiser routingPoints avec le point de départ
+              const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
+              setRoutingPoints(initialPoints);
+              console.log('Initialized routing with start point:', initialPoints);
               setRoutingActive(true);
               
               // Ajouter les marqueurs de départ et d'arrivée
@@ -338,9 +350,10 @@ export const MapView = () => {
     cablesRef.current.clear();
 
     currentProject.cables.forEach(cable => {
-      console.log('Rendering cable with coordinates:', cable.coordinates);
+      console.log('Rendering cable:', cable.name, 'with', cable.coordinates.length, 'points');
+      console.log('Cable coordinates:', cable.coordinates);
       
-      // Créer la polyline avec TOUS les points (y compris intermédiaires)
+      // CRUCIAL: Créer la polyline avec TOUS les points (départ + intermédiaires + arrivée)
       const polyline = L.polyline(
         cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
@@ -349,6 +362,9 @@ export const MapView = () => {
           opacity: 0.8
         }
       ).addTo(map);
+
+      // Vérifier que le câble suit bien tous les points
+      console.log('Polyline created with', cable.coordinates.length, 'points');
 
       // Calculer la longueur réelle en suivant tous les segments
       let totalLength = 0;
