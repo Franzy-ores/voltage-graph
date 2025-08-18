@@ -252,7 +252,13 @@ export const MapView = () => {
         // Empêcher la propagation vers la carte
         L.DomEvent.stopPropagation(e);
         
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
+        console.log('=== NODE CLICKED ===');
+        console.log('Clicked node:', node.id, node.name);
+        console.log('Selected tool:', selectedTool);
+        console.log('Selected node ID:', selectedNodeId);
+        console.log('Routing active:', routingActive);
+        console.log('Routing to node:', routingToNode);
+        console.log('Is this the target node?', routingToNode === node.id);
         
         if (routingActive && routingToNode === node.id) {
           // Finaliser le routage en cliquant précisément sur le nœud de destination
