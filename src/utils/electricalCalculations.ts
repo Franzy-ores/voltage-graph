@@ -1,160 +1,204 @@
-import { NetworkNode, Cable, CableType, NetworkConfig, CalculationScenario, CalculationResult } from '@/types/electrical';
+import { ConnectionType, Node, Cable, CableType, CalculationScenario, CalculationResult } from '@/types/network';
 
-export class ElectricalCalculations {
-  private config: NetworkConfig;
+export class ElectricalCalculator {
+  private cosPhi: number;
 
-  constructor(config: NetworkConfig) {
-    this.config = config;
+  constructor(cosPhi: number = 0.95) {
+    this.cosPhi = cosPhi;
   }
 
   /**
-   * Calculate current intensity for a given power
-   * I = (S × 1000) / (√3 × U_n)
+   * Calcul de l'intensité selon le type de connexion
    */
-  calculateCurrent(power: number): number {
-    const voltage = this.config.voltage;
-    return (power * 1000) / (Math.sqrt(3) * voltage);
-  }
-
-  /**
-   * Calculate voltage drop for a cable section
-   * ΔU = √3 × I × (R × cosφ + X × sinφ) × L
-   */
-  calculateVoltageDrop(current: number, cable: Cable, cableType: CableType): number {
-    const cosPhi = this.config.cosPhi;
-    const sinPhi = Math.sqrt(1 - cosPhi * cosPhi);
-    const length = cable.length / 1000; // Convert meters to kilometers
+  calculateCurrent(S_kVA: number, connectionType: ConnectionType): number {
+    const U = this.getVoltage(connectionType);
     
-    const impedance = (cableType.r12 * cosPhi + cableType.x12 * sinPhi) * length;
-    return Math.sqrt(3) * current * impedance;
-  }
-
-  /**
-   * Calculate voltage drop percentage
-   * ΔU% = (ΔU / U_n) × 100
-   */
-  calculateVoltageDropPercent(voltageDrop: number): number {
-    return (voltageDrop / this.config.voltage) * 100;
-  }
-
-  /**
-   * Calculate power losses
-   * Pertes kW = I² × R × L
-   */
-  calculateLosses(current: number, cableType: CableType, length: number): number {
-    const lengthKm = length / 1000;
-    return Math.pow(current, 2) * cableType.r12 * lengthKm / 1000; // Convert to kW
-  }
-
-  /**
-   * Calculate total power for a node based on scenario
-   */
-  calculateNodePower(node: NetworkNode, scenario: CalculationScenario): number {
-    const totalLoads = node.loads.reduce((sum, load) => sum + load.power, 0);
-    const totalProductions = node.productions.reduce((sum, prod) => sum + prod.power, 0);
-
-    switch (scenario) {
-      case 'consumption':
-        return totalLoads;
-      case 'production':
-        return totalProductions;
-      case 'mixed':
-        return totalLoads - totalProductions; // Can be negative for net injection
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'MONO_230V_PN':
+        return (S_kVA * 1000) / (U * this.cosPhi);
+      
+      case 'TRI_230V_3F':
+      case 'TÉTRA_3P+N_230_400V':
+        return (S_kVA * 1000) / (Math.sqrt(3) * U * this.cosPhi);
     }
   }
 
   /**
-   * Get compliance status based on EN 50160 (±10%)
+   * Calcul de la chute de tension selon le type de connexion
+   */
+  calculateVoltageDrop(
+    current_A: number, 
+    connectionType: ConnectionType, 
+    cableType: CableType, 
+    length_m: number
+  ): number {
+    const rho = cableType.R12_ohm_per_km / 1000; // Conversion en Ω/m
+    const L = length_m;
+    
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'MONO_230V_PN':
+        return (2 * rho * L * current_A * this.cosPhi); // Simplifiée pour ρ en Ω/m
+      
+      case 'TRI_230V_3F':
+      case 'TÉTRA_3P+N_230_400V':
+        return (Math.sqrt(3) * rho * L * current_A * this.cosPhi); // Simplifiée pour ρ en Ω/m
+    }
+  }
+
+  /**
+   * Calcul du pourcentage de chute de tension
+   */
+  calculateVoltageDropPercent(voltageDrop_V: number, connectionType: ConnectionType): number {
+    const U = this.getVoltage(connectionType);
+    return (voltageDrop_V / U) * 100;
+  }
+
+  /**
+   * Calcul des pertes en kW
+   */
+  calculateLosses(current_A: number, cableType: CableType, length_m: number): number {
+    const R_ohm_per_m = cableType.R12_ohm_per_km / 1000;
+    return Math.pow(current_A, 2) * R_ohm_per_m * length_m / 1000; // en kW
+  }
+
+  /**
+   * Obtenir la tension nominale selon le type de connexion
+   */
+  private getVoltage(connectionType: ConnectionType): number {
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'TRI_230V_3F':
+      case 'MONO_230V_PN':
+        return 230;
+      case 'TÉTRA_3P+N_230_400V':
+        return 400;
+    }
+  }
+
+  /**
+   * Calculer la puissance totale d'un nœud selon le scénario
+   */
+  calculateNodePower(node: Node, scenario: CalculationScenario): number {
+    const totalLoads = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+    const totalProductions = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+
+    switch (scenario) {
+      case 'PRÉLÈVEMENT':
+        return totalLoads;
+      case 'PRODUCTION':
+        return totalProductions;
+      case 'MIXTE':
+        return totalLoads - totalProductions; // Peut être négatif pour injection nette
+    }
+  }
+
+  /**
+   * Calculer la distance géodésique entre deux points
+   */
+  static calculateGeodeticDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000; // Rayon de la Terre en mètres
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
+  }
+
+  /**
+   * Calculer la longueur totale d'un câble à partir de ses coordonnées
+   */
+  static calculateCableLength(coordinates: { lat: number; lng: number; }[]): number {
+    if (coordinates.length < 2) return 0;
+    
+    let totalLength = 0;
+    for (let i = 1; i < coordinates.length; i++) {
+      totalLength += this.calculateGeodeticDistance(
+        coordinates[i-1].lat, coordinates[i-1].lng,
+        coordinates[i].lat, coordinates[i].lng
+      );
+    }
+    return totalLength;
+  }
+
+  /**
+   * Déterminer le statut de conformité selon EN 50160
    */
   getComplianceStatus(voltageDropPercent: number): 'normal' | 'warning' | 'critical' {
-    const absVoltageDropPercent = Math.abs(voltageDropPercent);
-    
-    if (absVoltageDropPercent <= 8) return 'normal';
-    if (absVoltageDropPercent <= 10) return 'warning';
+    const absPercent = Math.abs(voltageDropPercent);
+    if (absPercent < 8) return 'normal';
+    if (absPercent < 10) return 'warning';
     return 'critical';
   }
 
   /**
-   * Calculate cumulative power at each node for a given path
-   */
-  calculateCumulativePowers(
-    nodes: NetworkNode[], 
-    cables: Cable[], 
-    scenario: CalculationScenario
-  ): Map<string, number> {
-    const powers = new Map<string, number>();
-    
-    // Initialize with node powers
-    nodes.forEach(node => {
-      powers.set(node.id, this.calculateNodePower(node, scenario));
-    });
-
-    // TODO: Implement proper network traversal for cumulative calculations
-    // This is a simplified version - in reality, we need to traverse the network
-    // from the source to calculate cumulative powers correctly
-    
-    return powers;
-  }
-
-  /**
-   * Perform complete calculation for a scenario
+   * Calculer un scénario complet
    */
   calculateScenario(
-    nodes: NetworkNode[],
+    nodes: Node[],
     cables: Cable[],
-    cableTypes: Map<string, CableType>,
+    cableTypes: CableType[],
     scenario: CalculationScenario
   ): CalculationResult {
+    const cableTypeMap = new Map(cableTypes.map(type => [type.id, type]));
     const calculatedCables: Cable[] = [];
     let totalLoads = 0;
     let totalProductions = 0;
     let globalLosses = 0;
-    let maxVoltageDrop = 0;
+    let maxVoltageDropPercent = 0;
 
-    // Calculate totals
+    // Calculer les totaux
     nodes.forEach(node => {
-      totalLoads += node.loads.reduce((sum, load) => sum + load.power, 0);
-      totalProductions += node.productions.reduce((sum, prod) => sum + prod.power, 0);
+      totalLoads += node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      totalProductions += node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
     });
 
-    // Calculate for each cable
+    // Calculer pour chaque câble
     cables.forEach(cable => {
-      const cableType = cableTypes.get(cable.type.id);
+      const cableType = cableTypeMap.get(cable.typeId);
       if (!cableType) return;
 
-      // Simplified calculation - in reality we need proper network analysis
-      const fromNode = nodes.find(n => n.id === cable.fromNodeId);
-      const toNode = nodes.find(n => n.id === cable.toNodeId);
-      
-      if (!fromNode || !toNode) return;
+      const nodeB = nodes.find(n => n.id === cable.nodeBId);
+      if (!nodeB) return;
 
-      const nodePower = this.calculateNodePower(toNode, scenario);
-      const current = Math.abs(this.calculateCurrent(nodePower));
-      const voltageDrop = this.calculateVoltageDrop(current, cable, cableType);
-      const voltageDropPercent = this.calculateVoltageDropPercent(voltageDrop);
-      const losses = this.calculateLosses(current, cableType, cable.length);
+      // Calculer la longueur si pas déjà calculée
+      const length = cable.length_m || ElectricalCalculator.calculateCableLength(cable.coordinates);
+      
+      const nodePower = this.calculateNodePower(nodeB, scenario);
+      const current = Math.abs(this.calculateCurrent(nodePower, nodeB.connectionType));
+      const voltageDrop = this.calculateVoltageDrop(current, nodeB.connectionType, cableType, length);
+      const voltageDropPercent = this.calculateVoltageDropPercent(voltageDrop, nodeB.connectionType);
+      const losses = this.calculateLosses(current, cableType, length);
 
       calculatedCables.push({
         ...cable,
-        current,
-        voltageDrop,
+        length_m: length,
+        current_A: current,
+        voltageDrop_V: voltageDrop,
         voltageDropPercent,
-        losses
+        losses_kW: losses
       });
 
       globalLosses += losses;
-      maxVoltageDrop = Math.max(maxVoltageDrop, Math.abs(voltageDropPercent));
+      maxVoltageDropPercent = Math.max(maxVoltageDropPercent, Math.abs(voltageDropPercent));
     });
 
-    const compliance = this.getComplianceStatus(maxVoltageDrop);
+    const compliance = this.getComplianceStatus(maxVoltageDropPercent);
 
     return {
       scenario,
       cables: calculatedCables,
-      totalLoads,
-      totalProductions,
-      globalLosses,
-      maxVoltageDrop,
+      totalLoads_kVA: totalLoads,
+      totalProductions_kVA: totalProductions,
+      globalLosses_kW: globalLosses,
+      maxVoltageDropPercent,
       compliance
     };
   }
