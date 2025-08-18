@@ -438,7 +438,7 @@ export const MapView = () => {
 
   return (
     <div className="flex-1 relative">
-      <div ref={mapRef} className={`w-full h-full transition-all duration-300 ${editPanelOpen ? 'mr-96' : ''}`} />
+      <div ref={mapRef} className="w-full h-full" />
       
       <VoltageDisplay />
       <CableTypeSelector />

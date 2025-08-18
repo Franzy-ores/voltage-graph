@@ -72,7 +72,6 @@ const Index = () => {
       <div className="flex-1 flex relative">
         <Toolbar />
         <MapView />
-        <VoltageDisplay />
         <ResultsPanel 
           results={calculationResults}
           selectedScenario={selectedScenario}
