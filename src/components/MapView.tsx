@@ -164,13 +164,28 @@ export const MapView = () => {
         .bindPopup(node.name);
 
       marker.on('click', () => {
-        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
+        console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive, routingFromNode });
         
         if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
           // Démarrer le routage du câble
           console.log('Starting cable routing from', selectedNodeId, 'to', node.id);
           setRoutingFromNode(selectedNodeId);
+          // Mettre le nouveau nœud comme destination
+          const secondNodeId = node.id;
+          setSelectedNode(null); // Réinitialiser pour éviter les conflits
           setRoutingActive(true);
+          
+          // Passer directement les IDs corrects au routage
+          setTimeout(() => {
+            const routeCoords = [
+              { lat: currentProject!.nodes.find(n => n.id === selectedNodeId)!.lat, lng: currentProject!.nodes.find(n => n.id === selectedNodeId)!.lng },
+              { lat: node.lat, lng: node.lng }
+            ];
+            addCable(selectedNodeId, secondNodeId, selectedCableType, routeCoords);
+            setRoutingActive(false);
+            setRoutingFromNode(null);
+          }, 100);
+          
         } else if (selectedTool === 'addCable') {
           console.log('Selecting first node for cable:', node.id);
           setSelectedNode(node.id);
