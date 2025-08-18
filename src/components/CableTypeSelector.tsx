@@ -27,6 +27,7 @@ export const CableTypeSelector = () => {
         <Select value={selectedCableType} onValueChange={(value) => {
           console.log('Cable type changing from', selectedCableType, 'to', value);
           setSelectedCableType(value);
+          console.log('Cable type changed successfully to:', value);
         }}>
           <SelectTrigger className="w-full bg-white border-2">
             <SelectValue placeholder="Sélectionner un type de câble" />

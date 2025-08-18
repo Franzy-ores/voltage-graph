@@ -18,23 +18,31 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
   const tempLineRef = useRef<L.Polyline | null>(null);
 
   useEffect(() => {
+    console.log('CableRouter useEffect:', { isActive, hasMap: !!map, hasProject: !!currentProject, fromNodeId, toNodeId });
+    
     if (!isActive || !map || !currentProject) return;
 
     // Obtenir les nœuds source et destination
     const fromNode = currentProject.nodes.find(n => n.id === fromNodeId);
     const toNode = currentProject.nodes.find(n => n.id === toNodeId);
+    console.log('CableRouter nodes:', { fromNode: fromNode?.name, toNode: toNode?.name });
+    
     if (!fromNode || !toNode) return;
 
     // Obtenir le type de câble sélectionné
     const cableType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
+    console.log('CableRouter cable type:', { selectedCableType, cableType });
+    
     if (!cableType) return;
 
     // Déterminer le type de pose
     const isAerial = cableType.posesPermises.includes('AÉRIEN');
     const isUnderground = cableType.posesPermises.includes('SOUTERRAIN');
+    console.log('CableRouter pose types:', { isAerial, isUnderground });
 
     // Si câble aérien uniquement, créer ligne droite immédiatement
     if (isAerial && !isUnderground) {
+      console.log('Creating direct aerial cable connection');
       const directRoute = [
         { lat: fromNode.lat, lng: fromNode.lng },
         { lat: toNode.lat, lng: toNode.lng }
@@ -44,6 +52,7 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
     }
 
     // Pour câbles souterrains ou mixtes, permettre le routage manuel
+    console.log('Starting underground cable routing');
     routingPointsRef.current = [{ lat: fromNode.lat, lng: fromNode.lng }];
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
