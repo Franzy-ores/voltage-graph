@@ -18,7 +18,7 @@ export const VoltageDisplay = () => {
   if (!currentProject) return null;
 
   return (
-    <Card className="fixed bottom-4 left-4 w-80 bg-background/95 backdrop-blur-sm z-[9999]">
+    <Card className="fixed bottom-4 left-80 w-80 bg-background/95 backdrop-blur-sm z-[9999]">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm">
           Scénario de calcul
@@ -32,7 +32,7 @@ export const VoltageDisplay = () => {
       <CardContent className="space-y-4">
         <div className="space-y-2">
           <Label className="text-sm">Scénario actuel</Label>
-          <Select value={selectedScenario} onValueChange={setSelectedScenario}>
+          <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
