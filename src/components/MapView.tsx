@@ -72,25 +72,8 @@ export const MapView = () => {
       if (selectedTool === 'addNode' && !routingActive) {
         addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN');
       } else if (routingActive) {
-        // Vérifier si on clique près du nœud de destination pour finaliser
-        if (routingToNode) {
-          const toNode = currentProject?.nodes.find(n => n.id === routingToNode);
-          if (toNode) {
-            const distance = map.distance([e.latlng.lat, e.latlng.lng], [toNode.lat, toNode.lng]);
-            if (distance < 50) {
-              // Finaliser le routage
-              console.log('Finalizing underground cable routing');
-              const finalCoords = [...routingPoints, { lat: toNode.lat, lng: toNode.lng }];
-              if (routingFromNode) {
-                addCable(routingFromNode, routingToNode, selectedCableType, finalCoords);
-              }
-              clearRouting();
-              return;
-            }
-          }
-        }
-        
-        // Ajouter un point intermédiaire
+        // En mode routage, ajouter des points intermédiaires uniquement
+        // La finalisation se fait en cliquant directement sur le nœud de destination
         const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
         setRoutingPoints(prev => [...prev, newPoint]);
         console.log('Added routing point:', newPoint);
@@ -194,32 +177,75 @@ export const MapView = () => {
 
     // Add new markers
     currentProject.nodes.forEach(node => {
+      // Calculer les totaux
+      const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+      
+      // Déterminer le type et l'icône
       let iconContent = 'N';
       let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
       
       if (node.isSource) {
         iconContent = 'S';
         iconClass = 'bg-primary border-primary text-primary-foreground';
+      } else {
+        const hasProduction = totalPV > 0;
+        const hasLoad = totalCharge > 0;
+        
+        if (hasProduction && hasLoad) {
+          iconContent = 'M'; // Mixte
+          iconClass = 'bg-yellow-500 border-yellow-600 text-white';
+        } else if (hasProduction) {
+          iconContent = 'P'; // Production seule
+          iconClass = 'bg-green-500 border-green-600 text-white';
+        } else if (hasLoad) {
+          iconContent = 'C'; // Charge seule
+          iconClass = 'bg-blue-500 border-blue-600 text-white';
+        }
+      }
+
+      // Calculer la tension
+      let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+      if (calculationResults[selectedScenario] && !node.isSource) {
+        const results = calculationResults[selectedScenario];
+        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
+        if (incomingCable) {
+          nodeVoltage = nodeVoltage - (incomingCable.voltageDrop_V || 0);
+        }
+      }
+
+      // Créer le contenu de l'icône avec les informations
+      let infoText = '';
+      if (showVoltages || !node.isSource) {
+        infoText = `<div class="text-[9px] leading-tight text-center mt-1">
+          <div class="font-bold">${Math.round(nodeVoltage)}V</div>
+          ${!node.isSource ? `<div>C:${totalCharge}kVA</div>` : ''}
+          ${!node.isSource ? `<div>PV:${totalPV}kVA</div>` : ''}
+        </div>`;
       }
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-12 h-12 rounded-full border-2 flex items-center justify-center text-xs font-bold ${iconClass}">
-          ${iconContent}
+        html: `<div class="w-16 h-auto rounded-lg border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
+          <div class="text-sm">${iconContent}</div>
+          ${infoText}
         </div>`,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
+        iconSize: [64, 60],
+        iconAnchor: [32, 30]
       });
 
       const marker = L.marker([node.lat, node.lng], { icon })
         .addTo(map)
         .bindPopup(node.name);
 
-      marker.on('click', () => {
+      marker.on('click', (e) => {
+        // Empêcher la propagation vers la carte
+        L.DomEvent.stopPropagation(e);
+        
         console.log('Node clicked:', { nodeId: node.id, selectedTool, selectedNodeId, routingActive });
         
         if (routingActive && routingToNode === node.id) {
-          // Finaliser le routage en cliquant sur le nœud de destination
+          // Finaliser le routage en cliquant précisément sur le nœud de destination
           console.log('Finalizing route at destination node');
           const finalCoords = [...routingPoints, { lat: node.lat, lng: node.lng }];
           if (routingFromNode) {
@@ -299,7 +325,7 @@ export const MapView = () => {
 
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode]);
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, routingActive, routingToNode, calculationResults, selectedScenario, showVoltages]);
 
   // Update cables
   useEffect(() => {
@@ -357,7 +383,7 @@ export const MapView = () => {
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
-        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur le nœud rouge pour finaliser'}
+        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez PRÉCISÉMENT sur le nœud rouge pour finaliser'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
         {selectedTool === 'select' && 'Mode sélection'}
