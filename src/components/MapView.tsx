@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { useNetworkStore } from '@/store/networkStore';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
+import { AddressSearch } from './AddressSearch';
 import { Button } from './ui/button';
 import { Globe, Map as MapIcon } from 'lucide-react';
 
@@ -116,6 +117,34 @@ export const MapView = () => {
     }
 
     setMapType(newType);
+  };
+
+  // Gérer la sélection d'adresse
+  const handleLocationSelect = (lat: number, lng: number, address: string) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Centrer la carte sur l'adresse trouvée
+    map.setView([lat, lng], 16);
+    
+    // Optionnel : ajouter un marqueur temporaire
+    const marker = L.marker([lat, lng], {
+      icon: L.divIcon({
+        className: 'search-result-marker',
+        html: '<div class="w-6 h-6 bg-red-500 border-2 border-white rounded-full shadow-lg"></div>',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+      })
+    }).addTo(map);
+
+    // Supprimer le marqueur après 3 secondes
+    setTimeout(() => {
+      try {
+        map.removeLayer(marker);
+      } catch (e) {
+        console.warn('Marker already removed');
+      }
+    }, 3000);
   };
 
   // Handle map clicks for adding nodes and routing
@@ -501,6 +530,11 @@ export const MapView = () => {
           backgroundColor: '#f0f0f0'
         }}
       />
+      
+      {/* Barre de recherche d'adresse */}
+      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000]">
+        <AddressSearch onLocationSelect={handleLocationSelect} />
+      </div>
       
       {/* Sélecteur de type de carte */}
       <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
