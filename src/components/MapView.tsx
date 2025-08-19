@@ -460,9 +460,19 @@ export const MapView = () => {
     });
   }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario]);
 
+  console.log('🗺️ MapView render method executing');
+  
   return (
     <div className="flex-1 relative">
-      <div ref={mapRef} className="w-full h-full" />
+      <div 
+        ref={mapRef} 
+        className="w-full h-full"
+        style={{
+          position: 'relative',
+          zIndex: 0,
+          backgroundColor: '#f0f0f0'
+        }}
+      />
       
       <VoltageDisplay />
       <CableTypeSelector />
