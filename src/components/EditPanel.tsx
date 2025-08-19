@@ -27,8 +27,8 @@ export const EditPanel = () => {
 
   const [formData, setFormData] = useState<any>({});
 
-  const selectedNode = currentProject?.nodes.find(n => n.id === selectedNodeId);
-  const selectedCable = currentProject?.cables.find(c => c.id === selectedCableId);
+  const selectedNode = currentProject?.nodes?.find(n => n.id === selectedNodeId);
+  const selectedCable = currentProject?.cables?.find(c => c.id === selectedCableId);
 
   // Initialize form data when panel opens
   useEffect(() => {
@@ -37,8 +37,8 @@ export const EditPanel = () => {
         setFormData({
           name: selectedNode.name,
           connectionType: selectedNode.connectionType,
-          clients: [...selectedNode.clients],
-          productions: [...selectedNode.productions]
+          clients: [...(selectedNode.clients || [])],
+          productions: [...(selectedNode.productions || [])]
         });
       } else if (editTarget === 'cable' && selectedCable) {
         setFormData({
@@ -300,11 +300,11 @@ export const EditPanel = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {currentProject?.cableTypes.map(type => (
+                    {currentProject?.cableTypes?.map(type => (
                       <SelectItem key={type.id} value={type.id}>
                         {type.label}
                       </SelectItem>
-                    ))}
+                    )) || []}
                   </SelectContent>
                 </Select>
               </div>
@@ -320,8 +320,8 @@ export const EditPanel = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {currentProject?.cableTypes
-                      .find(t => t.id === formData.typeId)
-                      ?.posesPermises.map(pose => (
+                      ?.find(t => t.id === formData.typeId)
+                      ?.posesPermises?.map(pose => (
                         <SelectItem key={pose} value={pose}>
                           {pose}
                         </SelectItem>
