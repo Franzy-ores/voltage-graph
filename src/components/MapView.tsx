@@ -16,6 +16,7 @@ L.Icon.Default.mergeOptions({
 console.log('🗺️ Leaflet icons configured with origin:', window.location.origin);
 
 export const MapView = () => {
+  console.log('🗺️ MapView component rendering');
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());

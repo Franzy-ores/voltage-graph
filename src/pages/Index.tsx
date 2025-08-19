@@ -11,6 +11,7 @@ const Index = () => {
     currentProject, 
     selectedScenario, 
     calculationResults,
+    selectedTool,
     createNewProject,
     openEditPanel,
     calculateAll
@@ -60,6 +61,10 @@ const Index = () => {
     openEditPanel('project');
   };
 
+  console.log('🏠 Index page rendering');
+  console.log('🏠 Current project exists:', !!currentProject);
+  console.log('🏠 Selected tool:', selectedTool);
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopMenu 
@@ -72,7 +77,7 @@ const Index = () => {
       <div className="flex-1 flex relative">
         <Toolbar />
         <MapView />
-        <ResultsPanel 
+        <ResultsPanel
           results={calculationResults}
           selectedScenario={selectedScenario}
         />
