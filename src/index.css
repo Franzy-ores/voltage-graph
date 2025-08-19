@@ -137,3 +137,34 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* Leaflet CSS critical styles for production */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #f0f0f0;
+  position: relative;
+  z-index: 0;
+}
+
+.leaflet-map-pane,
+.leaflet-tile,
+.leaflet-layer {
+  width: 100%;
+  height: 100%;
+}
+
+.leaflet-tile-container {
+  width: 256px;
+  height: 256px;
+}
+
+.leaflet-zoom-box {
+  width: 100%;
+  height: 100%;
+}
+
+.leaflet-control-container {
+  position: relative;
+  z-index: 1000;
+}
