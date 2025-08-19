@@ -5,17 +5,21 @@ import { useNetworkStore } from '@/store/networkStore';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 
-// Fix moderne pour les icônes Leaflet avec Vite
-import markerIcon from 'leaflet/dist/images/marker-icon.png';
-import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
-import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+// Configuration robuste des icônes Leaflet pour production et preview
 
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-});
+// Configuration sécurisée des icônes qui fonctionne en production
+const configureLeafletIcons = () => {
+  // Utilisation des icônes depuis le dossier public (garanti en production)
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconUrl: '/leaflet/marker-icon.png',
+    iconRetinaUrl: '/leaflet/marker-icon-2x.png', 
+    shadowUrl: '/leaflet/marker-shadow.png',
+  });
+};
+
+// Initialiser une seule fois
+let iconsConfigured = false;
 
 export const MapView = () => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -50,6 +54,12 @@ export const MapView = () => {
   // Initialize map - version optimisée
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
+
+    // Configurer les icônes Leaflet si pas encore fait
+    if (!iconsConfigured) {
+      configureLeafletIcons();
+      iconsConfigured = true;
+    }
 
     const map = L.map(mapRef.current, {
       center: [50.4674, 4.8720],
