@@ -61,10 +61,6 @@ const Index = () => {
     openEditPanel('project');
   };
 
-  console.log('🏠 Index page rendering');
-  console.log('🏠 Current project exists:', !!currentProject);
-  console.log('🏠 Selected tool:', selectedTool);
-
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopMenu 

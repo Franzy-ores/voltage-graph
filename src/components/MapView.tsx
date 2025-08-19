@@ -5,16 +5,19 @@ import { useNetworkStore } from '@/store/networkStore';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 
-// Fix for default markers - solution éprouvée
+// Fix moderne pour les icônes Leaflet avec Vite
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
-  iconUrl: require('leaflet/dist/images/marker-icon.png'),
-  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
 });
 
 export const MapView = () => {
-  console.log('🗺️ MapView component rendering');
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -44,41 +47,27 @@ export const MapView = () => {
     editPanelOpen
   } = useNetworkStore();
 
-  // Initialize map
+  // Initialize map - version optimisée
   useEffect(() => {
-    console.log('🗺️ MapView: Starting map initialization');
-    console.log('🗺️ MapView ref current:', !!mapRef.current);
-    console.log('🗺️ Map instance exists:', !!mapInstanceRef.current);
-    
-    if (!mapRef.current || mapInstanceRef.current) {
-      console.log('🗺️ Skipping map initialization - ref or instance issue');
-      return;
-    }
+    if (!mapRef.current || mapInstanceRef.current) return;
 
-    try {
-      console.log('🗺️ Creating Leaflet map');
-      const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
+    const map = L.map(mapRef.current, {
+      center: [50.4674, 4.8720],
+      zoom: 13,
+      zoomControl: true,
+      attributionControl: true,
+      preferCanvas: false,
+    });
 
-      console.log('🗺️ Adding tile layer');
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 18
-      }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18,
+      minZoom: 3,
+    }).addTo(map);
 
-      mapInstanceRef.current = map;
-      console.log('🗺️ Map initialized successfully');
-
-      // Log map ready event
-      map.whenReady(() => {
-        console.log('🗺️ Map is ready');
-      });
-
-    } catch (error) {
-      console.error('❌ Error initializing map:', error);
-    }
+    mapInstanceRef.current = map;
 
     return () => {
-      console.log('🗺️ Cleaning up map');
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -458,8 +447,6 @@ export const MapView = () => {
     });
   }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario]);
 
-  console.log('🗺️ MapView render method executing');
-  
   return (
     <div className="flex-1 relative">
       <div 
