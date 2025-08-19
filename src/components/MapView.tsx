@@ -294,6 +294,21 @@ export const MapView = () => {
       const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
       const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
       
+      // Calculer la tension avec chute cumulée
+      let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+      let isOutOfCompliance = false;
+      
+      if (calculationResults[selectedScenario] && !node.isSource) {
+        const results = calculationResults[selectedScenario];
+        const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
+        if (nodeData) {
+          // Utiliser la chute de tension cumulée
+          nodeVoltage = nodeVoltage - Math.abs(nodeData.deltaU_cum_V);
+          // Vérifier la conformité EN50160 (seuil à 10%)
+          isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
+        }
+      }
+      
       // Déterminer le type et l'icône
       let iconContent = 'N';
       let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
@@ -309,23 +324,13 @@ export const MapView = () => {
         
         if (hasProduction && hasLoad) {
           iconContent = 'M'; // Mixte
-          iconClass = 'bg-yellow-500 border-yellow-600 text-white';
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-yellow-500 border-yellow-600 text-white';
         } else if (hasProduction) {
           iconContent = 'P'; // Production seule
-          iconClass = 'bg-green-500 border-green-600 text-white';
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-green-500 border-green-600 text-white';
         } else if (hasLoad) {
           iconContent = 'C'; // Charge seule
-          iconClass = 'bg-blue-500 border-blue-600 text-white';
-        }
-      }
-
-      // Calculer la tension
-      let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
-      if (calculationResults[selectedScenario] && !node.isSource) {
-        const results = calculationResults[selectedScenario];
-        const incomingCable = results?.cables.find(c => c.nodeBId === node.id);
-        if (incomingCable) {
-          nodeVoltage = nodeVoltage - (incomingCable.voltageDrop_V || 0);
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
         }
       }
 
@@ -479,19 +484,25 @@ export const MapView = () => {
       console.log('Rendering cable:', cable.name, 'with', cable.coordinates.length, 'points');
       console.log('Cable coordinates:', cable.coordinates);
       
-      // Récupérer les résultats de calcul pour la colorisation
+      // Récupérer les résultats de calcul pour la colorisation basée sur la conformité globale
       let cableColor = '#6b7280'; // gris par défaut
       const results = calculationResults[selectedScenario];
       if (results) {
         const calculatedCable = results.cables.find(c => c.id === cable.id);
         if (calculatedCable) {
-          const dropPercent = Math.abs(calculatedCable.voltageDropPercent || 0);
-          if (dropPercent <= 8) {
-            cableColor = '#22c55e'; // vert - normal
-          } else if (dropPercent <= 10) {
-            cableColor = '#f59e0b'; // orange - warning  
-          } else {
-            cableColor = '#ef4444'; // rouge - critical
+          // Vérifier la conformité du nœud distal (bout du câble)
+          const distalNodeId = calculatedCable.nodeBId;
+          const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
+          
+          if (nodeData) {
+            const absDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+            if (absDropPercent <= 8) {
+              cableColor = '#22c55e'; // vert - normal
+            } else if (absDropPercent <= 10) {
+              cableColor = '#f59e0b'; // orange - warning  
+            } else {
+              cableColor = '#ef4444'; // rouge - critical (hors norme EN50160)
+            }
           }
         }
       }
