@@ -6,12 +6,14 @@ import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 
 // Fix for default markers
+console.log('🗺️ Configuring Leaflet default icons');
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: '/leaflet/marker-icon-2x.png',
-  iconUrl: '/leaflet/marker-icon.png',
-  shadowUrl: '/leaflet/marker-shadow.png',
+  iconRetinaUrl: `${window.location.origin}/leaflet/marker-icon-2x.png`,
+  iconUrl: `${window.location.origin}/leaflet/marker-icon.png`,
+  shadowUrl: `${window.location.origin}/leaflet/marker-shadow.png`,
 });
+console.log('🗺️ Leaflet icons configured with origin:', window.location.origin);
 
 export const MapView = () => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -45,18 +47,39 @@ export const MapView = () => {
 
   // Initialize map
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    console.log('🗺️ MapView: Starting map initialization');
+    console.log('🗺️ MapView ref current:', !!mapRef.current);
+    console.log('🗺️ Map instance exists:', !!mapInstanceRef.current);
+    
+    if (!mapRef.current || mapInstanceRef.current) {
+      console.log('🗺️ Skipping map initialization - ref or instance issue');
+      return;
+    }
 
-    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
+    try {
+      console.log('🗺️ Creating Leaflet map');
+      const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 18
-    }).addTo(map);
+      console.log('🗺️ Adding tile layer');
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 18
+      }).addTo(map);
 
-    mapInstanceRef.current = map;
+      mapInstanceRef.current = map;
+      console.log('🗺️ Map initialized successfully');
+
+      // Log map ready event
+      map.whenReady(() => {
+        console.log('🗺️ Map is ready');
+      });
+
+    } catch (error) {
+      console.error('❌ Error initializing map:', error);
+    }
 
     return () => {
+      console.log('🗺️ Cleaning up map');
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
