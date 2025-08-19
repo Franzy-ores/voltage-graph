@@ -3,30 +3,23 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useNetworkStore } from '@/store/networkStore';
-
 export const VoltageDisplay = () => {
-  const { 
-    showVoltages, 
-    setShowVoltages, 
-    selectedScenario, 
+  const {
+    showVoltages,
+    setShowVoltages,
+    selectedScenario,
     setSelectedScenario,
-    currentProject 
+    currentProject
   } = useNetworkStore();
-
   console.log('VoltageDisplay render - currentProject:', !!currentProject);
-
   if (!currentProject) return null;
-
-  return (
-    <Card className="fixed bottom-4 left-80 w-80 bg-background/95 backdrop-blur-sm z-[9999]">
+  return <Card className="fixed bottom-4 left-80 w-80 bg-background/95 backdrop-blur-sm z-[9999]">
       <CardHeader className="pb-3">
-        <CardTitle className="text-sm">
+        <CardTitle className="text-xl">
           Scénario de calcul
-          {currentProject && (
-            <div className="text-xs font-normal text-muted-foreground mt-1">
+          {currentProject && <div className="text-xs font-normal text-muted-foreground mt-1">
               Système: {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
-            </div>
-          )}
+            </div>}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -45,16 +38,11 @@ export const VoltageDisplay = () => {
         </div>
         
         <div className="flex items-center space-x-2">
-          <Switch
-            id="voltage-display"
-            checked={showVoltages}
-            onCheckedChange={setShowVoltages}
-          />
+          <Switch id="voltage-display" checked={showVoltages} onCheckedChange={setShowVoltages} />
           <Label htmlFor="voltage-display" className="text-sm">
             Afficher tensions sur les nœuds
           </Label>
         </div>
       </CardContent>
-    </Card>
-  );
+    </Card>;
 };
