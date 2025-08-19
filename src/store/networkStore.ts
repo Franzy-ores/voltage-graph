@@ -54,7 +54,7 @@ const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Proje
 
 export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
   // State
-  currentProject: null,
+  currentProject: createDefaultProject("Projet par défaut", "TÉTRAPHASÉ_400V"),
   selectedScenario: 'MIXTE',
   calculationResults: {
     PRÉLÈVEMENT: null,
