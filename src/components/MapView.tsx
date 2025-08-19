@@ -47,16 +47,37 @@ export const MapView = () => {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
+    // Wait for next tick to ensure DOM is ready
+    const timer = setTimeout(() => {
+      if (!mapRef.current) return;
+      
+      try {
+        const map = L.map(mapRef.current, {
+          preferCanvas: true,
+          attributionControl: true
+        }).setView([50.4674, 4.8720], 13);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 18
-    }).addTo(map);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 18,
+          crossOrigin: true
+        }).addTo(map);
 
-    mapInstanceRef.current = map;
+        mapInstanceRef.current = map;
+        
+        // Force map to resize after container is ready
+        map.whenReady(() => {
+          setTimeout(() => {
+            map.invalidateSize();
+          }, 100);
+        });
+      } catch (error) {
+        console.error('Error initializing map:', error);
+      }
+    }, 100);
 
     return () => {
+      clearTimeout(timer);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
