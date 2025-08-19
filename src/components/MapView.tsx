@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useNetworkStore } from '@/store/networkStore';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
@@ -46,37 +47,16 @@ export const MapView = () => {
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Wait for next tick to ensure DOM is ready
-    const timer = setTimeout(() => {
-      if (!mapRef.current) return;
-      
-      try {
-        const map = L.map(mapRef.current, {
-          preferCanvas: true,
-          attributionControl: true
-        }).setView([50.4674, 4.8720], 13);
+    const map = L.map(mapRef.current).setView([50.4674, 4.8720], 13);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap contributors',
-          maxZoom: 18,
-          crossOrigin: true
-        }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 18
+    }).addTo(map);
 
-        mapInstanceRef.current = map;
-        
-        // Force map to resize after container is ready
-        map.whenReady(() => {
-          setTimeout(() => {
-            map.invalidateSize();
-          }, 100);
-        });
-      } catch (error) {
-        console.error('Error initializing map:', error);
-      }
-    }, 100);
+    mapInstanceRef.current = map;
 
     return () => {
-      clearTimeout(timer);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
