@@ -574,7 +574,7 @@ export const MapView = () => {
       </div>
       
       {/* Sélecteur de type de carte */}
-      <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-[1000] flex flex-row gap-2">
         <Button
           variant={mapType === 'osm' ? 'default' : 'outline'}
           size="sm"
