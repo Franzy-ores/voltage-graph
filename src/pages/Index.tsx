@@ -13,6 +13,7 @@ const Index = () => {
     calculationResults,
     selectedTool,
     createNewProject,
+    loadProject,
     openEditPanel,
     calculateAll
   } = useNetworkStore();
@@ -45,10 +46,11 @@ const Index = () => {
         reader.onload = (e) => {
           try {
             const project = JSON.parse(e.target?.result as string);
-            // TODO: Load project into store
-            console.log('Loading project:', project);
+            loadProject(project);
+            console.log('Project loaded successfully:', project.name);
           } catch (error) {
             console.error('Error loading project:', error);
+            alert('Erreur lors du chargement du projet. Vérifiez le format du fichier JSON.');
           }
         };
         reader.readAsText(file);
