@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useNetworkStore } from '@/store/networkStore';
 import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 
-// Fix for default markers
-console.log('🗺️ Configuring Leaflet default icons');
+// Fix for default markers - solution éprouvée
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: '/leaflet/marker-icon-2x.png',
-  iconUrl: '/leaflet/marker-icon.png',
-  shadowUrl: '/leaflet/marker-shadow.png',
+  iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png'),
+  iconUrl: require('leaflet/dist/images/marker-icon.png'),
+  shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
-console.log('🗺️ Leaflet icons configured for production');
 
 export const MapView = () => {
   console.log('🗺️ MapView component rendering');
