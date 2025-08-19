@@ -9,11 +9,11 @@ import { CableTypeSelector } from './CableTypeSelector';
 console.log('🗺️ Configuring Leaflet default icons');
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: `${window.location.origin}/leaflet/marker-icon-2x.png`,
-  iconUrl: `${window.location.origin}/leaflet/marker-icon.png`,
-  shadowUrl: `${window.location.origin}/leaflet/marker-shadow.png`,
+  iconRetinaUrl: '/leaflet/marker-icon-2x.png',
+  iconUrl: '/leaflet/marker-icon.png',
+  shadowUrl: '/leaflet/marker-shadow.png',
 });
-console.log('🗺️ Leaflet icons configured with origin:', window.location.origin);
+console.log('🗺️ Leaflet icons configured for production');
 
 export const MapView = () => {
   console.log('🗺️ MapView component rendering');
