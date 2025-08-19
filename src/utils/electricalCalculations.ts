@@ -260,8 +260,8 @@ export class ElectricalCalculator {
     const result: CalculationResult = {
       scenario,
       cables: calculatedCables,
-      totalLoads_kVA: Number(totalLoads.toFixed(6)),
-      totalProductions_kVA: Number(totalProductions.toFixed(6)),
+      totalLoads_kVA: totalLoads,
+      totalProductions_kVA: totalProductions,
       globalLosses_kW: Number(globalLosses.toFixed(6)),
       maxVoltageDropPercent: Number(maxVoltageDropPercent.toFixed(6)),
       compliance
