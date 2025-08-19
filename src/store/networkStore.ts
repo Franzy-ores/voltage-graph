@@ -92,6 +92,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       selectedCableId: null,
       editPanelOpen: false
     });
+    
+    // Déclencher le zoom sur le projet chargé après un court délai
+    setTimeout(() => {
+      const event = new CustomEvent('zoomToProject');
+      window.dispatchEvent(event);
+    }, 100);
   },
 
   updateProjectConfig: (updates) => {

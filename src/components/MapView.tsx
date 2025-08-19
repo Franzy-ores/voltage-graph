@@ -56,6 +56,20 @@ export const MapView = () => {
     editPanelOpen
   } = useNetworkStore();
 
+  // Fonction pour zoomer sur le projet chargé
+  const zoomToProject = () => {
+    const map = mapInstanceRef.current;
+    if (!map || !currentProject || currentProject.nodes.length === 0) return;
+
+    const bounds = L.latLngBounds(
+      currentProject.nodes.map(node => [node.lat, node.lng])
+    );
+    
+    // Ajouter une marge autour des limites
+    const paddedBounds = bounds.pad(0.1);
+    map.fitBounds(paddedBounds);
+  };
+
   // Initialize map - version optimisée
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
@@ -67,8 +81,8 @@ export const MapView = () => {
     }
 
     const map = L.map(mapRef.current, {
-      center: [50.4674, 4.8720],
-      zoom: 13,
+      center: [49.85, 5.40], // Province de Luxembourg, Belgique
+      zoom: 10,
       zoomControl: true,
       attributionControl: true,
       preferCanvas: false,
@@ -84,7 +98,15 @@ export const MapView = () => {
     tileLayerRef.current = initialTileLayer;
     mapInstanceRef.current = map;
 
+    // Écouter l'événement de zoom sur projet
+    const handleZoomToProject = () => {
+      zoomToProject();
+    };
+
+    window.addEventListener('zoomToProject', handleZoomToProject);
+
     return () => {
+      window.removeEventListener('zoomToProject', handleZoomToProject);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
