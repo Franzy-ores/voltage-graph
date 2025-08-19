@@ -40,6 +40,7 @@ interface NetworkActions {
   
   // Display settings
   setShowVoltages: (show: boolean) => void;
+  changeVoltageSystem: () => void;
 }
 
 const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Project => ({
@@ -283,5 +284,55 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     return validCombinations[voltageSystem].includes(connectionType);
   },
 
-  setShowVoltages: (show) => set({ showVoltages: show })
+  setShowVoltages: (show) => set({ showVoltages: show }),
+
+  changeVoltageSystem: () => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+
+    const newVoltageSystem: VoltageSystem = 
+      currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 'TÉTRAPHASÉ_400V' : 'TRIPHASÉ_230V';
+    
+    // Déterminer le nouveau type de connexion par défaut selon le système
+    const newConnectionType: ConnectionType = 
+      newVoltageSystem === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
+
+    // Mettre à jour le projet avec le nouveau système et tous les nœuds
+    const updatedProject = {
+      ...currentProject,
+      voltageSystem: newVoltageSystem,
+      nodes: currentProject.nodes.map(node => ({
+        ...node,
+        connectionType: node.isSource ? newConnectionType : newConnectionType
+      }))
+    };
+
+    set({ currentProject: updatedProject });
+
+    // Déclencher un recalcul automatique
+    const calculator = new ElectricalCalculator(updatedProject.cosPhi);
+    
+    const results = {
+      PRÉLÈVEMENT: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'PRÉLÈVEMENT'
+      ),
+      MIXTE: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'MIXTE'
+      ),
+      PRODUCTION: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'PRODUCTION'
+      )
+    };
+
+    set({ calculationResults: results });
+  }
 }));

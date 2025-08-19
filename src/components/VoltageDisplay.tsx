@@ -2,6 +2,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useNetworkStore } from '@/store/networkStore';
 export const VoltageDisplay = () => {
   const {
@@ -9,7 +10,8 @@ export const VoltageDisplay = () => {
     setShowVoltages,
     selectedScenario,
     setSelectedScenario,
-    currentProject
+    currentProject,
+    changeVoltageSystem
   } = useNetworkStore();
   console.log('VoltageDisplay render - currentProject:', !!currentProject);
   if (!currentProject) return null;
@@ -42,6 +44,16 @@ export const VoltageDisplay = () => {
           <Label htmlFor="voltage-display" className="text-sm">
             Afficher tensions sur les nœuds
           </Label>
+        </div>
+
+        <div className="pt-2 border-t">
+          <Button 
+            onClick={changeVoltageSystem}
+            variant="outline"
+            className="w-full"
+          >
+            Changer système: {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
+          </Button>
         </div>
       </CardContent>
     </Card>;
