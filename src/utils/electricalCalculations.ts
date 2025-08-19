@@ -1,3 +1,8 @@
+/**
+ * DO NOT MODIFY — Méthode de calcul GELÉE.
+ * Toute modification nécessite votre accord explicite.
+ * Date de gel: 2025-08-19
+ */
 import { ConnectionType, Node, Cable, CableType, CalculationScenario, CalculationResult } from '@/types/network';
 
 /**
