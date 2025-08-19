@@ -83,8 +83,6 @@ export const Toolbar = () => {
         );
       })}
       
-      <div className="flex-1" />
-      
       <Button
         onClick={handleCalculate}
         variant="outline"
