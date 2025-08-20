@@ -6,16 +6,48 @@ import { EditPanel } from "@/components/EditPanel";
 import { useNetworkStore } from "@/store/networkStore";
 
 const Index = () => {
-  const { currentProject } = useNetworkStore();
+  const { 
+    currentProject, 
+    selectedScenario, 
+    calculationResults,
+    createNewProject,
+    openEditPanel 
+  } = useNetworkStore();
+
+  const handleNewNetwork = () => {
+    createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");
+  };
+
+  const handleSave = () => {
+    // TODO: Implement save functionality
+    console.log("Save clicked");
+  };
+
+  const handleLoad = () => {
+    // TODO: Implement load functionality  
+    console.log("Load clicked");
+  };
+
+  const handleSettings = () => {
+    openEditPanel('project');
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <TopMenu />
+      <TopMenu 
+        onNewNetwork={handleNewNetwork}
+        onSave={handleSave}
+        onLoad={handleLoad}
+        onSettings={handleSettings}
+      />
       
       <div className="flex-1 flex">
         <Toolbar />
         <MapView />
-        <ResultsPanel />
+        <ResultsPanel 
+          results={calculationResults}
+          selectedScenario={selectedScenario}
+        />
       </div>
       
       <EditPanel />
