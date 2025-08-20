@@ -182,20 +182,13 @@ export class ElectricalCalculator {
       const connectionType = distalNode.connectionType;
 
       const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, connectionType);
-      const sinPhi = Math.sqrt(Math.max(0, 1 - this.cosPhi * this.cosPhi));
+      const sinPhi = Math.sqrt(1 - this.cosPhi * this.cosPhi);
 
-      const I_A_signed = this.calculateCurrentA(distalS_kVA, connectionType);
-      const I_A = Math.abs(I_A_signed);
+      const I_A = this.calculateCurrentA(distalS_kVA, connectionType);
 
       const { U_base, isThreePhase } = this.getVoltage(connectionType);
-      let deltaU_V = 0;
-      if (isThreePhase) {
-        deltaU_V = Math.sqrt(3) * I_A * (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi) * L_km;
-      } else {
-        deltaU_V = I_A * (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi) * L_km;
-      }
-      if (distalS_kVA < 0) deltaU_V = -deltaU_V;
-
+      const reactTerm = (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi);
+      const deltaU_V = (isThreePhase ? Math.sqrt(3) : 1) * I_A * reactTerm * L_km;
       const deltaU_percent = (deltaU_V / U_base) * 100;
 
       const R_total = R_ohm_per_km * L_km;
