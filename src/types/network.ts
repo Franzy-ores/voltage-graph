@@ -80,6 +80,7 @@ export interface CalculationResult {
   globalLosses_kW: number;
   maxVoltageDropPercent: number;
   compliance: 'normal' | 'warning' | 'critical';
+  nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
 }
 
 export interface NetworkState {
@@ -93,4 +94,5 @@ export interface NetworkState {
   selectedCableId: string | null;
   editPanelOpen: boolean;
   editTarget: 'node' | 'cable' | 'project' | null;
+  showVoltages: boolean;
 }

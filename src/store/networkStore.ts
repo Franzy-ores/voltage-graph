@@ -3,6 +3,10 @@ import { NetworkState, Project, Node, Cable, CalculationScenario, CalculationRes
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 
+interface NetworkStoreState extends NetworkState {
+  selectedCableType: string;
+}
+
 interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
@@ -24,6 +28,7 @@ interface NetworkActions {
   setSelectedScenario: (scenario: CalculationScenario) => void;
   setSelectedNode: (nodeId: string | null) => void;
   setSelectedCable: (cableId: string | null) => void;
+  setSelectedCableType: (cableTypeId: string) => void;
   openEditPanel: (target: 'node' | 'cable' | 'project') => void;
   closeEditPanel: () => void;
   
@@ -32,6 +37,10 @@ interface NetworkActions {
   
   // Validation
   validateConnectionType: (connectionType: ConnectionType, voltageSystem: VoltageSystem) => boolean;
+  
+  // Display settings
+  setShowVoltages: (show: boolean) => void;
+  changeVoltageSystem: () => void;
 }
 
 const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Project => ({
@@ -44,9 +53,9 @@ const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Proje
   cableTypes: [...defaultCableTypes]
 });
 
-export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) => ({
+export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
   // State
-  currentProject: null,
+  currentProject: createDefaultProject("Projet par défaut", "TÉTRAPHASÉ_400V"),
   selectedScenario: 'MIXTE',
   calculationResults: {
     PRÉLÈVEMENT: null,
@@ -56,8 +65,10 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   selectedTool: 'select',
   selectedNodeId: null,
   selectedCableId: null,
+  selectedCableType: 'baxb-95', // Par défaut, câble aérien
   editPanelOpen: false,
   editTarget: null,
+  showVoltages: false,
 
   // Actions
   createNewProject: (name, voltageSystem) => {
@@ -82,6 +93,12 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
       selectedCableId: null,
       editPanelOpen: false
     });
+    
+    // Déclencher le zoom sur le projet chargé après un court délai
+    setTimeout(() => {
+      const event = new CustomEvent('zoomToProject');
+      window.dispatchEvent(event);
+    }, 100);
   },
 
   updateProjectConfig: (updates) => {
@@ -94,11 +111,15 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   },
 
   addNode: (lat, lng, connectionType) => {
-    const { currentProject, validateConnectionType } = get();
+    const { currentProject } = get();
     if (!currentProject) return;
 
-    if (!validateConnectionType(connectionType, currentProject.voltageSystem)) {
-      throw new Error('Type de connexion incompatible avec le système de tension du projet');
+    // Déterminer le type de connexion selon le système de tension du projet
+    let nodeConnectionType: ConnectionType;
+    if (currentProject.voltageSystem === 'TRIPHASÉ_230V') {
+      nodeConnectionType = 'TRI_230V_3F'; // 230V par défaut en monophasé
+    } else {
+      nodeConnectionType = 'TÉTRA_3P+N_230_400V'; // 400V par défaut en monophasé
     }
 
     const newNode: Node = {
@@ -106,9 +127,9 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
       name: `Nœud ${currentProject.nodes.length + 1}`,
       lat,
       lng,
-      connectionType,
-      clients: [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
-      productions: [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
+      connectionType: nodeConnectionType,
+      clients: currentProject.nodes.length === 0 ? [] : [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
+      productions: currentProject.nodes.length === 0 ? [] : [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
     };
 
@@ -212,6 +233,7 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
   setSelectedScenario: (scenario) => set({ selectedScenario: scenario }),
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
   setSelectedCable: (cableId) => set({ selectedCableId: cableId }),
+  setSelectedCableType: (cableTypeId) => set({ selectedCableType: cableTypeId }),
 
   openEditPanel: (target) => set({ 
     editPanelOpen: true, 
@@ -260,5 +282,57 @@ export const useNetworkStore = create<NetworkState & NetworkActions>((set, get) 
     };
     
     return validCombinations[voltageSystem].includes(connectionType);
+  },
+
+  setShowVoltages: (show) => set({ showVoltages: show }),
+
+  changeVoltageSystem: () => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+
+    const newVoltageSystem: VoltageSystem = 
+      currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 'TÉTRAPHASÉ_400V' : 'TRIPHASÉ_230V';
+    
+    // Déterminer le nouveau type de connexion par défaut selon le système
+    const newConnectionType: ConnectionType = 
+      newVoltageSystem === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
+
+    // Mettre à jour le projet avec le nouveau système et tous les nœuds
+    const updatedProject = {
+      ...currentProject,
+      voltageSystem: newVoltageSystem,
+      nodes: currentProject.nodes.map(node => ({
+        ...node,
+        connectionType: node.isSource ? newConnectionType : newConnectionType
+      }))
+    };
+
+    set({ currentProject: updatedProject });
+
+    // Déclencher un recalcul automatique
+    const calculator = new ElectricalCalculator(updatedProject.cosPhi);
+    
+    const results = {
+      PRÉLÈVEMENT: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'PRÉLÈVEMENT'
+      ),
+      MIXTE: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'MIXTE'
+      ),
+      PRODUCTION: calculator.calculateScenario(
+        updatedProject.nodes, 
+        updatedProject.cables, 
+        updatedProject.cableTypes, 
+        'PRODUCTION'
+      )
+    };
+
+    set({ calculationResults: results });
   }
 }));

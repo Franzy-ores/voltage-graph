@@ -8,7 +8,8 @@ export const Toolbar = () => {
     selectedTool, 
     setSelectedTool, 
     currentProject, 
-    calculateAll 
+    calculateAll,
+    setSelectedNode
   } = useNetworkStore();
 
   const handleCalculate = () => {
@@ -50,6 +51,12 @@ export const Toolbar = () => {
       icon: Edit,
       label: 'Éditer',
       description: 'Modifier les propriétés'
+    },
+    {
+      id: 'delete' as const,
+      icon: Trash2,
+      label: 'Supprimer',
+      description: 'Supprimer un élément'
     }
   ];
 
@@ -62,7 +69,12 @@ export const Toolbar = () => {
             key={tool.id}
             variant={selectedTool === tool.id ? "default" : "ghost"}
             size="icon"
-            onClick={() => setSelectedTool(tool.id)}
+            onClick={() => {
+              console.log('Tool selected:', tool.id);
+              setSelectedTool(tool.id);
+              // Réinitialiser la sélection de nœud quand on change d'outil
+              setSelectedNode(null);
+            }}
             title={tool.description}
             className="w-12 h-12"
           >
@@ -70,8 +82,6 @@ export const Toolbar = () => {
           </Button>
         );
       })}
-      
-      <div className="flex-1" />
       
       <Button
         onClick={handleCalculate}
