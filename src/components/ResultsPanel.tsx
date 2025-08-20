@@ -121,6 +121,35 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
           </CardContent>
         </Card>
 
+        {/* All Scenarios Comparison */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Comparaison des Scénarios</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3 text-xs">
+              {(['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'] as CalculationScenario[]).map(scenario => {
+                const result = results[scenario];
+                return (
+                  <div key={scenario} className={`p-2 rounded border ${
+                    scenario === selectedScenario ? 'border-primary bg-primary/5' : 'border-border'
+                  }`}>
+                    <p className="font-medium mb-1">{formatScenarioName(scenario)}</p>
+                    {result ? (
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <span>Chute max: {result.maxVoltageDropPercent.toFixed(2)}%</span>
+                        <span>Pertes: {result.globalLosses_kW.toFixed(3)} kW</span>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">Non calculé</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Cables Details */}
         <Card>
           <CardHeader className="pb-3">
@@ -169,35 +198,6 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 </TableBody>
               </Table>
             )}
-          </CardContent>
-        </Card>
-
-        {/* All Scenarios Comparison */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Comparaison des Scénarios</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 text-xs">
-              {(['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'] as CalculationScenario[]).map(scenario => {
-                const result = results[scenario];
-                return (
-                  <div key={scenario} className={`p-2 rounded border ${
-                    scenario === selectedScenario ? 'border-primary bg-primary/5' : 'border-border'
-                  }`}>
-                    <p className="font-medium mb-1">{formatScenarioName(scenario)}</p>
-                    {result ? (
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <span>Chute max: {result.maxVoltageDropPercent.toFixed(2)}%</span>
-                        <span>Pertes: {result.globalLosses_kW.toFixed(3)} kW</span>
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground">Non calculé</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
           </CardContent>
         </Card>
       </div>
