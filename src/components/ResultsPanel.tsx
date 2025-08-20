@@ -1,34 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalculationResult, CalculationScenario } from "@/types/network";
+import { CalculationResult, CalculationScenario } from "@/types/electrical";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface ResultsPanelProps {
   results: {
-    [key in CalculationScenario]: CalculationResult | null;
+    consumption: CalculationResult | null;
+    mixed: CalculationResult | null;
+    production: CalculationResult | null;
   };
   selectedScenario: CalculationScenario;
 }
 
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
-  // Add safety checks
-  if (!results || !selectedScenario) {
-    return (
-      <div className="w-80 bg-card border-l border-border p-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Résultats</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground text-center py-8">
-              Chargement...
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-  
   const currentResult = results[selectedScenario];
 
   const getComplianceBadge = (compliance: 'normal' | 'warning' | 'critical') => {
@@ -53,9 +37,9 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
 
   const formatScenarioName = (scenario: CalculationScenario) => {
     const names = {
-      'PRÉLÈVEMENT': 'Prélèvement seul',
-      'MIXTE': 'Mixte (Prélèvement + Production)',
-      'PRODUCTION': 'Production seule'
+      consumption: 'Prélèvement seul',
+      mixed: 'Mixte (Prélèvement + Production)',
+      production: 'Production seule'
     };
     return names[scenario];
   };
@@ -93,19 +77,19 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-muted-foreground">Charges totales</p>
-                <p className="font-semibold">{currentResult.totalLoads_kVA.toFixed(1)} kVA</p>
+                <p className="font-semibold">{currentResult.totalLoads.toFixed(1)} kVA</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Productions totales</p>
-                <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
+                <p className="font-semibold">{currentResult.totalProductions.toFixed(1)} kVA</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Pertes globales</p>
-                <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
+                <p className="font-semibold">{currentResult.globalLosses.toFixed(3)} kW</p>
               </div>
               <div>
                 <p className="text-muted-foreground">Chute max.</p>
-                <p className="font-semibold">{currentResult.maxVoltageDropPercent.toFixed(2)}%</p>
+                <p className="font-semibold">{currentResult.maxVoltageDrop.toFixed(2)}%</p>
               </div>
             </div>
           </CardContent>
@@ -145,10 +129,10 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 <TableBody>
                   {currentResult.cables.map((cable) => (
                     <TableRow key={cable.id}>
-                      <TableCell className="text-xs">{cable.name}</TableCell>
-                      <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
+                      <TableCell className="text-xs">{cable.type.name}</TableCell>
+                      <TableCell className="text-xs">{cable.length}</TableCell>
                       <TableCell className="text-xs">
-                        {cable.current_A?.toFixed(1) || '-'}
+                        {cable.current?.toFixed(1) || '-'}
                       </TableCell>
                       <TableCell className="text-xs">
                         <span className={`font-medium ${
@@ -162,7 +146,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                         </span>
                       </TableCell>
                       <TableCell className="text-xs">
-                        {cable.losses_kW?.toFixed(3) || '-'}
+                        {cable.losses?.toFixed(3) || '-'}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -179,7 +163,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
           </CardHeader>
           <CardContent>
             <div className="space-y-3 text-xs">
-              {(['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'] as CalculationScenario[]).map(scenario => {
+              {(['consumption', 'mixed', 'production'] as CalculationScenario[]).map(scenario => {
                 const result = results[scenario];
                 return (
                   <div key={scenario} className={`p-2 rounded border ${
@@ -188,8 +172,8 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                     <p className="font-medium mb-1">{formatScenarioName(scenario)}</p>
                     {result ? (
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        <span>Chute max: {result.maxVoltageDropPercent.toFixed(2)}%</span>
-                        <span>Pertes: {result.globalLosses_kW.toFixed(3)} kW</span>
+                        <span>Chute max: {result.maxVoltageDrop.toFixed(2)}%</span>
+                        <span>Pertes: {result.globalLosses.toFixed(3)} kW</span>
                       </div>
                     ) : (
                       <span className="text-muted-foreground">Non calculé</span>

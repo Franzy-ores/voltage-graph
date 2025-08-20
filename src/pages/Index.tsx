@@ -3,82 +3,19 @@ import { MapView } from "@/components/MapView";
 import { Toolbar } from "@/components/Toolbar";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { EditPanel } from "@/components/EditPanel";
-import { VoltageDisplay } from "@/components/VoltageDisplay";
 import { useNetworkStore } from "@/store/networkStore";
 
 const Index = () => {
-  const { 
-    currentProject, 
-    selectedScenario, 
-    calculationResults,
-    selectedTool,
-    createNewProject,
-    loadProject,
-    openEditPanel,
-    calculateAll
-  } = useNetworkStore();
-
-  const handleNewNetwork = () => {
-    createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");
-  };
-
-  const handleSave = () => {
-    if (currentProject) {
-      const dataStr = JSON.stringify(currentProject, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${currentProject.name}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-    }
-  };
-
-  const handleLoad = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          try {
-            const project = JSON.parse(e.target?.result as string);
-            loadProject(project);
-            console.log('Project loaded successfully:', project.name);
-          } catch (error) {
-            console.error('Error loading project:', error);
-            alert('Erreur lors du chargement du projet. Vérifiez le format du fichier JSON.');
-          }
-        };
-        reader.readAsText(file);
-      }
-    };
-    input.click();
-  };
-
-  const handleSettings = () => {
-    openEditPanel('project');
-  };
+  const { currentProject } = useNetworkStore();
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <TopMenu 
-        onNewNetwork={handleNewNetwork}
-        onSave={handleSave}
-        onLoad={handleLoad}
-        onSettings={handleSettings}
-      />
+      <TopMenu />
       
-      <div className="flex-1 flex relative">
+      <div className="flex-1 flex">
         <Toolbar />
         <MapView />
-        <ResultsPanel
-          results={calculationResults}
-          selectedScenario={selectedScenario}
-        />
+        <ResultsPanel />
       </div>
       
       <EditPanel />

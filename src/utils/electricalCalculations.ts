@@ -1,8 +1,3 @@
-/**
- * ElectricalCalculator corrigé
- * - cumul ΔU par chemin source → nœud
- * - conformité EN50160 basée sur ΔU cumulée au pire nœud
- */
 import { ConnectionType, Node, Cable, CableType, CalculationScenario, CalculationResult } from '@/types/network';
 
 export class ElectricalCalculator {
@@ -12,260 +7,199 @@ export class ElectricalCalculator {
     this.cosPhi = cosPhi;
   }
 
-  setCosPhi(value: number) {
-    this.cosPhi = value;
+  /**
+   * Calcul de l'intensité selon le type de connexion
+   */
+  calculateCurrent(S_kVA: number, connectionType: ConnectionType): number {
+    const U = this.getVoltage(connectionType);
+    
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'MONO_230V_PN':
+        return (S_kVA * 1000) / (U * this.cosPhi);
+      
+      case 'TRI_230V_3F':
+      case 'TÉTRA_3P+N_230_400V':
+        return (S_kVA * 1000) / (Math.sqrt(3) * U * this.cosPhi);
+    }
   }
 
-  // ---- utilitaires ----
-  private deg2rad(deg: number) { return deg * Math.PI / 180; }
+  /**
+   * Calcul de la chute de tension selon le type de connexion
+   */
+  calculateVoltageDrop(
+    current_A: number, 
+    connectionType: ConnectionType, 
+    cableType: CableType, 
+    length_m: number
+  ): number {
+    const rho = cableType.R12_ohm_per_km / 1000; // Conversion en Ω/m
+    const L = length_m;
+    
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'MONO_230V_PN':
+        return (2 * rho * L * current_A * this.cosPhi); // Simplifiée pour ρ en Ω/m
+      
+      case 'TRI_230V_3F':
+      case 'TÉTRA_3P+N_230_400V':
+        return (Math.sqrt(3) * rho * L * current_A * this.cosPhi); // Simplifiée pour ρ en Ω/m
+    }
+  }
 
-  static calculateGeodeticDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
+  /**
+   * Calcul du pourcentage de chute de tension
+   */
+  calculateVoltageDropPercent(voltageDrop_V: number, connectionType: ConnectionType): number {
+    const U = this.getVoltage(connectionType);
+    return (voltageDrop_V / U) * 100;
+  }
+
+  /**
+   * Calcul des pertes en kW
+   */
+  calculateLosses(current_A: number, cableType: CableType, length_m: number): number {
+    const R_ohm_per_m = cableType.R12_ohm_per_km / 1000;
+    return Math.pow(current_A, 2) * R_ohm_per_m * length_m / 1000; // en kW
+  }
+
+  /**
+   * Obtenir la tension nominale selon le type de connexion
+   */
+  private getVoltage(connectionType: ConnectionType): number {
+    switch (connectionType) {
+      case 'MONO_230V_PP':
+      case 'TRI_230V_3F':
+      case 'MONO_230V_PN':
+        return 230;
+      case 'TÉTRA_3P+N_230_400V':
+        return 400;
+    }
+  }
+
+  /**
+   * Calculer la puissance totale d'un nœud selon le scénario
+   */
+  calculateNodePower(node: Node, scenario: CalculationScenario): number {
+    const totalLoads = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+    const totalProductions = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+
+    switch (scenario) {
+      case 'PRÉLÈVEMENT':
+        return totalLoads;
+      case 'PRODUCTION':
+        return totalProductions;
+      case 'MIXTE':
+        return totalLoads - totalProductions; // Peut être négatif pour injection nette
+    }
+  }
+
+  /**
+   * Calculer la distance géodésique entre deux points
+   */
+  static calculateGeodeticDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+    const R = 6371000; // Rayon de la Terre en mètres
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
     return R * c;
   }
 
-  static calculateCableLength(coordinates: { lat:number; lng:number }[]): number {
-    if (!coordinates || coordinates.length < 2) return 0;
-    let total = 0;
+  /**
+   * Calculer la longueur totale d'un câble à partir de ses coordonnées
+   */
+  static calculateCableLength(coordinates: { lat: number; lng: number; }[]): number {
+    if (coordinates.length < 2) return 0;
+    
+    let totalLength = 0;
     for (let i = 1; i < coordinates.length; i++) {
-      total += ElectricalCalculator.calculateGeodeticDistance(
+      totalLength += this.calculateGeodeticDistance(
         coordinates[i-1].lat, coordinates[i-1].lng,
         coordinates[i].lat, coordinates[i].lng
       );
     }
-    return total;
+    return totalLength;
   }
 
-  calculateLengthMeters(coordinates: { lat:number; lng:number }[]): number {
-    return ElectricalCalculator.calculateCableLength(coordinates);
-  }
-
-  private getVoltage(connectionType: ConnectionType): { U_base:number, isThreePhase:boolean } {
-    switch (connectionType) {
-      case 'MONO_230V_PP':
-        return { U_base: 230, isThreePhase: false };
-      case 'TRI_230V_3F':
-        return { U_base: 230, isThreePhase: true };
-      case 'MONO_230V_PN':
-        return { U_base: 230, isThreePhase: false };
-      case 'TÉTRA_3P+N_230_400V':
-        return { U_base: 400, isThreePhase: true };
-      default:
-        return { U_base: 230, isThreePhase: true };
-    }
-  }
-
-  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
-    if (connectionType === 'MONO_230V_PN') {
-      return { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km };
-    }
-    return { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
-  }
-
-  private calculateCurrentA(S_kVA: number, connectionType: ConnectionType): number {
-    const { U_base, isThreePhase } = this.getVoltage(connectionType);
-    const denom = (isThreePhase ? Math.sqrt(3) * U_base : U_base) * this.cosPhi;
-    if (denom === 0) return 0;
-    return (S_kVA * 1000) / denom;
-  }
-
-  private getComplianceStatus(voltageDropPercent: number): 'normal'|'warning'|'critical' {
-    const absP = Math.abs(voltageDropPercent);
-    if (absP <= 8) return 'normal';
-    if (absP <= 10) return 'warning';
+  /**
+   * Déterminer le statut de conformité selon EN 50160
+   */
+  getComplianceStatus(voltageDropPercent: number): 'normal' | 'warning' | 'critical' {
+    const absPercent = Math.abs(voltageDropPercent);
+    if (absPercent < 8) return 'normal';
+    if (absPercent < 10) return 'warning';
     return 'critical';
   }
 
-  // ---- calcul d'un scénario ----
+  /**
+   * Calculer un scénario complet
+   */
   calculateScenario(
     nodes: Node[],
     cables: Cable[],
     cableTypes: CableType[],
     scenario: CalculationScenario
   ): CalculationResult {
-    const nodeById = new Map(nodes.map(n => [n.id, n] as const));
-    const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
-
-    const sources = nodes.filter(n => n.isSource);
-    if (sources.length !== 1) throw new Error('Le réseau doit avoir exactement une source.');
-    const source = sources[0];
-
-    const adj = new Map<string, { cableId:string; neighborId:string }[]>();
-    for (const n of nodes) adj.set(n.id, []);
-    for (const cable of cables) {
-      if (!nodeById.has(cable.nodeAId) || !nodeById.has(cable.nodeBId)) continue;
-      adj.get(cable.nodeAId)!.push({ cableId:cable.id, neighborId:cable.nodeBId });
-      adj.get(cable.nodeBId)!.push({ cableId:cable.id, neighborId:cable.nodeAId });
-    }
-
-    const parent = new Map<string, string | null>();
-    const visited = new Set<string>();
-    const queue: string[] = [source.id];
-    parent.set(source.id, null);
-    visited.add(source.id);
-
-    while (queue.length) {
-      const u = queue.shift()!;
-      for (const edge of adj.get(u) || []) {
-        if (!visited.has(edge.neighborId)) {
-          visited.add(edge.neighborId);
-          parent.set(edge.neighborId, u);
-          queue.push(edge.neighborId);
-        }
-      }
-    }
-
-    const S_eq = new Map<string, number>();
-    for (const n of nodes) {
-      const S_prel = (n.clients || []).reduce((s, c) => s + (c.S_kVA || 0), 0);
-      const S_pv   = (n.productions || []).reduce((s, p) => s + (p.S_kVA || 0), 0);
-      let val = 0;
-      if (scenario === 'PRÉLÈVEMENT') val = S_prel;
-      else if (scenario === 'PRODUCTION') val = - S_pv;
-      else val = S_prel - S_pv;
-      S_eq.set(n.id, val);
-    }
-
-    const children = new Map<string, string[]>();
-    for (const n of nodes) children.set(n.id, []);
-    for (const [nodeId, p] of parent.entries()) {
-      if (p && children.has(p)) children.get(p)!.push(nodeId);
-    }
-
-    const postOrder: string[] = [];
-    const dfs = (u: string) => {
-      for (const v of children.get(u) || []) dfs(v);
-      postOrder.push(u);
-    };
-    dfs(source.id);
-
-    const S_aval = new Map<string, number>();
-    for (const nodeId of postOrder) {
-      let sum = S_eq.get(nodeId) || 0;
-      for (const childId of (children.get(nodeId) || [])) {
-        sum += S_aval.get(childId) || 0;
-      }
-      S_aval.set(nodeId, sum);
-    }
-
+    const cableTypeMap = new Map(cableTypes.map(type => [type.id, type]));
     const calculatedCables: Cable[] = [];
-    let globalLosses = 0;
     let totalLoads = 0;
     let totalProductions = 0;
+    let globalLosses = 0;
+    let maxVoltageDropPercent = 0;
 
-    for (const n of nodes) {
-      totalLoads += (n.clients || []).reduce((s,c) => s + (c.S_kVA || 0), 0);
-      totalProductions += (n.productions || []).reduce((s,p) => s + (p.S_kVA || 0), 0);
-    }
+    // Calculer les totaux
+    nodes.forEach(node => {
+      totalLoads += node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      totalProductions += node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+    });
 
-    for (const cable of cables) {
-      let distalNodeId: string | null = null;
-      if (parent.get(cable.nodeBId) === cable.nodeAId) distalNodeId = cable.nodeBId;
-      else if (parent.get(cable.nodeAId) === cable.nodeBId) distalNodeId = cable.nodeAId;
-      else distalNodeId = cable.nodeBId;
+    // Calculer pour chaque câble
+    cables.forEach(cable => {
+      const cableType = cableTypeMap.get(cable.typeId);
+      if (!cableType) return;
 
-      const distalS_kVA = S_aval.get(distalNodeId || cable.nodeBId) || 0;
-      const ct = cableTypeById.get(cable.typeId);
-      if (!ct) throw new Error(`Cable type ${cable.typeId} introuvable`);
+      const nodeB = nodes.find(n => n.id === cable.nodeBId);
+      if (!nodeB) return;
 
-      const length_m = this.calculateLengthMeters(cable.coordinates || []);
-      const L_km = length_m / 1000;
-
-      const distalNode = nodeById.get(distalNodeId || cable.nodeBId)!;
-      const connectionType = distalNode.connectionType;
-
-      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, connectionType);
-      const sinPhi = Math.sqrt(1 - this.cosPhi * this.cosPhi);
-
-      const I_A = this.calculateCurrentA(distalS_kVA, connectionType);
-
-      const { U_base, isThreePhase } = this.getVoltage(connectionType);
-      const reactTerm = (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi);
-      const deltaU_V = (isThreePhase ? Math.sqrt(3) : 1) * I_A * reactTerm * L_km;
-      const deltaU_percent = (deltaU_V / U_base) * 100;
-
-      const R_total = R_ohm_per_km * L_km;
-      const losses_kW = (I_A * I_A * R_total) / 1000;
-
-      globalLosses += losses_kW;
+      // Calculer la longueur si pas déjà calculée
+      const length = cable.length_m || ElectricalCalculator.calculateCableLength(cable.coordinates);
+      
+      const nodePower = this.calculateNodePower(nodeB, scenario);
+      const current = Math.abs(this.calculateCurrent(nodePower, nodeB.connectionType));
+      const voltageDrop = this.calculateVoltageDrop(current, nodeB.connectionType, cableType, length);
+      const voltageDropPercent = this.calculateVoltageDropPercent(voltageDrop, nodeB.connectionType);
+      const losses = this.calculateLosses(current, cableType, length);
 
       calculatedCables.push({
         ...cable,
-        length_m,
-        current_A: I_A,
-        voltageDrop_V: deltaU_V,
-        voltageDropPercent: deltaU_percent,
-        losses_kW: losses_kW
+        length_m: length,
+        current_A: current,
+        voltageDrop_V: voltageDrop,
+        voltageDropPercent,
+        losses_kW: losses
       });
-    }
 
-    // ---- CUMUL ΔU par chemin ----
-    const deltaUcum_V = new Map<string, number>();
-    const deltaUcum_percent = new Map<string, number>();
-    deltaUcum_V.set(source.id, 0);
-    deltaUcum_percent.set(source.id, 0);
+      globalLosses += losses;
+      maxVoltageDropPercent = Math.max(maxVoltageDropPercent, Math.abs(voltageDropPercent));
+    });
 
-    const parentCableOf = (u: string): (typeof calculatedCables)[number] | null => {
-      const p = parent.get(u);
-      if (!p) return null;
-      return calculatedCables.find(c =>
-        (c.nodeAId === p && c.nodeBId === u) || (c.nodeAId === u && c.nodeBId === p)
-      ) || null;
-    };
+    const compliance = this.getComplianceStatus(maxVoltageDropPercent);
 
-    const stack = [source.id];
-    while (stack.length) {
-      const u = stack.pop()!;
-      for (const v of children.get(u) || []) {
-        const cab = parentCableOf(v);
-        if (!cab) continue;
-
-        const parentCumV = deltaUcum_V.get(u) || 0;
-        const thisDeltaV = cab.voltageDrop_V || 0;
-        const cumV = parentCumV + thisDeltaV;
-        deltaUcum_V.set(v, cumV);
-
-        const { U_base } = this.getVoltage((nodeById.get(v)!).connectionType);
-        const cumPct = (cumV / U_base) * 100;
-        deltaUcum_percent.set(v, cumPct);
-
-        stack.push(v);
-      }
-    }
-
-    let worstAbsPct = 0;
-    const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
-    for (const n of nodes) {
-      const pct = deltaUcum_percent.get(n.id) ?? 0;
-      const absPct = Math.abs(pct);
-      nodeVoltageDrops.push({
-        nodeId: n.id,
-        deltaU_cum_V: deltaUcum_V.get(n.id) ?? 0,
-        deltaU_cum_percent: pct
-      });
-      if (absPct > worstAbsPct) worstAbsPct = absPct;
-    }
-
-    const compliance = this.getComplianceStatus(worstAbsPct);
-
-    const result: CalculationResult = {
+    return {
       scenario,
       cables: calculatedCables,
       totalLoads_kVA: totalLoads,
       totalProductions_kVA: totalProductions,
-      globalLosses_kW: Number(globalLosses.toFixed(6)),
-      maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
-      compliance,
-      nodeVoltageDrops
+      globalLosses_kW: globalLosses,
+      maxVoltageDropPercent,
+      compliance
     };
-
-    return result;
   }
 }

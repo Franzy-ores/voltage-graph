@@ -19,23 +19,4 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-  // Configuration spécifique pour Leaflet en production
-  build: {
-    rollupOptions: {
-      external: [],
-      output: {
-        // Assurer que les assets Leaflet sont correctement copiés
-        assetFileNames: (assetInfo) => {
-          if (assetInfo.name && assetInfo.name.includes('leaflet')) {
-            return 'assets/leaflet/[name][extname]';
-          }
-          return 'assets/[name]-[hash][extname]';
-        }
-      }
-    }
-  },
-  // Optimisation des dépendances pour Leaflet
-  optimizeDeps: {
-    include: ['leaflet']
-  }
 }));
