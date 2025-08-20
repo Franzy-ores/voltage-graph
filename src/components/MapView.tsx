@@ -88,14 +88,14 @@ export const MapView = () => {
     if (newType === 'osm') {
       tileLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 22,
+        maxZoom: 18,
         minZoom: 3,
       }).addTo(map);
     } else if (newType === 'satellite') {
       tileLayerRef.current = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-          maxZoom: 22,
+          maxZoom: 18,
           minZoom: 3,
         }
       ).addTo(map);
@@ -103,7 +103,7 @@ export const MapView = () => {
       tileLayerRef.current = L.tileLayer.wms(
         'https://geoservices.wallonie.be/arcgis/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/WMSServer',
         {
-          layers: '0', // ⚠️ Remplace par le nom exact depuis GetCapabilities si nécessaire
+          layers: 'ADRESSES,VOIRIE_AXE,HYDROG_AXE,HYDROG_BORD,CONSTR_BATIBORD,CONSTR_BATIEMPRISE,VOIRIE_LIGNE,FERROV_LIGNE,EQUIPE_AXE,TOPONYMIE,SYMBOLOGIE',
           format: 'image/png',
           transparent: true,
           attribution: '© SPW - Géoservices Wallonie',
