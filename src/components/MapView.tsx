@@ -107,7 +107,7 @@ export const MapView = () => {
           format: 'image/png',
           transparent: true,
           attribution: '© SPW - Géoservices Wallonie',
-          maxZoom: 18,
+          maxZoom: 22,
           minZoom: 3,
         }
       ).addTo(map);
