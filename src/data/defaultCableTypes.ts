@@ -1,6 +1,16 @@
 import { CableType } from '@/types/network';
 
 export const defaultCableTypes: CableType[] = [
+   {
+    id: 'baxb-70',
+    label: 'BAXB 95',
+    R12_ohm_per_km: 0.519,
+    X12_ohm_per_km: 0.11,
+    R0_ohm_per_km: 2.515,
+    X0_ohm_per_km: 0.257,
+    matiere: 'ALUMINIUM',
+    posesPermises: ['AÉRIEN']
+  },
   {
     id: 'baxb-95',
     label: 'BAXB 95',
