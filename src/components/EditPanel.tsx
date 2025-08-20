@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Target } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV } from '@/types/network';
 import { toast } from 'sonner';
@@ -22,7 +22,8 @@ export const EditPanel = () => {
     updateCable,
     updateProjectConfig,
     deleteNode,
-    deleteCable
+    deleteCable,
+    calculateWithTargetVoltage
   } = useNetworkStore();
 
   const [formData, setFormData] = useState<any>({});
@@ -277,9 +278,53 @@ export const EditPanel = () => {
                     </div>
                   ))}
                  </CardContent>
-                </Card>
-              </>
-            )}
+               </Card>
+
+               {/* Tension Cible */}
+               {!selectedNode?.isSource && (
+                 <Card>
+                   <CardHeader className="pb-3">
+                     <CardTitle className="text-base flex items-center gap-2">
+                       <Target className="w-4 h-4" />
+                       Tension Cible
+                     </CardTitle>
+                   </CardHeader>
+                   <CardContent className="space-y-3">
+                     <div className="space-y-2">
+                       <Label htmlFor="tension-cible">Tension cible (V)</Label>
+                       <div className="flex gap-2">
+                         <Input
+                           id="tension-cible"
+                           type="number"
+                           placeholder="Ex: 230"
+                           value={formData.tensionCible || ''}
+                           onChange={(e) => setFormData({ 
+                             ...formData, 
+                             tensionCible: parseFloat(e.target.value) || undefined 
+                           })}
+                         />
+                         {formData.tensionCible && (
+                           <Button
+                             variant="outline"
+                             onClick={() => {
+                               if (selectedNodeId && formData.tensionCible) {
+                                 calculateWithTargetVoltage(selectedNodeId, formData.tensionCible);
+                               }
+                             }}
+                           >
+                             Ajuster
+                           </Button>
+                         )}
+                       </div>
+                       <p className="text-xs text-muted-foreground">
+                         Ajuste automatiquement le foisonnement des charges pour atteindre cette tension
+                       </p>
+                     </div>
+                   </CardContent>
+                 </Card>
+               )}
+             </>
+           )}
 
           {/* Cable editing */}
           {editTarget === 'cable' && (
