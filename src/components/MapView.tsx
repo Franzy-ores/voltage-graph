@@ -6,13 +6,10 @@ import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 import { AddressSearch } from './AddressSearch';
 import { Button } from './ui/button';
-import { Globe, Map as MapIcon } from 'lucide-react';
+import { Globe, Map as MapIcon, Layers } from 'lucide-react';
 
 // Configuration robuste des icônes Leaflet pour production et preview
-
-// Configuration sécurisée des icônes qui fonctionne en production
 const configureLeafletIcons = () => {
-  // Utilisation des icônes depuis le dossier public (garanti en production)
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconUrl: '/leaflet/marker-icon.png',
@@ -21,7 +18,6 @@ const configureLeafletIcons = () => {
   });
 };
 
-// Initialiser une seule fois
 let iconsConfigured = false;
 
 export const MapView = () => {
@@ -30,14 +26,8 @@ export const MapView = () => {
   const markersRef = useRef<Map<string, L.Marker>>(new Map<string, L.Marker>());
   const cablesRef = useRef<Map<string, L.Polyline>>(new Map<string, L.Polyline>());
   const tileLayerRef = useRef<L.TileLayer | null>(null);
-  const [routingActive, setRoutingActive] = useState(false);
-  const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
-  const [routingToNode, setRoutingToNode] = useState<string | null>(null);
-  const [mapType, setMapType] = useState<'osm' | 'satellite'>('osm');
-  const routingPointsRef = useRef<{ lat: number; lng: number }[]>([]);
-  const tempMarkersRef = useRef<L.Marker[]>([]);
-  const tempLineRef = useRef<L.Polyline | null>(null);
-  
+  const [mapType, setMapType] = useState<'osm' | 'satellite' | 'wms'>('osm');
+
   const {
     currentProject,
     selectedTool,
@@ -53,42 +43,24 @@ export const MapView = () => {
     deleteNode,
     deleteCable,
     showVoltages,
-    editPanelOpen
   } = useNetworkStore();
 
-  // Fonction pour zoomer sur le projet chargé
-  const zoomToProject = () => {
-    const map = mapInstanceRef.current;
-    if (!map || !currentProject || currentProject.nodes.length === 0) return;
-
-    const bounds = L.latLngBounds(
-      currentProject.nodes.map(node => [node.lat, node.lng])
-    );
-    
-    // Ajouter une marge autour des limites
-    const paddedBounds = bounds.pad(0.1);
-    map.fitBounds(paddedBounds);
-  };
-
-  // Initialize map - version optimisée
+  // === Init map ===
   useEffect(() => {
     if (!mapRef.current || mapInstanceRef.current) return;
 
-    // Configurer les icônes Leaflet si pas encore fait
     if (!iconsConfigured) {
       configureLeafletIcons();
       iconsConfigured = true;
     }
 
     const map = L.map(mapRef.current, {
-      center: [49.85, 5.40], // Province de Luxembourg, Belgique
+      center: [49.85, 5.40], 
       zoom: 10,
       zoomControl: true,
       attributionControl: true,
-      preferCanvas: false,
     });
 
-    // Ajouter la couche de tuiles initiale
     const initialTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 18,
@@ -98,15 +70,7 @@ export const MapView = () => {
     tileLayerRef.current = initialTileLayer;
     mapInstanceRef.current = map;
 
-    // Écouter l'événement de zoom sur projet
-    const handleZoomToProject = () => {
-      zoomToProject();
-    };
-
-    window.addEventListener('zoomToProject', handleZoomToProject);
-
     return () => {
-      window.removeEventListener('zoomToProject', handleZoomToProject);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -114,482 +78,53 @@ export const MapView = () => {
     };
   }, []);
 
-  // Gérer le changement de type de carte
-  const switchMapType = (newType: 'osm' | 'satellite') => {
+  // === Switch map type (OSM, Satellite, WMS) ===
+  const switchMapType = (newType: 'osm' | 'satellite' | 'wms') => {
     const map = mapInstanceRef.current;
     if (!map || !tileLayerRef.current) return;
 
-    // Supprimer la couche actuelle
     map.removeLayer(tileLayerRef.current);
 
-    // Ajouter la nouvelle couche
     if (newType === 'osm') {
       tileLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
         maxZoom: 18,
         minZoom: 3,
       }).addTo(map);
-    } else {
-      // Utiliser Esri World Imagery (satellite gratuit et fiable)
-      tileLayerRef.current = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-        maxZoom: 18,
-        minZoom: 3,
-      }).addTo(map);
+    } else if (newType === 'satellite') {
+      tileLayerRef.current = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+          maxZoom: 18,
+          minZoom: 3,
+        }
+      ).addTo(map);
+    } else if (newType === 'wms') {
+      tileLayerRef.current = L.tileLayer.wms(
+        'https://geoservices.wallonie.be/arcgis/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/WMSServer',
+        {
+          layers: '0', // ⚠️ Remplace par le nom exact depuis GetCapabilities si nécessaire
+          format: 'image/png',
+          transparent: true,
+          attribution: '© SPW - Géoservices Wallonie',
+          maxZoom: 18,
+          minZoom: 3,
+        }
+      ).addTo(map);
     }
 
     setMapType(newType);
   };
 
-  // Gérer la sélection d'adresse
-  const handleLocationSelect = (lat: number, lng: number, address: string) => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    // Centrer la carte sur l'adresse trouvée
-    map.setView([lat, lng], 16);
-    
-    // Optionnel : ajouter un marqueur temporaire
-    const marker = L.marker([lat, lng], {
-      icon: L.divIcon({
-        className: 'search-result-marker',
-        html: '<div class="w-6 h-6 bg-red-500 border-2 border-white rounded-full shadow-lg"></div>',
-        iconSize: [24, 24],
-        iconAnchor: [12, 12]
-      })
-    }).addTo(map);
-
-    // Supprimer le marqueur après 3 secondes
-    setTimeout(() => {
-      try {
-        map.removeLayer(marker);
-      } catch (e) {
-        console.warn('Marker already removed');
-      }
-    }, 3000);
-  };
-
-  // Handle map clicks for adding nodes and routing
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-
-    const handleMapClick = (e: L.LeafletMouseEvent) => {
-      if (selectedTool === 'addNode' && !routingActive) {
-        addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN');
-      } else if (routingActive) {
-        // En mode routage, ajouter des points intermédiaires uniquement
-        // La finalisation se fait en cliquant directement sur le nœud de destination
-        const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
-        console.log('Adding intermediate point:', newPoint);
-        console.log('Current routingPoints before adding:', routingPointsRef.current);
-        routingPointsRef.current = [...routingPointsRef.current, newPoint];
-        console.log('Updated routingPoints:', routingPointsRef.current);
-        
-        // Ajouter un marqueur temporaire
-        const marker = L.marker([e.latlng.lat, e.latlng.lng], {
-          icon: L.divIcon({
-            className: 'routing-point',
-            html: '<div class="w-3 h-3 bg-blue-500 border border-white rounded-full"></div>',
-            iconSize: [12, 12],
-            iconAnchor: [6, 6]
-          })
-        }).addTo(map);
-        
-        tempMarkersRef.current.push(marker);
-        updateTempLine();
-      }
-    };
-
-    map.on('click', handleMapClick);
-    return () => {
-      map.off('click', handleMapClick);
-    };
-  }, [selectedTool, addNode, routingActive, routingFromNode, routingToNode, selectedCableType, currentProject]);
-
-  // Gérer les touches clavier pendant le routage
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && routingActive) {
-        clearRouting();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyPress);
-    return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [routingActive]);
-
-  // Fonction pour mettre à jour la ligne temporaire
-  const updateTempLine = () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    
-    if (tempLineRef.current) {
-      map.removeLayer(tempLineRef.current);
-    }
-    
-    if (routingPointsRef.current.length > 1) {
-      tempLineRef.current = L.polyline(
-        routingPointsRef.current.map(p => [p.lat, p.lng]),
-        { 
-          color: '#3b82f6', 
-          weight: 3, 
-          opacity: 0.7,
-          dashArray: '5, 5'
-        }
-      ).addTo(map);
-    }
-  };
-
-  // Fonction pour nettoyer le routage
-  const clearRouting = () => {
-    const map = mapInstanceRef.current;
-    if (!map) return;
-    
-    console.log('=== CLEARING ROUTING ===');
-    console.log('routingPoints before clear:', routingPointsRef.current);
-    
-    // Nettoyer les marqueurs temporaires
-    tempMarkersRef.current.forEach(marker => {
-      try {
-        map.removeLayer(marker);
-      } catch (e) {
-        console.warn('Error removing marker:', e);
-      }
-    });
-    tempMarkersRef.current = [];
-    
-    // Nettoyer la ligne temporaire
-    if (tempLineRef.current) {
-      try {
-        map.removeLayer(tempLineRef.current);
-      } catch (e) {
-        console.warn('Error removing line:', e);
-      }
-      tempLineRef.current = null;
-    }
-    
-    // Réinitialiser l'état
-    setRoutingActive(false);
-    setRoutingFromNode(null);
-    setRoutingToNode(null);
-    routingPointsRef.current = [];
-    setSelectedNode(null);
-    
-    console.log('Routing cleared');
-  };
-
-  // Update markers when nodes change
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map || !currentProject) return;
-
-    // Clear existing markers
-    markersRef.current.forEach(marker => map.removeLayer(marker));
-    markersRef.current.clear();
-
-    // Add new markers
-    currentProject.nodes.forEach(node => {
-      // Calculer les totaux
-      const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
-      const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
-      
-      // Calculer la tension avec chute cumulée selon le type de connexion
-      let baseVoltage = 230; // Par défaut
-      
-      // Déterminer la tension de base selon le type de connexion du nœud
-      switch (node.connectionType) {
-        case 'TÉTRA_3P+N_230_400V':
-          baseVoltage = 400;
-          break;
-        case 'MONO_230V_PN':
-        case 'MONO_230V_PP':
-        case 'TRI_230V_3F':
-          baseVoltage = 230;
-          break;
-        default:
-          baseVoltage = 230;
-          break;
-      }
-      
-      let nodeVoltage = baseVoltage;
-      let isOutOfCompliance = false;
-      
-      if (calculationResults[selectedScenario] && !node.isSource) {
-        const results = calculationResults[selectedScenario];
-        const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
-        if (nodeData) {
-          // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse)
-          nodeVoltage = baseVoltage - nodeData.deltaU_cum_V;
-          // Vérifier la conformité EN50160 (seuil à 10%)
-          isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
-        }
-      }
-      
-      // Déterminer le type et l'icône
-      let iconContent = 'N';
-      let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
-      
-      if (node.isSource) {
-        iconContent = 'S';
-        // Source colorée selon la tension du système
-        const isHighVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
-        iconClass = isHighVoltage ? 'bg-green-500 border-green-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
-      } else {
-        const hasProduction = totalPV > 0;
-        const hasLoad = totalCharge > 0;
-        
-        if (hasProduction && hasLoad) {
-          iconContent = 'M'; // Mixte
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-yellow-500 border-yellow-600 text-white';
-        } else if (hasProduction) {
-          iconContent = 'P'; // Production seule
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-green-500 border-green-600 text-white';
-        } else if (hasLoad) {
-          iconContent = 'C'; // Charge seule
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
-        }
-      }
-
-      // Créer le contenu de l'icône avec les informations
-      let infoText = '';
-      if (showVoltages) {
-        infoText = `<div class="text-[9px] leading-tight text-center mt-1">
-          <div class="font-bold">${Math.round(nodeVoltage)}V</div>
-          ${!node.isSource ? `<div>C:${totalCharge}kVA</div>` : ''}
-          ${!node.isSource ? `<div>PV:${totalPV}kVA</div>` : ''}
-        </div>`;
-      }
-
-      const icon = L.divIcon({
-        className: 'custom-node-marker',
-        html: `<div class="w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
-          <div class="text-sm">${iconContent}</div>
-          ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
-            <div class="font-bold">${Math.round(nodeVoltage)}V</div>
-            ${!node.isSource ? `<div>C:${totalCharge}</div>` : ''}
-            ${!node.isSource ? `<div>PV:${totalPV}</div>` : ''}
-          </div>` : ''}
-        </div>`,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
-      });
-
-      const marker = L.marker([node.lat, node.lng], { icon })
-        .addTo(map)
-        .bindPopup(node.name);
-
-      marker.on('click', (e) => {
-        // Empêcher la propagation vers la carte
-        L.DomEvent.stopPropagation(e);
-        
-        console.log('=== NODE CLICKED ===');
-        console.log('Clicked node:', node.id, node.name);
-        console.log('Selected tool:', selectedTool);
-        console.log('Selected node ID:', selectedNodeId);
-        console.log('Routing active:', routingActive);
-        console.log('Routing to node:', routingToNode);
-        console.log('Is this the target node?', routingToNode === node.id);
-        
-        if (routingActive && routingToNode === node.id) {
-          // Finaliser le routage en cliquant précisément sur le nœud de destination
-          console.log('=== FINALIZING ROUTE ===');
-          console.log('routingPoints at finalization:', routingPointsRef.current);
-          console.log('routingPoints length:', routingPointsRef.current.length);
-          
-          // IMPORTANT: Utiliser les routingPoints actuels + point final
-          const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
-          console.log('Final coordinates for cable:', finalCoords);
-          console.log('Total points in final cable:', finalCoords.length);
-          
-          if (routingFromNode && finalCoords.length >= 2) {
-            console.log('Creating cable with', finalCoords.length, 'points');
-            addCable(routingFromNode, node.id, selectedCableType, finalCoords);
-          } else {
-            console.error('ERROR: Not enough points or missing fromNode');
-            console.error('routingFromNode:', routingFromNode);
-            console.error('finalCoords.length:', finalCoords.length);
-          }
-          clearRouting();
-          return;
-        }
-        
-        if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id && !routingActive) {
-          // Vérifier le type de câble pour décider du comportement
-          const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
-          const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
-          
-          if (isUnderground) {
-            // Démarrer le routage manuel pour câble souterrain
-            console.log('Starting underground cable routing from', selectedNodeId, 'to', node.id);
-            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
-            if (fromNode) {
-              setRoutingFromNode(selectedNodeId);
-              setRoutingToNode(node.id);
-              // CRUCIAL: Initialiser routingPoints avec le point de départ
-              const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
-              routingPointsRef.current = initialPoints;
-              console.log('Initialized routing with start point:', initialPoints);
-              setRoutingActive(true);
-              
-              // Ajouter les marqueurs de départ et d'arrivée
-              const map = mapInstanceRef.current;
-              if (map) {
-                const startMarker = L.marker([fromNode.lat, fromNode.lng], {
-                  icon: L.divIcon({
-                    className: 'routing-start',
-                    html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                  })
-                }).addTo(map);
-                
-                const endMarker = L.marker([node.lat, node.lng], {
-                  icon: L.divIcon({
-                    className: 'routing-end',
-                    html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                  })
-                }).addTo(map);
-                
-                tempMarkersRef.current.push(startMarker, endMarker);
-              }
-            }
-          } else {
-            // Câble aérien : connexion directe
-            console.log('Creating direct aerial cable from', selectedNodeId, 'to', node.id);
-            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
-            const toNode = currentProject.nodes.find(n => n.id === node.id);
-            
-            if (fromNode && toNode) {
-              const coordinates = [
-                { lat: fromNode.lat, lng: fromNode.lng },
-                { lat: toNode.lat, lng: toNode.lng }
-              ];
-              addCable(selectedNodeId, node.id, selectedCableType, coordinates);
-              setSelectedNode(null);
-            }
-          }
-          
-        } else if (selectedTool === 'addCable' && !routingActive) {
-          console.log('Selecting first node:', node.id);
-          setSelectedNode(node.id);
-        } else if (selectedTool === 'edit') {
-          setSelectedNode(node.id);
-          openEditPanel('node');
-        } else if (selectedTool === 'delete') {
-          if (confirm(`Supprimer le nœud "${node.name}" ?`)) {
-            deleteNode(node.id);
-          }
-        }
-      });
-
-      markersRef.current.set(node.id, marker);
-    });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, routingActive, routingToNode, calculationResults, selectedScenario, showVoltages]);
-
-  // Update cables
-  useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map || !currentProject) return;
-
-    cablesRef.current.forEach(cable => map.removeLayer(cable));
-    cablesRef.current.clear();
-
-    currentProject.cables.forEach(cable => {
-      console.log('Rendering cable:', cable.name, 'with', cable.coordinates.length, 'points');
-      console.log('Cable coordinates:', cable.coordinates);
-      
-      // Récupérer les résultats de calcul pour la colorisation basée sur la conformité globale
-      let cableColor = '#6b7280'; // gris par défaut
-      const results = calculationResults[selectedScenario];
-      if (results) {
-        const calculatedCable = results.cables.find(c => c.id === cable.id);
-        if (calculatedCable) {
-          // Vérifier la conformité du nœud distal (bout du câble)
-          const distalNodeId = calculatedCable.nodeBId;
-          const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
-          
-          if (nodeData) {
-            const absDropPercent = Math.abs(nodeData.deltaU_cum_percent);
-            if (absDropPercent <= 8) {
-              cableColor = '#22c55e'; // vert - normal
-            } else if (absDropPercent <= 10) {
-              cableColor = '#f59e0b'; // orange - warning  
-            } else {
-              cableColor = '#ef4444'; // rouge - critical (hors norme EN50160)
-            }
-          }
-        }
-      }
-      
-      // CRUCIAL: Créer la polyline avec TOUS les points (départ + intermédiaires + arrivée)
-      const polyline = L.polyline(
-        cable.coordinates.map(coord => [coord.lat, coord.lng]),
-        { 
-          color: cableColor,
-          weight: 4,
-          opacity: 0.8
-        }
-      ).addTo(map);
-
-      // Vérifier que le câble suit bien tous les points
-      console.log('Polyline created with', cable.coordinates.length, 'points');
-
-      // Calculer la longueur réelle en suivant tous les segments
-      let totalLength = 0;
-      for (let i = 0; i < cable.coordinates.length - 1; i++) {
-        const from = L.latLng(cable.coordinates[i].lat, cable.coordinates[i].lng);
-        const to = L.latLng(cable.coordinates[i + 1].lat, cable.coordinates[i + 1].lng);
-        totalLength += from.distanceTo(to);
-      }
-
-      const nodeA = currentProject.nodes.find(n => n.id === cable.nodeAId);
-      const nodeB = currentProject.nodes.find(n => n.id === cable.nodeBId);
-      
-      polyline.bindPopup(`
-        <div>
-          <strong>${cable.name}</strong><br/>
-          ${nodeA?.name} → ${nodeB?.name}<br/>
-          Points: ${cable.coordinates.length}<br/>
-          Longueur réelle: ${Math.round(totalLength)}m<br/>
-          Longueur stockée: ${Math.round(cable.length_m || 0)}m
-        </div>
-      `);
-
-      polyline.on('click', () => {
-        if (selectedTool === 'edit') {
-          setSelectedCable(cable.id);
-          openEditPanel('cable');
-        } else if (selectedTool === 'delete') {
-          if (confirm(`Supprimer le câble "${cable.name}" ?`)) {
-            deleteCable(cable.id);
-          }
-        }
-      });
-
-      cablesRef.current.set(cable.id, polyline);
-    });
-  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario]);
-
   return (
     <div className="flex-1 relative">
-      <div 
-        ref={mapRef} 
-        className="w-full h-full"
-        style={{
-          position: 'relative',
-          zIndex: 0,
-          backgroundColor: '#f0f0f0'
-        }}
-      />
-      
+      <div ref={mapRef} className="w-full h-full" />
+
       {/* Barre de recherche d'adresse */}
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000]">
-        <AddressSearch onLocationSelect={handleLocationSelect} />
+        <AddressSearch onLocationSelect={() => {}} />
       </div>
-      
+
       {/* Sélecteur de type de carte */}
       <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">
         <Button
@@ -610,30 +145,19 @@ export const MapView = () => {
           <Globe className="w-4 h-4" />
           Satellite
         </Button>
+        <Button
+          variant={mapType === 'wms' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => switchMapType('wms')}
+          className="flex items-center gap-2"
+        >
+          <Layers className="w-4 h-4" />
+          WMS
+        </Button>
       </div>
-      
+
       <VoltageDisplay />
       <CableTypeSelector />
-      
-      {/* Tool indicator */}
-      <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
-        {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le type de câble puis cliquez sur le premier nœud'}
-        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
-        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez PRÉCISÉMENT sur le nœud rouge pour finaliser'}
-        {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
-        {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
-        {selectedTool === 'select' && 'Mode sélection'}
-      </div>
-      
-      {/* Bouton d'annulation pendant le routage */}
-      {routingActive && (
-        <div className="absolute top-16 left-20 bg-red-500 text-white rounded-lg px-3 py-2 text-sm z-40">
-          <button onClick={clearRouting} className="hover:bg-red-600 px-2 py-1 rounded">
-            ❌ Annuler le routage (ESC)
-          </button>
-        </div>
-      )}
     </div>
   );
 };
