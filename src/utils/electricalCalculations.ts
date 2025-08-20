@@ -93,7 +93,9 @@ export class ElectricalCalculator {
     nodes: Node[],
     cables: Cable[],
     cableTypes: CableType[],
-    scenario: CalculationScenario
+    scenario: CalculationScenario,
+    foisonnementCharges: number = 100,
+    foisonnementProductions: number = 100
   ): CalculationResult {
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
@@ -129,8 +131,9 @@ export class ElectricalCalculator {
 
     const S_eq = new Map<string, number>();
     for (const n of nodes) {
-      const S_prel = (n.clients || []).reduce((s, c) => s + (c.S_kVA || 0), 0);
-      const S_pv   = (n.productions || []).reduce((s, p) => s + (p.S_kVA || 0), 0);
+      // Appliquer les facteurs de foisonnement
+      const S_prel = (n.clients || []).reduce((s, c) => s + (c.S_kVA || 0), 0) * (foisonnementCharges / 100);
+      const S_pv   = (n.productions || []).reduce((s, p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
       let val = 0;
       if (scenario === 'PRÉLÈVEMENT') val = S_prel;
       else if (scenario === 'PRODUCTION') val = - S_pv;
@@ -166,8 +169,9 @@ export class ElectricalCalculator {
     let totalProductions = 0;
 
     for (const n of nodes) {
-      totalLoads += (n.clients || []).reduce((s,c) => s + (c.S_kVA || 0), 0);
-      totalProductions += (n.productions || []).reduce((s,p) => s + (p.S_kVA || 0), 0);
+      // Appliquer les facteurs de foisonnement aux totaux aussi
+      totalLoads += (n.clients || []).reduce((s,c) => s + (c.S_kVA || 0), 0) * (foisonnementCharges / 100);
+      totalProductions += (n.productions || []).reduce((s,p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
     }
 
     for (const cable of cables) {

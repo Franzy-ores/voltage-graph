@@ -1,5 +1,8 @@
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
 import { FileText, Save, FolderOpen, Settings, Zap } from "lucide-react";
+import { useNetworkStore } from "@/store/networkStore";
 
 interface TopMenuProps {
   onNewNetwork: () => void;
@@ -9,6 +12,12 @@ interface TopMenuProps {
 }
 
 export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuProps) => {
+  const { 
+    currentProject, 
+    setFoisonnementCharges, 
+    setFoisonnementProductions 
+  } = useNetworkStore();
+
   return (
     <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
       <div className="flex items-center justify-between px-6 py-4">
@@ -22,6 +31,41 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
             <p className="text-primary-foreground/80 text-sm">Réseau Électrique BT</p>
           </div>
         </div>
+
+        {/* Foisonnement Controls */}
+        {currentProject && (
+          <div className="flex items-center gap-6">
+            {/* Charges Slider */}
+            <div className="flex items-center gap-3 min-w-[200px]">
+              <Label className="text-sm font-medium whitespace-nowrap">
+                Charges {currentProject.foisonnementCharges}%
+              </Label>
+              <Slider
+                value={[currentProject.foisonnementCharges]}
+                onValueChange={(value) => setFoisonnementCharges(value[0])}
+                max={100}
+                min={0}
+                step={1}
+                className="flex-1"
+              />
+            </div>
+
+            {/* Productions Slider */}
+            <div className="flex items-center gap-3 min-w-[200px]">
+              <Label className="text-sm font-medium whitespace-nowrap">
+                Productions {currentProject.foisonnementProductions}%
+              </Label>
+              <Slider
+                value={[currentProject.foisonnementProductions]}
+                onValueChange={(value) => setFoisonnementProductions(value[0])}
+                max={100}
+                min={0}
+                step={1}
+                className="flex-1"
+              />
+            </div>
+          </div>
+        )}
 
         {/* Menu Actions */}
         <div className="flex items-center gap-2">

@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Target } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV } from '@/types/network';
 import { toast } from 'sonner';
@@ -22,7 +22,8 @@ export const EditPanel = () => {
     updateCable,
     updateProjectConfig,
     deleteNode,
-    deleteCable
+    deleteCable,
+    calculateWithTargetVoltage
   } = useNetworkStore();
 
   const [formData, setFormData] = useState<any>({});
@@ -38,7 +39,8 @@ export const EditPanel = () => {
           name: selectedNode.name,
           connectionType: selectedNode.connectionType,
           clients: [...(selectedNode.clients || [])],
-          productions: [...(selectedNode.productions || [])]
+          productions: [...(selectedNode.productions || [])],
+          tensionCible: selectedNode.tensionCible || ''
         });
       } else if (editTarget === 'cable' && selectedCable) {
         setFormData({
@@ -50,7 +52,9 @@ export const EditPanel = () => {
         setFormData({
           name: currentProject.name,
           voltageSystem: currentProject.voltageSystem,
-          cosPhi: currentProject.cosPhi
+          cosPhi: currentProject.cosPhi,
+          foisonnementCharges: currentProject.foisonnementCharges,
+          foisonnementProductions: currentProject.foisonnementProductions
         });
       }
     }
@@ -273,10 +277,54 @@ export const EditPanel = () => {
                       </Button>
                     </div>
                   ))}
-                </CardContent>
-              </Card>
-            </>
-          )}
+                 </CardContent>
+               </Card>
+
+               {/* Tension Cible */}
+               {!selectedNode?.isSource && (
+                 <Card>
+                   <CardHeader className="pb-3">
+                     <CardTitle className="text-base flex items-center gap-2">
+                       <Target className="w-4 h-4" />
+                       Tension Cible
+                     </CardTitle>
+                   </CardHeader>
+                   <CardContent className="space-y-3">
+                     <div className="space-y-2">
+                       <Label htmlFor="tension-cible">Tension cible (V)</Label>
+                       <div className="flex gap-2">
+                         <Input
+                           id="tension-cible"
+                           type="number"
+                           placeholder="Ex: 230"
+                           value={formData.tensionCible || ''}
+                           onChange={(e) => setFormData({ 
+                             ...formData, 
+                             tensionCible: parseFloat(e.target.value) || undefined 
+                           })}
+                         />
+                         {formData.tensionCible && (
+                           <Button
+                             variant="outline"
+                             onClick={() => {
+                               if (selectedNodeId && formData.tensionCible) {
+                                 calculateWithTargetVoltage(selectedNodeId, formData.tensionCible);
+                               }
+                             }}
+                           >
+                             Ajuster
+                           </Button>
+                         )}
+                       </div>
+                       <p className="text-xs text-muted-foreground">
+                         Ajuste automatiquement le foisonnement des charges pour atteindre cette tension
+                       </p>
+                     </div>
+                   </CardContent>
+                 </Card>
+               )}
+             </>
+           )}
 
           {/* Cable editing */}
           {editTarget === 'cable' && (
@@ -370,6 +418,30 @@ export const EditPanel = () => {
                   max="1"
                   value={formData.cosPhi || 0.95}
                   onChange={(e) => setFormData({ ...formData, cosPhi: parseFloat(e.target.value) || 0.95 })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="foisonnement-charges">Foisonnement charges (%)</Label>
+                <Input
+                  id="foisonnement-charges"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.foisonnementCharges || 100}
+                  onChange={(e) => setFormData({ ...formData, foisonnementCharges: parseFloat(e.target.value) || 100 })}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="foisonnement-productions">Foisonnement productions (%)</Label>
+                <Input
+                  id="foisonnement-productions"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={formData.foisonnementProductions || 100}
+                  onChange={(e) => setFormData({ ...formData, foisonnementProductions: parseFloat(e.target.value) || 100 })}
                 />
               </div>
             </>

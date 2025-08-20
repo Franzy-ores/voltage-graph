@@ -44,6 +44,7 @@ export interface Node {
   clients: ClientCharge[];
   productions: ProductionPV[];
   isSource?: boolean;
+  tensionCible?: number; // tension cible en V (optionnel)
 }
 
 export interface Cable {
@@ -67,6 +68,8 @@ export interface Project {
   name: string;
   voltageSystem: VoltageSystem;
   cosPhi: number; // facteur de puissance global
+  foisonnementCharges: number; // facteur de foisonnement des charges (0-100%)
+  foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   nodes: Node[];
   cables: Cable[];
   cableTypes: CableType[];

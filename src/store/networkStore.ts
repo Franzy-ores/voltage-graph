@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { NetworkState, Project, Node, Cable, CalculationScenario, CalculationResult, VoltageSystem, ConnectionType } from '@/types/network';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
+import { toast } from 'sonner';
 
 interface NetworkStoreState extends NetworkState {
   selectedCableType: string;
@@ -41,13 +42,41 @@ interface NetworkActions {
   // Display settings
   setShowVoltages: (show: boolean) => void;
   changeVoltageSystem: () => void;
+  setFoisonnementCharges: (value: number) => void;
+  setFoisonnementProductions: (value: number) => void;
+  calculateWithTargetVoltage: (nodeId: string, targetVoltage: number) => void;
 }
 
-const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Project => ({
+const createDefaultProject = (): Project => ({
+  id: `project-${Date.now()}`,
+  name: "Nouveau Projet",
+  voltageSystem: "TÉTRAPHASÉ_400V",
+  cosPhi: 0.95,
+  foisonnementCharges: 100,
+  foisonnementProductions: 100,
+  nodes: [
+    {
+      id: "source",
+      name: "Source",
+      lat: 46.6167,
+      lng: 6.8833,
+      connectionType: "TÉTRA_3P+N_230_400V",
+      clients: [],
+      productions: [],
+      isSource: true
+    }
+  ],
+  cables: [],
+  cableTypes: defaultCableTypes
+});
+
+const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Project => ({
   id: `project-${Date.now()}`,
   name,
   voltageSystem,
   cosPhi: 0.95,
+  foisonnementCharges: 100,
+  foisonnementProductions: 100,
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
@@ -55,7 +84,7 @@ const createDefaultProject = (name: string, voltageSystem: VoltageSystem): Proje
 
 export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
   // State
-  currentProject: createDefaultProject("Projet par défaut", "TÉTRAPHASÉ_400V"),
+  currentProject: createDefaultProject(),
   selectedScenario: 'MIXTE',
   calculationResults: {
     PRÉLÈVEMENT: null,
@@ -72,7 +101,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
   // Actions
   createNewProject: (name, voltageSystem) => {
-    const project = createDefaultProject(name, voltageSystem);
+    const project = createDefaultProject2(name, voltageSystem);
     set({ 
       currentProject: project,
       selectedNodeId: null,
@@ -256,19 +285,25 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.nodes, 
         currentProject.cables, 
         currentProject.cableTypes, 
-        'PRÉLÈVEMENT'
+        'PRÉLÈVEMENT',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes, 
         currentProject.cables, 
         currentProject.cableTypes, 
-        'MIXTE'
+        'MIXTE',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes, 
         currentProject.cables, 
         currentProject.cableTypes, 
-        'PRODUCTION'
+        'PRODUCTION',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions
       )
     };
 
@@ -317,22 +352,129 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         updatedProject.nodes, 
         updatedProject.cables, 
         updatedProject.cableTypes, 
-        'PRÉLÈVEMENT'
+        'PRÉLÈVEMENT',
+        updatedProject.foisonnementCharges,
+        updatedProject.foisonnementProductions
       ),
       MIXTE: calculator.calculateScenario(
         updatedProject.nodes, 
         updatedProject.cables, 
         updatedProject.cableTypes, 
-        'MIXTE'
+        'MIXTE',
+        updatedProject.foisonnementCharges,
+        updatedProject.foisonnementProductions
       ),
       PRODUCTION: calculator.calculateScenario(
         updatedProject.nodes, 
         updatedProject.cables, 
         updatedProject.cableTypes, 
-        'PRODUCTION'
+        'PRODUCTION',
+        updatedProject.foisonnementCharges,
+        updatedProject.foisonnementProductions
       )
     };
 
     set({ calculationResults: results });
+  },
+
+  setFoisonnementCharges: (value: number) => {
+    const { currentProject, calculateAll } = get();
+    if (!currentProject) return;
+
+    set({
+      currentProject: {
+        ...currentProject,
+        foisonnementCharges: Math.max(0, Math.min(100, value))
+      }
+    });
+    calculateAll();
+  },
+
+  setFoisonnementProductions: (value: number) => {
+    const { currentProject, calculateAll } = get();
+    if (!currentProject) return;
+
+    set({
+      currentProject: {
+        ...currentProject,
+        foisonnementProductions: Math.max(0, Math.min(100, value))
+      }
+    });
+    calculateAll();
+  },
+
+  calculateWithTargetVoltage: (nodeId: string, targetVoltage: number) => {
+    const { currentProject, selectedScenario } = get();
+    if (!currentProject) return;
+
+    const calculator = new ElectricalCalculator(currentProject.cosPhi);
+    let bestFoisonnement = 100;
+    let bestVoltage = 0;
+    let minDiff = Infinity;
+
+    // Dichotomie pour trouver le foisonnement optimal
+    let low = 0;
+    let high = 100;
+    
+    for (let iteration = 0; iteration < 20; iteration++) {
+      const testFoisonnement = (low + high) / 2;
+      
+      // Créer un projet temporaire avec ce foisonnement
+      const tempProject = {
+        ...currentProject,
+        foisonnementCharges: testFoisonnement,
+        foisonnementProductions: 0 // Ignorer les productions pour tension cible
+      };
+
+      const result = calculator.calculateScenario(
+        tempProject.nodes,
+        tempProject.cables,
+        tempProject.cableTypes,
+        selectedScenario,
+        testFoisonnement,
+        0
+      );
+
+      const nodeData = result.nodeVoltageDrops?.find(n => n.nodeId === nodeId);
+      if (!nodeData) break;
+
+      // Calculer la tension du nœud
+      let baseVoltage = 230;
+      const node = tempProject.nodes.find(n => n.id === nodeId);
+      if (node?.connectionType === 'TÉTRA_3P+N_230_400V') {
+        baseVoltage = 400;
+      }
+      
+      const actualVoltage = baseVoltage - nodeData.deltaU_cum_V;
+      const diff = Math.abs(actualVoltage - targetVoltage);
+      
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestFoisonnement = testFoisonnement;
+        bestVoltage = actualVoltage;
+      }
+
+      if (actualVoltage < targetVoltage) {
+        high = testFoisonnement - 0.1;
+      } else {
+        low = testFoisonnement + 0.1;
+      }
+
+      if (high - low < 0.1) break;
+    }
+
+    // Appliquer le meilleur foisonnement trouvé
+    set({
+      currentProject: {
+        ...currentProject,
+        foisonnementCharges: Math.round(bestFoisonnement * 10) / 10,
+        foisonnementProductions: 0
+      }
+    });
+
+    // Recalculer
+    get().calculateAll();
+    
+    toast.success(`Foisonnement ajusté automatiquement à ${Math.round(bestFoisonnement * 10) / 10}% pour atteindre la tension cible`);
   }
 }));
