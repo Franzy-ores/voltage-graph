@@ -100,18 +100,18 @@ export const MapView = () => {
         }
       ).addTo(map);
     } else if (newType === 'wms') {
-      tileLayerRef.current = L.tileLayer.wms(
-        'https://geoservices.wallonie.be/arcgis/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/WMSServer',
-        {
-          layers: 'ADRESSES,VOIRIE_AXE,HYDROG_AXE,HYDROG_BORD,CONSTR_BATIBORD,CONSTR_BATIEMPRISE,VOIRIE_LIGNE,FERROV_LIGNE,EQUIPE_AXE,TOPONYMIE,SYMBOLOGIE',
-          format: 'image/png',
-          transparent: true,
-          attribution: '© SPW - Géoservices Wallonie',
-          maxZoom: 22,
-          minZoom: 3,
-        }
-      ).addTo(map);
+  tileLayerRef.current = L.tileLayer.wms(
+    'https://geoservices.wallonie.be/arcgis/services/TOPOGRAPHIE/PICC_VDIFF/MapServer/WMSServer',
+    {
+      layers: 'ADRESSES,VOIRIE_AXE,HYDROG_AXE,HYDROG_BORD,CONSTR_BATIBORD,CONSTR_BATIEMPRISE,VOIRIE_LIGNE,FERROV_LIGNE,EQUIPE_AXE,TOPONYMIE,SYMBOLOGIE',
+      format: 'image/png',
+      transparent: true,
+      attribution: '© SPW - Géoservices Wallonie',
+      maxZoom: 22,  // Permet des zooms très détaillés (≈1/250)
+      minZoom: 3,
     }
+  ).addTo(map);
+}
 
     setMapType(newType);
   };
