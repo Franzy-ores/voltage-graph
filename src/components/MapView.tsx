@@ -88,14 +88,14 @@ export const MapView = () => {
     if (newType === 'osm') {
       tileLayerRef.current = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors',
-        maxZoom: 18,
+        maxZoom: 22,
         minZoom: 3,
       }).addTo(map);
     } else if (newType === 'satellite') {
       tileLayerRef.current = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
           attribution: '© Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-          maxZoom: 18,
+          maxZoom: 22,
           minZoom: 3,
         }
       ).addTo(map);
