@@ -47,26 +47,31 @@ export class ElectricalCalculator {
     return ElectricalCalculator.calculateCableLength(coordinates);
   }
 
-  private getVoltage(connectionType: ConnectionType): { U_base:number, isThreePhase:boolean } {
+  private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
-      case 'MONO_230V_PP':
-        return { U_base: 230, isThreePhase: false };
-      case 'TRI_230V_3F':
-        return { U_base: 230, isThreePhase: true };
       case 'MONO_230V_PN':
-        return { U_base: 230, isThreePhase: false };
+        return { U: 230, isThreePhase: false, useR0: true };
+      case 'MONO_230V_PP':
+        return { U: 230, isThreePhase: false, useR0: false };
+      case 'TRI_230V_3F':
+        return { U: 230, isThreePhase: true, useR0: false };
       case 'TÉTRA_3P+N_230_400V':
-        return { U_base: 400, isThreePhase: true };
+        return { U: 400, isThreePhase: true, useR0: false };
       default:
-        return { U_base: 230, isThreePhase: true };
+        return { U: 230, isThreePhase: true, useR0: false };
     }
   }
 
+  private getVoltage(connectionType: ConnectionType): { U_base:number, isThreePhase:boolean } {
+    const { U, isThreePhase } = this.getVoltageConfig(connectionType);
+    return { U_base: U, isThreePhase };
+  }
+
   private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
-    if (connectionType === 'MONO_230V_PN') {
-      return { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km };
-    }
-    return { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
+    const { useR0 } = this.getVoltageConfig(connectionType);
+    return useR0
+      ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
+      : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
   private calculateCurrentA(S_kVA: number, connectionType: ConnectionType): number {
