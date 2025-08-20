@@ -109,6 +109,7 @@ export const MapView = () => {
       attribution: '© SPW - Géoservices Wallonie',
       maxZoom: 22,  // Permet des zooms très détaillés (≈1/250)
       minZoom: 3,
+      crs: L.CRS.EPSG31370, // ⚠️ test en Lambert belge 72
     }
   ).addTo(map);
 }
