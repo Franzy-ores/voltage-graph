@@ -294,16 +294,33 @@ export const MapView = () => {
       const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
       const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
       
-      // Calculer la tension avec chute cumulée
-      let nodeVoltage = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+      // Calculer la tension avec chute cumulée selon le type de connexion
+      let baseVoltage = 230; // Par défaut
+      
+      // Déterminer la tension de base selon le type de connexion du nœud
+      switch (node.connectionType) {
+        case 'TÉTRA_3P+N_230_400V':
+          baseVoltage = 400;
+          break;
+        case 'MONO_230V_PN':
+        case 'MONO_230V_PP':
+        case 'TRI_230V_3F':
+          baseVoltage = 230;
+          break;
+        default:
+          baseVoltage = 230;
+          break;
+      }
+      
+      let nodeVoltage = baseVoltage;
       let isOutOfCompliance = false;
       
       if (calculationResults[selectedScenario] && !node.isSource) {
         const results = calculationResults[selectedScenario];
         const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
         if (nodeData) {
-          // Utiliser la chute de tension cumulée
-          nodeVoltage = nodeVoltage - Math.abs(nodeData.deltaU_cum_V);
+          // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse)
+          nodeVoltage = baseVoltage - nodeData.deltaU_cum_V;
           // Vérifier la conformité EN50160 (seuil à 10%)
           isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
         }
