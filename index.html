@@ -3,12 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>voltage-graph</title>
-    <meta name="description" content="Lovable Generated Project" />
+    <title>Voltage Graph</title>
+    <meta name="description" content="Network voltage calculation and visualization tool" />
     <meta name="author" content="Lovable" />
 
-    <meta property="og:title" content="voltage-graph" />
-    <meta property="og:description" content="Lovable Generated Project" />
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Voltage Graph" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/placeholder.svg" />
+
+    <meta property="og:title" content="Voltage Graph" />
+    <meta property="og:description" content="Network voltage calculation and visualization tool" />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
 
@@ -20,5 +28,18 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('SW registered: ', registration);
+            })
+            .catch((registrationError) => {
+              console.log('SW registration failed: ', registrationError);
+            });
+        });
+      }
+    </script>
   </body>
 </html>
