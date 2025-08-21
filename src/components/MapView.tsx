@@ -97,6 +97,9 @@ export const MapView = () => {
     tileLayerRef.current = initialTileLayer;
     mapInstanceRef.current = map;
 
+    // Exposer l'instance globalement pour leaflet-image
+    (window as any).globalMap = map;
+
     const handleZoomToProject = (event: Event) => {
       const customEvent = event as CustomEvent;
       zoomToProject(customEvent);
