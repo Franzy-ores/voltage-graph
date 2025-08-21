@@ -393,6 +393,67 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const { currentProject } = get();
     if (!currentProject) return;
 
+    // Renuméroter les câbles depuis la source vers les nœuds les plus éloignés
+    const renumberCables = () => {
+      // Trouver la source
+      const sourceNode = currentProject.nodes.find(node => node.isSource);
+      if (!sourceNode || currentProject.cables.length === 0) return;
+
+      // Construire un graphe des connexions
+      const connections = new Map<string, string[]>();
+      const cableMap = new Map<string, any>(); // Pour retrouver les câbles par connexion
+
+      currentProject.cables.forEach(cable => {
+        // Ajouter les connexions bidirectionnelles
+        if (!connections.has(cable.nodeAId)) connections.set(cable.nodeAId, []);
+        if (!connections.has(cable.nodeBId)) connections.set(cable.nodeBId, []);
+        
+        connections.get(cable.nodeAId)!.push(cable.nodeBId);
+        connections.get(cable.nodeBId)!.push(cable.nodeAId);
+        
+        // Mapper les connexions aux câbles
+        const key1 = `${cable.nodeAId}-${cable.nodeBId}`;
+        const key2 = `${cable.nodeBId}-${cable.nodeAId}`;
+        cableMap.set(key1, cable);
+        cableMap.set(key2, cable);
+      });
+
+      // Parcours BFS depuis la source pour renuméroter
+      const visited = new Set<string>();
+      const cableOrder: any[] = [];
+      const queue = [sourceNode.id];
+      visited.add(sourceNode.id);
+
+      while (queue.length > 0) {
+        const currentNodeId = queue.shift()!;
+        const neighbors = connections.get(currentNodeId) || [];
+
+        neighbors.forEach(neighborId => {
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            queue.push(neighborId);
+            
+            // Trouver le câble correspondant
+            const cableKey = `${currentNodeId}-${neighborId}`;
+            const cable = cableMap.get(cableKey);
+            if (cable && !cableOrder.find(c => c.id === cable.id)) {
+              cableOrder.push(cable);
+            }
+          }
+        });
+      }
+
+      // Renuméroter les câbles trouvés
+      cableOrder.forEach((cable, index) => {
+        cable.name = `Câble ${index + 1}`;
+      });
+
+      console.log(`Câbles renumérotés: ${cableOrder.length} câbles depuis la source`);
+    };
+
+    // Appliquer la renumérotation
+    renumberCables();
+
     const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
     const results = {
