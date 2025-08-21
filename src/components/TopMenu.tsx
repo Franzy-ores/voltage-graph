@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { FileText, Save, FolderOpen, Settings, Zap } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 
@@ -15,7 +17,12 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
   const { 
     currentProject, 
     setFoisonnementCharges, 
-    setFoisonnementProductions 
+    setFoisonnementProductions,
+    showVoltages,
+    setShowVoltages,
+    selectedScenario,
+    setSelectedScenario,
+    changeVoltageSystem
   } = useNetworkStore();
 
   return (
@@ -32,11 +39,54 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
           </div>
         </div>
 
-        {/* Foisonnement Controls */}
+        {/* Controls */}
         {currentProject && (
           <div className="flex items-center gap-6">
+            {/* Scenario Selector */}
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-medium whitespace-nowrap">Scénario:</Label>
+              <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
+                <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background border z-[10000]">
+                  <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
+                  <SelectItem value="MIXTE">Mixte</SelectItem>
+                  <SelectItem value="PRODUCTION">Production</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Voltage System Info */}
+            <div className="text-xs text-primary-foreground/80">
+              {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
+            </div>
+
+            {/* Voltage Display Switch */}
+            <div className="flex items-center gap-2">
+              <Switch 
+                id="voltage-display" 
+                checked={showVoltages} 
+                onCheckedChange={setShowVoltages}
+                className="data-[state=checked]:bg-white/20"
+              />
+              <Label htmlFor="voltage-display" className="text-sm font-medium whitespace-nowrap">
+                Tensions
+              </Label>
+            </div>
+
+            {/* Change Voltage System Button */}
+            <Button
+              onClick={changeVoltageSystem}
+              variant="ghost"
+              size="sm"
+              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+            >
+              {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
+            </Button>
+
             {/* Charges Slider */}
-            <div className="flex items-center gap-3 min-w-[200px]">
+            <div className="flex items-center gap-3 min-w-[180px]">
               <Label className="text-sm font-medium whitespace-nowrap">
                 Charges {currentProject.foisonnementCharges}%
               </Label>
@@ -51,7 +101,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
             </div>
 
             {/* Productions Slider */}
-            <div className="flex items-center gap-3 min-w-[200px]">
+            <div className="flex items-center gap-3 min-w-[180px]">
               <Label className="text-sm font-medium whitespace-nowrap">
                 Productions {currentProject.foisonnementProductions}%
               </Label>

@@ -3,7 +3,6 @@ import { MapView } from "@/components/MapView";
 import { Toolbar } from "@/components/Toolbar";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { EditPanel } from "@/components/EditPanel";
-import { VoltageDisplay } from "@/components/VoltageDisplay";
 import { useNetworkStore } from "@/store/networkStore";
 
 const Index = () => {

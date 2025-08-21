@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNetworkStore } from '@/store/networkStore';
-import { VoltageDisplay } from './VoltageDisplay';
 import { CableTypeSelector } from './CableTypeSelector';
 import { AddressSearch } from './AddressSearch';
 import { Button } from './ui/button';
@@ -649,7 +648,6 @@ export const MapView = () => {
         </Button>
       </div>
       
-      <VoltageDisplay />
       <CableTypeSelector />
       
       {/* Tool indicator */}
