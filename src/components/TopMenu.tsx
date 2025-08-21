@@ -27,8 +27,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
 
   return (
     <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
-      <div className="flex items-center justify-between px-6 py-4">
-        {/* Logo and Title */}
+      {/* Title Section - Full Width */}
+      <div className="flex items-center justify-center px-6 py-3 border-b border-primary-foreground/10">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-white/10 rounded-lg">
             <Zap className="h-6 w-6" />
@@ -38,7 +38,10 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
             <p className="text-primary-foreground/80 text-sm">Réseau Électrique BT</p>
           </div>
         </div>
+      </div>
 
+      {/* Controls and Buttons Section */}
+      <div className="flex items-center justify-between px-6 py-3">
         {/* Controls */}
         {currentProject && (
           <div className="flex items-center gap-6">
