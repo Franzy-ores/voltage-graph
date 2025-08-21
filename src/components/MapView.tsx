@@ -116,6 +116,83 @@ export const MapView = () => {
     setMapType(newType);
   };
 
+  // === Gestion des clics sur la carte ===
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const handleMapClick = (e: L.LeafletMouseEvent) => {
+      if (selectedTool === 'addNode') {
+        const { lat, lng } = e.latlng;
+        addNode(lat, lng, 'TÉTRA_3P+N_230_400V');
+        console.log('Node added at:', lat, lng);
+      }
+    };
+
+    map.on('click', handleMapClick);
+
+    return () => {
+      map.off('click', handleMapClick);
+    };
+  }, [selectedTool, addNode]);
+
+  // === Affichage des nœuds et câbles ===
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !currentProject) return;
+
+    // Nettoyer les marqueurs existants
+    markersRef.current.forEach(marker => {
+      map.removeLayer(marker);
+    });
+    markersRef.current.clear();
+
+    // Nettoyer les câbles existants
+    cablesRef.current.forEach(cable => {
+      map.removeLayer(cable);
+    });
+    cablesRef.current.clear();
+
+    // Ajouter les nœuds
+    currentProject.nodes.forEach(node => {
+      const marker = L.marker([node.lat, node.lng])
+        .bindPopup(`<strong>${node.name}</strong><br/>Type: ${node.connectionType}`)
+        .on('click', () => {
+          if (selectedTool === 'select') {
+            setSelectedNode(node.id);
+            openEditPanel('node');
+          }
+        });
+      
+      marker.addTo(map);
+      markersRef.current.set(node.id, marker);
+    });
+
+    // Ajouter les câbles
+    currentProject.cables.forEach(cable => {
+      const nodeA = currentProject.nodes.find(n => n.id === cable.nodeAId);
+      const nodeB = currentProject.nodes.find(n => n.id === cable.nodeBId);
+      
+      if (nodeA && nodeB) {
+        const polyline = L.polyline([[nodeA.lat, nodeA.lng], [nodeB.lat, nodeB.lng]], {
+          color: 'blue',
+          weight: 3
+        })
+        .bindPopup(`<strong>${cable.name}</strong><br/>Longueur: ${cable.length_m.toFixed(1)} m`)
+        .on('click', () => {
+          if (selectedTool === 'select') {
+            setSelectedCable(cable.id);
+            openEditPanel('cable');
+          }
+        });
+        
+        polyline.addTo(map);
+        cablesRef.current.set(cable.id, polyline);
+      }
+    });
+
+  }, [currentProject, selectedTool, setSelectedNode, setSelectedCable, openEditPanel]);
+
   return (
     <div className="flex-1 relative">
       <div ref={mapRef} className="w-full h-full" />
