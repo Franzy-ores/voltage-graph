@@ -173,7 +173,11 @@ export const MapView = () => {
       } else if (routingActive) {
         // En mode routage, ajouter des points intermédiaires
         const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
+        console.log('=== ADDING INTERMEDIATE POINT ===');
+        console.log('New point:', newPoint);
+        console.log('Current routing points before adding:', routingPointsRef.current);
         routingPointsRef.current = [...routingPointsRef.current, newPoint];
+        console.log('Current routing points after adding:', routingPointsRef.current);
         
         // Ajouter un marqueur temporaire
         const marker = L.marker([e.latlng.lat, e.latlng.lng], {
@@ -418,10 +422,15 @@ export const MapView = () => {
         // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
         if (routingActive) {
           // Ajouter le nœud cliqué comme point final et conserver tout le tracé
+          console.log('=== FINALIZING CABLE ON NODE CLICK ===');
+          console.log('routingPointsRef.current before final:', routingPointsRef.current);
+          console.log('Node final position:', { lat: node.lat, lng: node.lng });
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
+          console.log('Final coords for cable:', finalCoords);
+          console.log('Total points in final cable:', finalCoords.length);
           
           if (routingFromNode && finalCoords.length >= 2) {
-            console.log('Finalizing cable with', finalCoords.length, 'points:', finalCoords);
+            console.log('Creating cable from', routingFromNode, 'to', node.id, 'with', finalCoords.length, 'points');
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
             clearRouting();
           }
@@ -443,8 +452,11 @@ export const MapView = () => {
               setRoutingFromNode(selectedNodeId);
               setRoutingToNode(node.id);
               // Initialiser routingPoints avec le point de départ
+              console.log('=== STARTING UNDERGROUND CABLE ROUTING ===');
               const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
+              console.log('Initial point (start node):', initialPoints[0]);
               routingPointsRef.current = initialPoints;
+              console.log('routingPointsRef initialized with:', routingPointsRef.current);
               setRoutingActive(true);
               
               // Ajouter uniquement le marqueur de départ
