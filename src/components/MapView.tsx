@@ -319,8 +319,9 @@ export const MapView = () => {
     routingPointsRef.current = [];
     setSelectedNode(null); // Important: remettre selectedNodeId à null
     
-    console.log('=== ROUTING STATE CLEARED ===');
-    console.log('Ready for new cable routing');
+    console.log('=== ROUTING STATE CLEARED - ALL STATES RESET ===');
+    console.log('routingActive should be false, routingFromNode should be null');
+    console.log('Ready for completely new cable routing process');
   };
   useEffect(() => {
     const map = mapInstanceRef.current;
