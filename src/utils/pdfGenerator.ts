@@ -224,8 +224,8 @@ export class PDFGenerator {
         return;
       }
 
-      // Attendre un moment pour s'assurer que tous les éléments sont rendus
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Attendre plus longtemps pour s'assurer que les câbles sont complètement dessinés
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
       // Prendre une capture d'écran avec une meilleure qualité
       const canvas = await html2canvas(mapContainer as HTMLElement, {
