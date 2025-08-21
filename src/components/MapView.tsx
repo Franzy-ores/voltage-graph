@@ -175,22 +175,79 @@ export const MapView = () => {
 
     // Add new markers
     currentProject.nodes.forEach(node => {
+      // Calculer les totaux
+      const totalCharge = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      const totalPV = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+      
+      // Calculer la tension avec chute cumulée selon le type de connexion
+      let baseVoltage = 230; // Par défaut
+      
+      // Déterminer la tension de base selon le type de connexion du nœud
+      switch (node.connectionType) {
+        case 'TÉTRA_3P+N_230_400V':
+          baseVoltage = 400;
+          break;
+        case 'MONO_230V_PN':
+        case 'MONO_230V_PP':
+        case 'TRI_230V_3F':
+          baseVoltage = 230;
+          break;
+        default:
+          baseVoltage = 230;
+          break;
+      }
+      
+      let nodeVoltage = baseVoltage;
+      let isOutOfCompliance = false;
+      
+      if (calculationResults[selectedScenario] && !node.isSource) {
+        const results = calculationResults[selectedScenario];
+        const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
+        if (nodeData) {
+          // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse)
+          nodeVoltage = baseVoltage - nodeData.deltaU_cum_V;
+          // Vérifier la conformité EN50160 (seuil à 10%)
+          isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
+        }
+      }
+      
       // Déterminer le type et l'icône
       let iconContent = 'N';
-      let iconClass = 'bg-blue-500 border-blue-600 text-white';
+      let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
       
       if (node.isSource) {
         iconContent = 'S';
-        iconClass = 'bg-green-500 border-green-600 text-white';
+        // Source colorée selon la tension du système
+        const isHighVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
+        iconClass = isHighVoltage ? 'bg-green-500 border-green-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
+      } else {
+        const hasProduction = totalPV > 0;
+        const hasLoad = totalCharge > 0;
+        
+        if (hasProduction && hasLoad) {
+          iconContent = 'M'; // Mixte
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-yellow-500 border-yellow-600 text-white';
+        } else if (hasProduction) {
+          iconContent = 'P'; // Production seule
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-green-500 border-green-600 text-white';
+        } else if (hasLoad) {
+          iconContent = 'C'; // Charge seule
+          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
+        }
       }
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-bold ${iconClass}">
-          ${iconContent}
+        html: `<div class="w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
+          <div class="text-sm">${iconContent}</div>
+          ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
+            <div class="font-bold">${Math.round(nodeVoltage)}V</div>
+            ${!node.isSource ? `<div>C:${totalCharge}</div>` : ''}
+            ${!node.isSource ? `<div>PV:${totalPV}</div>` : ''}
+          </div>` : ''}
         </div>`,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
+        iconSize: [48, 48],
+        iconAnchor: [24, 24]
       });
 
       const marker = L.marker([node.lat, node.lng], { icon })
