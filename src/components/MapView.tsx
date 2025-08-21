@@ -431,12 +431,15 @@ export const MapView = () => {
           console.log('=== FINALIZING CABLE ON NODE CLICK ===');
           console.log('routingPointsRef.current before final:', routingPointsRef.current);
           console.log('Node final position:', { lat: node.lat, lng: node.lng });
+          
+          // IMPORTANT: Créer le tracé complet avec tous les points intermédiaires + point final
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final coords for cable:', finalCoords);
           console.log('Total points in final cable:', finalCoords.length);
           
           if (routingFromNode && finalCoords.length >= 2) {
             console.log('Creating cable from', routingFromNode, 'to', node.id, 'with', finalCoords.length, 'points');
+            // Utiliser le tracé complet avec tous les points intermédiaires
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
             clearRouting();
           }
