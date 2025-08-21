@@ -224,16 +224,29 @@ export class PDFGenerator {
         return;
       }
 
-      // Prendre une capture d'écran
+      // Attendre un moment pour s'assurer que tous les éléments sont rendus
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Prendre une capture d'écran avec une meilleure qualité
       const canvas = await html2canvas(mapContainer as HTMLElement, {
         useCORS: true,
-        scale: 1,
+        allowTaint: true,
+        scale: 2, // Augmenter la qualité
         width: mapContainer.clientWidth,
-        height: mapContainer.clientHeight
+        height: mapContainer.clientHeight,
+        backgroundColor: '#f0f0f0',
+        logging: false,
+        ignoreElements: (element) => {
+          // Ignorer les contrôles de l'interface utilisateur
+          return element.classList.contains('leaflet-control-container') ||
+                 element.classList.contains('leaflet-control') ||
+                 element.tagName === 'BUTTON' ||
+                 element.classList.contains('absolute');
+        }
       });
 
       // Convertir en image
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png', 0.95);
       
       // Calculer les dimensions pour s'adapter à la page
       const pageWidth = 200 - (2 * this.margin);
@@ -251,6 +264,8 @@ export class PDFGenerator {
         this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, imgWidth, imgHeight);
         this.currentY += imgHeight + 10;
       }
+
+      this.addText('Légende: Les câbles sont représentés par des lignes colorées selon leur chute de tension');
 
     } catch (error) {
       console.error('Erreur lors de la capture d\'écran:', error);
