@@ -427,10 +427,20 @@ export const MapView = () => {
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final cable coordinates:', finalCoords);
           
-          if (finalCoords.length >= 2) {
-            addCable(routingFromNode, node.id, selectedCableType, finalCoords);
-            clearRouting();
-          }
+        if (finalCoords.length >= 2) {
+          addCable(routingFromNode, node.id, selectedCableType, finalCoords);
+          
+          // Réinitialisation complète et immédiate de l'état
+          console.log('=== RESETTING STATE AFTER CABLE CREATION ===');
+          setRoutingActive(false);
+          setRoutingFromNode(null);
+          setRoutingToNode(null);
+          routingPointsRef.current = [];
+          setSelectedNode(null);
+          
+          // Nettoyer aussi visuellement
+          clearRouting();
+        }
           return;
         }
         
