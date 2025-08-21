@@ -38,6 +38,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   };
   
   const cableStats = getCableStatistics();
+  
   // Add safety checks
   if (!results || !selectedScenario) {
     return (
@@ -241,85 +242,83 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                     <TableHead className="text-xs">U arr.(V)</TableHead>
                   </TableRow>
                 </TableHeader>
-                 <TableBody>
-                   {currentResult.cables
-                     .sort((a, b) => {
-                       // Extraire le numéro du nom du câble (ex: "Câble 1" -> 1)
-                       const getNumber = (name: string) => {
-                         const match = name.match(/Câble (\d+)/);
-                         return match ? parseInt(match[1], 10) : 999999; // Les câbles sans numéro à la fin
-                       };
-                       return getNumber(a.name) - getNumber(b.name);
-                     })
-                     .map((cable) => {
-                        // Récupérer les informations du câble depuis le projet
-                        const projectCable = currentProject?.cables.find(c => c.id === cable.id);
-                        const cableType = currentProject?.cableTypes.find(ct => ct.id === projectCable?.typeId);
+                <TableBody>
+                  {currentResult.cables
+                    .sort((a, b) => {
+                      // Extraire le numéro du nom du câble (ex: "Câble 1" -> 1)
+                      const getNumber = (name: string) => {
+                        const match = name.match(/Câble (\d+)/);
+                        return match ? parseInt(match[1], 10) : 999999; // Les câbles sans numéro à la fin
+                      };
+                      return getNumber(a.name) - getNumber(b.name);
+                    })
+                    .map((cable) => {
+                      // Récupérer les informations du câble depuis le projet
+                      const projectCable = currentProject?.cables.find(c => c.id === cable.id);
+                      const cableType = currentProject?.cableTypes.find(ct => ct.id === projectCable?.typeId);
+                      
+                      // Récupérer les nœuds du câble
+                      const nodeA = currentProject?.nodes.find(n => n.id === projectCable?.nodeAId);
+                      const nodeB = currentProject?.nodes.find(n => n.id === projectCable?.nodeBId);
+                      
+                      // Déterminer quel nœud est la source et lequel est l'aval
+                      const sourceNode = nodeA?.isSource ? nodeA : nodeB?.isSource ? nodeB : nodeA;
+                      const distalNode = sourceNode === nodeA ? nodeB : nodeA;
+                      
+                      // Si aucun des deux n'est source directe, utiliser les tensions cibles
+                      let actualSourceNode = sourceNode;
+                      let actualDistalNode = distalNode;
+                      
+                      if (!nodeA?.isSource && !nodeB?.isSource) {
+                        const voltageA = nodeA?.tensionCible || (currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
+                        const voltageB = nodeB?.tensionCible || (currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
                         
-                        // Récupérer les nœuds du câble
-                        const nodeA = currentProject?.nodes.find(n => n.id === projectCable?.nodeAId);
-                        const nodeB = currentProject?.nodes.find(n => n.id === projectCable?.nodeBId);
-                        
-                        // Déterminer quel nœud est la source et lequel est l'aval
-                        // Dans la logique électrique, le nœud source est celui qui a isSource=true ou qui est plus proche de la source
-                        const sourceNode = nodeA?.isSource ? nodeA : nodeB?.isSource ? nodeB : nodeA;
-                        const distalNode = sourceNode === nodeA ? nodeB : nodeA;
-                        
-                        // Si aucun des deux n'est source directe, utiliser les tensions cibles pour déterminer le sens
-                        let actualSourceNode = sourceNode;
-                        let actualDistalNode = distalNode;
-                        
-                        if (!nodeA?.isSource && !nodeB?.isSource) {
-                          // Comparer les tensions cibles ou utiliser la logique du calculateur
-                          const voltageA = nodeA?.tensionCible || (currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
-                          const voltageB = nodeB?.tensionCible || (currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
-                          
-                          if (voltageA >= voltageB) {
-                            actualSourceNode = nodeA;
-                            actualDistalNode = nodeB;
-                          } else {
-                            actualSourceNode = nodeB;
-                            actualDistalNode = nodeA;
-                          }
+                        if (voltageA >= voltageB) {
+                          actualSourceNode = nodeA;
+                          actualDistalNode = nodeB;
+                        } else {
+                          actualSourceNode = nodeB;
+                          actualDistalNode = nodeA;
                         }
-                        
-                        // Calculer les tensions
-                        const baseVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
-                        const sourceVoltage = actualSourceNode?.tensionCible || baseVoltage;
-                        
-                        // La tension aval dépend du nœud de résultat correspondant
-                        const nodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => nvd.nodeId === actualDistalNode?.id);
-                        const cumulativeVoltageDrop = nodeVoltageDropResult?.deltaU_cum_V || 0;
-                        const distalVoltage = sourceVoltage - cumulativeVoltageDrop;
-                       
-                       return (
-                         <TableRow key={cable.id}>
-                           <TableCell className="text-xs">{cable.name}</TableCell>
-                           <TableCell className="text-xs">{sourceVoltage.toFixed(0)}</TableCell>
-                           <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
-                           <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
-                           <TableCell className="text-xs">
-                             {cable.current_A?.toFixed(1) || '-'}
-                           </TableCell>
-                           <TableCell className="text-xs">
-                             <span className={`font-medium ${
-                               Math.abs(cable.voltageDropPercent || 0) > 10 
-                                 ? 'text-destructive' 
-                                 : Math.abs(cable.voltageDropPercent || 0) > 8 
-                                 ? 'text-accent' 
-                                 : 'text-success'
-                             }`}>
-                               {cable.voltageDropPercent?.toFixed(2) || '-'}
-                             </span>
-                           </TableCell>
-                           <TableCell className="text-xs">
-                             {cable.losses_kW?.toFixed(3) || '-'}
-                           </TableCell>
-                           <TableCell className="text-xs">{distalVoltage.toFixed(0)}</TableCell>
-                         </TableRow>
-                       );
-                     })}
-                 </TableBody>
+                      }
+                      
+                      // Calculer les tensions
+                      const baseVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+                      const sourceNodeVoltage = actualSourceNode?.tensionCible || baseVoltage;
+                      
+                      // La tension aval basée sur les résultats de calcul
+                      const nodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => nvd.nodeId === actualDistalNode?.id);
+                      const cumulativeVoltageDrop = nodeVoltageDropResult?.deltaU_cum_V || 0;
+                      const distalNodeVoltage = sourceNodeVoltage - cumulativeVoltageDrop;
+                      
+                      return (
+                        <TableRow key={cable.id}>
+                          <TableCell className="text-xs">{cable.name}</TableCell>
+                          <TableCell className="text-xs">{sourceNodeVoltage.toFixed(0)}</TableCell>
+                          <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
+                          <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
+                          <TableCell className="text-xs">
+                            {cable.current_A?.toFixed(1) || '-'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <span className={`font-medium ${
+                              Math.abs(cable.voltageDropPercent || 0) > 10 
+                                ? 'text-destructive' 
+                                : Math.abs(cable.voltageDropPercent || 0) > 8 
+                                ? 'text-accent' 
+                                : 'text-success'
+                            }`}>
+                              {cable.voltageDropPercent?.toFixed(2) || '-'}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {cable.losses_kW?.toFixed(3) || '-'}
+                          </TableCell>
+                          <TableCell className="text-xs">{distalNodeVoltage.toFixed(0)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
               </Table>
             )}
           </CardContent>
