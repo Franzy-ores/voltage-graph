@@ -555,7 +555,7 @@ export const MapView = () => {
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
-        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez PRÉCISÉMENT sur le nœud rouge pour finaliser'}
+        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur le nœud rouge pour finaliser'}
         {selectedTool === 'select' && 'Cliquez sur un élément pour le sélectionner'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'move' && 'Cliquez et glissez un nœud pour le déplacer'}
