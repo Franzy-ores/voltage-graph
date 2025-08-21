@@ -43,6 +43,7 @@ export const MapView = () => {
     deleteNode,
     deleteCable,
     showVoltages,
+    moveNode,
   } = useNetworkStore();
 
   // Fonction pour zoomer sur le projet chargé
@@ -250,7 +251,10 @@ export const MapView = () => {
         iconAnchor: [24, 24]
       });
 
-      const marker = L.marker([node.lat, node.lng], { icon })
+      const marker = L.marker([node.lat, node.lng], { 
+        icon,
+        draggable: selectedTool === 'move'
+      })
         .addTo(map)
         .bindPopup(node.name);
 
@@ -276,6 +280,9 @@ export const MapView = () => {
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
           openEditPanel('node');
+        } else if (selectedTool === 'move') {
+          // Le nœud est maintenant sélectionné pour déplacement
+          setSelectedNode(node.id);
         } else if (selectedTool === 'delete') {
           if (confirm(`Supprimer le nœud "${node.name}" ?`)) {
             deleteNode(node.id);
@@ -283,9 +290,15 @@ export const MapView = () => {
         }
       });
 
+      // Gestionnaire pour le drag & drop
+      marker.on('dragend', (e) => {
+        const newLatLng = e.target.getLatLng();
+        moveNode(node.id, newLatLng.lat, newLatLng.lng);
+      });
+
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, showVoltages, calculationResults, selectedScenario]);
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, showVoltages, calculationResults, selectedScenario, moveNode]);
 
   // Update cables
   useEffect(() => {
@@ -404,6 +417,7 @@ export const MapView = () => {
         {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
         {selectedTool === 'select' && 'Cliquez sur un élément pour le sélectionner'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
+        {selectedTool === 'move' && 'Cliquez et glissez un nœud pour le déplacer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
       </div>
     </div>

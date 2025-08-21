@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { MousePointer, Plus, Cable, Edit, Trash2, Calculator } from 'lucide-react';
+import { MousePointer, Plus, Cable, Edit, Trash2, Calculator, Move } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { toast } from 'sonner';
 
@@ -51,6 +51,12 @@ export const Toolbar = () => {
       icon: Edit,
       label: 'Éditer',
       description: 'Modifier les propriétés'
+    },
+    {
+      id: 'move' as const,
+      icon: Move,
+      label: 'Déplacer',
+      description: 'Déplacer un nœud'
     },
     {
       id: 'delete' as const,

@@ -18,6 +18,7 @@ interface NetworkActions {
   addNode: (lat: number, lng: number, connectionType: ConnectionType) => void;
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   deleteNode: (nodeId: string) => void;
+  moveNode: (nodeId: string, lat: number, lng: number) => void;
   
   // Cable actions
   addCable: (nodeAId: string, nodeBId: string, typeId: string, coordinates: { lat: number; lng: number; }[]) => void;
@@ -209,6 +210,48 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         )
       },
       selectedNodeId: null
+    });
+  },
+
+  moveNode: (nodeId, lat, lng) => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+
+    // Mettre à jour la position du nœud
+    const updatedNodes = currentProject.nodes.map(node =>
+      node.id === nodeId ? { ...node, lat, lng } : node
+    );
+
+    // Mettre à jour les câbles connectés à ce nœud
+    const updatedCables = currentProject.cables.map(cable => {
+      if (cable.nodeAId === nodeId || cable.nodeBId === nodeId) {
+        const newCoordinates = [...cable.coordinates];
+        
+        if (cable.nodeAId === nodeId) {
+          // Mettre à jour le premier point (départ)
+          newCoordinates[0] = { lat, lng };
+        }
+        
+        if (cable.nodeBId === nodeId) {
+          // Mettre à jour le dernier point (arrivée)
+          newCoordinates[newCoordinates.length - 1] = { lat, lng };
+        }
+        
+        return {
+          ...cable,
+          coordinates: newCoordinates,
+          length_m: ElectricalCalculator.calculateCableLength(newCoordinates)
+        };
+      }
+      return cable;
+    });
+
+    set({
+      currentProject: {
+        ...currentProject,
+        nodes: updatedNodes,
+        cables: updatedCables
+      }
     });
   },
 

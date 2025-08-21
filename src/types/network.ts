@@ -94,7 +94,7 @@ export interface NetworkState {
   calculationResults: {
     [key in CalculationScenario]: CalculationResult | null;
   };
-  selectedTool: 'select' | 'addNode' | 'addCable' | 'edit' | 'delete';
+  selectedTool: 'select' | 'addNode' | 'addCable' | 'edit' | 'delete' | 'move';
   selectedNodeId: string | null;
   selectedCableId: string | null;
   editPanelOpen: boolean;
