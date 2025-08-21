@@ -215,18 +215,16 @@ export class PDFGenerator {
   private async waitForMapReady(): Promise<void> {
     return new Promise((resolve) => {
       let attempts = 0;
-      const maxAttempts = 20;
+      const maxAttempts = 15;
       
       const checkReady = () => {
         attempts++;
         
         const mapContainer = document.querySelector('#map-container');
-        const leafletMap = document.querySelector('#map-container .leaflet-container');
-        const overlayPane = document.querySelector('#map-container .leaflet-overlay-pane');
+        const leafletContainer = document.querySelector('#map-container .leaflet-container');
         
-        // Vérifier spécifiquement les éléments SVG des câbles
-        const svgElements = document.querySelectorAll('#map-container .leaflet-overlay-pane svg');
-        const pathElements = document.querySelectorAll('#map-container .leaflet-overlay-pane path');
+        // Vérifier les éléments Canvas (câbles en mode Canvas)
+        const canvasElements = document.querySelectorAll('#map-container canvas');
         
         // Vérifier que les tuiles sont chargées
         const tileImages = document.querySelectorAll('#map-container .leaflet-tile');
@@ -234,16 +232,16 @@ export class PDFGenerator {
           (img as HTMLImageElement).complete
         );
         
-        // Vérifier que les éléments de base et les câbles sont présents
-        const mapReady = mapContainer && leafletMap && overlayPane;
-        const cablesReady = svgElements.length > 0 && pathElements.length > 0;
+        // Vérifier que les éléments de base et les câbles Canvas sont présents
+        const mapReady = mapContainer && leafletContainer;
+        const cablesReady = canvasElements.length > 0;
         
-        console.log(`Attempt ${attempts}: Map ready: ${mapReady}, Cables ready: ${cablesReady}, Tiles loaded: ${tilesLoaded}`);
-        console.log(`SVG elements: ${svgElements.length}, Path elements: ${pathElements.length}`);
+        console.log(`Attempt ${attempts}: Map ready: ${mapReady}, Canvas cables: ${cablesReady}, Tiles loaded: ${tilesLoaded}`);
+        console.log(`Canvas elements: ${canvasElements.length}`);
         
         if (mapReady && tilesLoaded && cablesReady) {
-          // Attendre encore 2 secondes pour que les SVG soient complètement rendus
-          setTimeout(resolve, 2000);
+          // Attendre 1 seconde pour que le Canvas soit complètement rendu
+          setTimeout(resolve, 1000);
         } else if (attempts >= maxAttempts) {
           console.warn('Timeout waiting for map to be ready, proceeding anyway');
           resolve();
@@ -270,7 +268,7 @@ export class PDFGenerator {
       // Attendre que la carte soit prête
       await this.waitForMapReady();
 
-      // Configuration spéciale pour capturer les éléments SVG de Leaflet
+      // Configuration optimisée pour capturer les éléments Canvas
       const canvas = await html2canvas(mapContainer, {
         useCORS: true,
         allowTaint: false,
@@ -280,12 +278,12 @@ export class PDFGenerator {
         height: mapContainer.offsetHeight,
         scrollX: 0,
         scrollY: 0,
-        logging: true, // Activer temporairement pour debug
+        logging: true, // Debug temporaire
         removeContainer: true,
-        foreignObjectRendering: false, // CRUCIAL pour les SVG
+        foreignObjectRendering: true, // Permet de capturer les Canvas
         imageTimeout: 15000,
         ignoreElements: (element) => {
-          // Exclure seulement les contrôles UI, GARDER tous les SVG
+          // Exclure seulement les contrôles UI
           return element.classList.contains('leaflet-control-container') ||
                  element.classList.contains('leaflet-control') ||
                  element.classList.contains('leaflet-popup') ||

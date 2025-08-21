@@ -85,6 +85,7 @@ export const MapView = () => {
       zoom: 10,
       zoomControl: true,
       attributionControl: true,
+      preferCanvas: true, // CRUCIAL: Force le rendu Canvas pour tous les éléments vectoriels
     });
 
     const initialTileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -576,7 +577,8 @@ export const MapView = () => {
         { 
           color: cableColor,
           weight: 4,
-          opacity: 0.8
+          opacity: 0.8,
+          renderer: L.canvas() // Force le rendu Canvas pour cette polyline
         }
       ).addTo(map);
 
