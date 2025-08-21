@@ -224,19 +224,8 @@ export class PDFGenerator {
         return;
       }
 
-      // Déclencher le zoom sur le projet pour cadrer tous les nœuds
-      const zoomEvent = new CustomEvent('zoomToProject');
-      window.dispatchEvent(zoomEvent);
-      
-      // Attendre que le zoom soit effectué
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // Forcer un refresh de la carte Leaflet pour s'assurer que les câbles sont rendus
-      const refreshEvent = new CustomEvent('refreshMap');
-      window.dispatchEvent(refreshEvent);
-      
-      // Attendre encore plus longtemps pour s'assurer que tous les câbles sont rendus
-      await new Promise(resolve => setTimeout(resolve, 2500));
+      // Attendre un moment pour s'assurer que tous les éléments sont rendus
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       // Prendre une capture d'écran avec une meilleure qualité
       const canvas = await html2canvas(mapContainer as HTMLElement, {
@@ -247,12 +236,11 @@ export class PDFGenerator {
         height: mapContainer.clientHeight,
         backgroundColor: '#f0f0f0',
         logging: false,
-        foreignObjectRendering: true, // Améliorer le rendu des éléments SVG
         ignoreElements: (element) => {
-          // Ignorer les contrôles de l'interface utilisateur mais garder les éléments de la carte
+          // Ignorer les contrôles de l'interface utilisateur
           return element.classList.contains('leaflet-control-container') ||
                  element.classList.contains('leaflet-control') ||
-                 (element.tagName === 'BUTTON' && !element.closest('.leaflet-marker-icon')) ||
+                 element.tagName === 'BUTTON' ||
                  element.classList.contains('absolute');
         }
       });
@@ -278,9 +266,6 @@ export class PDFGenerator {
       }
 
       this.addText('Légende: Les câbles sont représentés par des lignes colorées selon leur chute de tension');
-      this.addText('  • Vert: chute de tension normale (< 3%)');
-      this.addText('  • Orange: chute de tension élevée (3-5%)');
-      this.addText('  • Rouge: chute de tension critique (> 5%)');
 
     } catch (error) {
       console.error('Erreur lors de la capture d\'écran:', error);

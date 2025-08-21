@@ -101,21 +101,10 @@ export const MapView = () => {
       zoomToProject(customEvent);
     };
 
-    const handleRefreshMap = () => {
-      if (mapInstanceRef.current) {
-        // Forcer un invalidateSize pour redimensionner et redessiner la carte
-        setTimeout(() => {
-          mapInstanceRef.current?.invalidateSize();
-        }, 100);
-      }
-    };
-
     window.addEventListener('zoomToProject', handleZoomToProject);
-    window.addEventListener('refreshMap', handleRefreshMap);
 
     return () => {
       window.removeEventListener('zoomToProject', handleZoomToProject);
-      window.removeEventListener('refreshMap', handleRefreshMap);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
