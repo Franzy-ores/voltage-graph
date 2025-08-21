@@ -4,6 +4,45 @@ import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { toast } from 'sonner';
 
+// Fonction pour calculer les bounds géographiques d'un projet
+const calculateProjectBounds = (nodes: Node[]) => {
+  if (nodes.length === 0) return undefined;
+
+  const lats = nodes.map(n => n.lat);
+  const lngs = nodes.map(n => n.lng);
+  
+  const north = Math.max(...lats);
+  const south = Math.min(...lats);
+  const east = Math.max(...lngs);
+  const west = Math.min(...lngs);
+  
+  const center = {
+    lat: (north + south) / 2,
+    lng: (east + west) / 2
+  };
+  
+  // Calculer un zoom approprié basé sur la distance
+  const latDiff = north - south;
+  const lngDiff = east - west;
+  const maxDiff = Math.max(latDiff, lngDiff);
+  
+  let zoom = 15; // zoom par défaut
+  if (maxDiff > 0.1) zoom = 10;
+  else if (maxDiff > 0.05) zoom = 12;
+  else if (maxDiff > 0.01) zoom = 14;
+  else if (maxDiff > 0.005) zoom = 15;
+  else zoom = 16;
+  
+  return {
+    north,
+    south,
+    east,
+    west,
+    center,
+    zoom
+  };
+};
+
 interface NetworkStoreState extends NetworkState {
   selectedCableType: string;
 }
@@ -121,6 +160,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   loadProject: (project) => {
+    // Calculer les bounds géographiques si pas encore définis
+    if (!project.geographicBounds && project.nodes.length > 0) {
+      project.geographicBounds = calculateProjectBounds(project.nodes);
+    }
+
     set({ 
       currentProject: project,
       selectedNodeId: null,
@@ -130,7 +174,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     
     // Déclencher le zoom sur le projet chargé après un court délai
     setTimeout(() => {
-      const event = new CustomEvent('zoomToProject');
+      const event = new CustomEvent('zoomToProject', { 
+        detail: project.geographicBounds 
+      });
       window.dispatchEvent(event);
     }, 100);
   },
@@ -139,8 +185,15 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const { currentProject } = get();
     if (!currentProject) return;
     
+    const updatedProject = { ...currentProject, ...updates };
+    
+    // Recalculer les bounds géographiques si les nœuds ont changé
+    if (updatedProject.nodes.length > 0) {
+      updatedProject.geographicBounds = calculateProjectBounds(updatedProject.nodes);
+    }
+    
     set({
-      currentProject: { ...currentProject, ...updates }
+      currentProject: updatedProject
     });
   },
 
@@ -175,11 +228,15 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
     };
 
+    const updatedNodes = [...currentProject.nodes, newNode];
+    const updatedProject = {
+      ...currentProject,
+      nodes: updatedNodes,
+      geographicBounds: calculateProjectBounds(updatedNodes)
+    };
+
     set({
-      currentProject: {
-        ...currentProject,
-        nodes: [...currentProject.nodes, newNode]
-      }
+      currentProject: updatedProject
     });
   },
 
@@ -246,12 +303,15 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       return cable;
     });
 
+    const updatedProject = {
+      ...currentProject,
+      nodes: updatedNodes,
+      cables: updatedCables,
+      geographicBounds: calculateProjectBounds(updatedNodes)
+    };
+
     set({
-      currentProject: {
-        ...currentProject,
-        nodes: updatedNodes,
-        cables: updatedCables
-      }
+      currentProject: updatedProject
     });
   },
 

@@ -72,6 +72,14 @@ export interface Project {
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
+  geographicBounds?: { // coordonnées géographiques du projet
+    north: number;
+    south: number;
+    east: number;
+    west: number;
+    center: { lat: number; lng: number };
+    zoom: number;
+  };
   nodes: Node[];
   cables: Cable[];
   cableTypes: CableType[];

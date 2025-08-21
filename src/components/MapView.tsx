@@ -53,16 +53,23 @@ export const MapView = () => {
   } = useNetworkStore();
 
   // Fonction pour zoomer sur le projet chargé
-  const zoomToProject = () => {
+  const zoomToProject = (event?: CustomEvent) => {
     const map = mapInstanceRef.current;
-    if (!map || !currentProject || currentProject.nodes.length === 0) return;
+    if (!map || !currentProject) return;
 
-    const bounds = L.latLngBounds(
-      currentProject.nodes.map(node => [node.lat, node.lng])
-    );
+    const bounds = event?.detail || currentProject.geographicBounds;
     
-    const paddedBounds = bounds.pad(0.1);
-    map.fitBounds(paddedBounds);
+    if (bounds && bounds.center) {
+      // Utiliser les bounds sauvegardés du projet
+      map.setView([bounds.center.lat, bounds.center.lng], bounds.zoom);
+    } else if (currentProject.nodes.length > 0) {
+      // Fallback : calculer à partir des nœuds
+      const latLngBounds = L.latLngBounds(
+        currentProject.nodes.map(node => [node.lat, node.lng])
+      );
+      const paddedBounds = latLngBounds.pad(0.1);
+      map.fitBounds(paddedBounds);
+    }
   };
 
   // Initialize map
@@ -90,8 +97,9 @@ export const MapView = () => {
     tileLayerRef.current = initialTileLayer;
     mapInstanceRef.current = map;
 
-    const handleZoomToProject = () => {
-      zoomToProject();
+    const handleZoomToProject = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      zoomToProject(customEvent);
     };
 
     window.addEventListener('zoomToProject', handleZoomToProject);
