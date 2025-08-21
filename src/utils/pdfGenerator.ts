@@ -268,7 +268,7 @@ export class PDFGenerator {
   private async waitForMapReady(): Promise<void> {
     return new Promise((resolve) => {
       let attempts = 0;
-      const maxAttempts = 25; // Plus d'attente pour les tuiles
+      const maxAttempts = 10; // Réduit de 25 à 10
       
       const checkReady = () => {
         attempts++;
@@ -288,16 +288,16 @@ export class PDFGenerator {
         
         const mapReady = mapContainer && leafletContainer;
         
-        console.log(`Attempt ${attempts}: Map: ${mapReady}, Tiles: ${tilesLoaded} (${tileImages.length}), Canvas: ${cablesReady} (${canvasElements.length})`);
+        console.log(`PDF Wait ${attempts}/${maxAttempts}: Map: ${mapReady}, Tiles: ${tilesLoaded} (${tileImages.length}), Canvas: ${cablesReady} (${canvasElements.length})`);
         
         if (mapReady && tilesLoaded && cablesReady) {
-          // Attendre 2 secondes pour que tout soit stable
-          setTimeout(resolve, 2000);
+          // Attente réduite de 2s à 500ms
+          setTimeout(resolve, 500);
         } else if (attempts >= maxAttempts) {
-          console.warn('Timeout - proceeding with partial map');
+          console.warn('PDF: Map timeout - proceeding anyway');
           resolve();
         } else {
-          setTimeout(checkReady, 800); // Plus d'intervalle pour les tuiles
+          setTimeout(checkReady, 300); // Réduit de 800ms à 300ms
         }
       };
       
@@ -392,7 +392,7 @@ export class PDFGenerator {
         logging: false,
         removeContainer: true,
         foreignObjectRendering: true,
-        imageTimeout: 30000, // Plus de temps pour les tuiles
+        imageTimeout: 10000, // Réduit de 30s à 10s
         proxy: undefined,
         ignoreElements: (element) => {
           return element.classList.contains('leaflet-control-container') ||
