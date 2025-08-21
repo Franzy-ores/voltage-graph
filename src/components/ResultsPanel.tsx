@@ -232,46 +232,72 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 <TableHeader>
                   <TableRow>
                     <TableHead className="text-xs">Câble</TableHead>
+                    <TableHead className="text-xs">U dép.(V)</TableHead>
+                    <TableHead className="text-xs">Type</TableHead>
                     <TableHead className="text-xs">L (m)</TableHead>
                     <TableHead className="text-xs">I (A)</TableHead>
                     <TableHead className="text-xs">ΔU (%)</TableHead>
                     <TableHead className="text-xs">Pertes (kW)</TableHead>
+                    <TableHead className="text-xs">U arr.(V)</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {currentResult.cables
-                    .sort((a, b) => {
-                      // Extraire le numéro du nom du câble (ex: "Câble 1" -> 1)
-                      const getNumber = (name: string) => {
-                        const match = name.match(/Câble (\d+)/);
-                        return match ? parseInt(match[1], 10) : 999999; // Les câbles sans numéro à la fin
-                      };
-                      return getNumber(a.name) - getNumber(b.name);
-                    })
-                    .map((cable) => (
-                    <TableRow key={cable.id}>
-                      <TableCell className="text-xs">{cable.name}</TableCell>
-                      <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
-                      <TableCell className="text-xs">
-                        {cable.current_A?.toFixed(1) || '-'}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <span className={`font-medium ${
-                          Math.abs(cable.voltageDropPercent || 0) > 10 
-                            ? 'text-destructive' 
-                            : Math.abs(cable.voltageDropPercent || 0) > 8 
-                            ? 'text-accent' 
-                            : 'text-success'
-                        }`}>
-                          {cable.voltageDropPercent?.toFixed(2) || '-'}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {cable.losses_kW?.toFixed(3) || '-'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
+                 <TableBody>
+                   {currentResult.cables
+                     .sort((a, b) => {
+                       // Extraire le numéro du nom du câble (ex: "Câble 1" -> 1)
+                       const getNumber = (name: string) => {
+                         const match = name.match(/Câble (\d+)/);
+                         return match ? parseInt(match[1], 10) : 999999; // Les câbles sans numéro à la fin
+                       };
+                       return getNumber(a.name) - getNumber(b.name);
+                     })
+                     .map((cable) => {
+                       // Récupérer les informations du câble depuis le projet
+                       const projectCable = currentProject?.cables.find(c => c.id === cable.id);
+                       const cableType = currentProject?.cableTypes.find(ct => ct.id === projectCable?.typeId);
+                       
+                       // Récupérer les nœuds de départ et d'arrivée
+                       const nodeA = currentProject?.nodes.find(n => n.id === projectCable?.nodeAId);
+                       const nodeB = currentProject?.nodes.find(n => n.id === projectCable?.nodeBId);
+                       
+                       // Calculer les tensions de base selon le système
+                       const baseVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+                       
+                       // Tension de départ (tension cible du nœud A ou tension de base)
+                       const startVoltage = nodeA?.tensionCible || baseVoltage;
+                       
+                       // Tension d'arrivée (tension de départ - chute de tension)
+                       const voltageDrop = cable.voltageDrop_V || 0;
+                       const endVoltage = startVoltage - voltageDrop;
+                       
+                       return (
+                         <TableRow key={cable.id}>
+                           <TableCell className="text-xs">{cable.name}</TableCell>
+                           <TableCell className="text-xs">{startVoltage.toFixed(0)}</TableCell>
+                           <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
+                           <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
+                           <TableCell className="text-xs">
+                             {cable.current_A?.toFixed(1) || '-'}
+                           </TableCell>
+                           <TableCell className="text-xs">
+                             <span className={`font-medium ${
+                               Math.abs(cable.voltageDropPercent || 0) > 10 
+                                 ? 'text-destructive' 
+                                 : Math.abs(cable.voltageDropPercent || 0) > 8 
+                                 ? 'text-accent' 
+                                 : 'text-success'
+                             }`}>
+                               {cable.voltageDropPercent?.toFixed(2) || '-'}
+                             </span>
+                           </TableCell>
+                           <TableCell className="text-xs">
+                             {cable.losses_kW?.toFixed(3) || '-'}
+                           </TableCell>
+                           <TableCell className="text-xs">{endVoltage.toFixed(0)}</TableCell>
+                         </TableRow>
+                       );
+                     })}
+                 </TableBody>
               </Table>
             )}
           </CardContent>
