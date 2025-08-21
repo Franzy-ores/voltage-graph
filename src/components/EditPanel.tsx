@@ -95,7 +95,7 @@ export const EditPanel = () => {
     const newClient: ClientCharge = {
       id: `client-${Date.now()}`,
       label: `Charge ${formData.clients.length + 1}`,
-      S_kVA: 5
+      S_kVA: currentProject?.defaultChargeKVA || 10
     };
     setFormData({
       ...formData,
@@ -114,7 +114,7 @@ export const EditPanel = () => {
     const newProduction: ProductionPV = {
       id: `prod-${Date.now()}`,
       label: `PV ${formData.productions.length + 1}`,
-      S_kVA: 5
+      S_kVA: currentProject?.defaultProductionKVA || 5
     };
     setFormData({
       ...formData,
