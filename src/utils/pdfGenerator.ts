@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import domtoimage from 'dom-to-image';
 import { Project, CalculationResult, CalculationScenario } from '@/types/network';
 
 export interface PDFData {
@@ -212,52 +212,92 @@ export class PDFGenerator {
     this.currentY += 10;
   }
 
+  private async waitForMapReady(): Promise<void> {
+    return new Promise((resolve) => {
+      // Attendre que tous les éléments de la carte soient chargés
+      const checkReady = () => {
+        const svgElements = document.querySelectorAll('#map-container svg');
+        const pathElements = document.querySelectorAll('#map-container path');
+        const tileImages = document.querySelectorAll('#map-container .leaflet-tile');
+        
+        // Vérifier si les tuiles sont chargées
+        const tilesLoaded = Array.from(tileImages).every(img => 
+          (img as HTMLImageElement).complete
+        );
+        
+        // Vérifier si il y a des câbles (éléments SVG/path)
+        const cablesPresent = svgElements.length > 0 || pathElements.length > 0;
+        
+        if (tilesLoaded && cablesPresent) {
+          resolve();
+        } else {
+          setTimeout(checkReady, 500);
+        }
+      };
+      
+      checkReady();
+      
+      // Timeout de sécurité après 10 secondes
+      setTimeout(resolve, 10000);
+    });
+  }
+
   private async addNetworkScreenshot() {
     this.checkPageBreak(120);
     this.addSubtitle('Plan du Réseau');
 
     try {
-      // Chercher le conteneur de la carte
-      const mapContainer = document.querySelector('#map-container');
+      const mapContainer = document.querySelector('#map-container') as HTMLElement;
       if (!mapContainer) {
         this.addText('Impossible de capturer la carte');
         return;
       }
 
-      // Attendre plus longtemps pour s'assurer que les câbles sont complètement dessinés
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      // Attendre intelligemment que la carte soit prête
+      await this.waitForMapReady();
 
-      // Prendre une capture d'écran avec une meilleure qualité
-      const canvas = await html2canvas(mapContainer as HTMLElement, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2, // Augmenter la qualité
-        width: mapContainer.clientWidth,
-        height: mapContainer.clientHeight,
-        backgroundColor: '#f0f0f0',
-        logging: false,
-        ignoreElements: (element) => {
-          // Ignorer les contrôles de l'interface utilisateur
-          return element.classList.contains('leaflet-control-container') ||
-                 element.classList.contains('leaflet-control') ||
-                 element.tagName === 'BUTTON' ||
-                 element.classList.contains('absolute');
+      // Utiliser dom-to-image pour une capture plus moderne et précise
+      const imgData = await domtoimage.toPng(mapContainer, {
+        quality: 1.0,
+        bgcolor: '#f0f0f0',
+        width: mapContainer.clientWidth * 2, // Haute résolution
+        height: mapContainer.clientHeight * 2,
+        style: {
+          transform: 'scale(2)',
+          transformOrigin: 'top left',
+          width: mapContainer.clientWidth + 'px',
+          height: mapContainer.clientHeight + 'px'
+        },
+        filter: (node) => {
+          // Exclure les contrôles UI
+          if (node instanceof HTMLElement) {
+            return !node.classList.contains('leaflet-control-container') &&
+                   !node.classList.contains('leaflet-control') &&
+                   !node.classList.contains('absolute') &&
+                   node.tagName !== 'BUTTON';
+          }
+          return true;
         }
       });
-
-      // Convertir en image
-      const imgData = canvas.toDataURL('image/png', 0.95);
       
       // Calculer les dimensions pour s'adapter à la page
       const pageWidth = 200 - (2 * this.margin);
       const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      
+      // Créer une image temporaire pour obtenir les dimensions
+      const tempImg = new Image();
+      await new Promise((resolve, reject) => {
+        tempImg.onload = resolve;
+        tempImg.onerror = reject;
+        tempImg.src = imgData;
+      });
+      
+      const imgHeight = (tempImg.height * imgWidth) / tempImg.width;
       
       // Vérifier si l'image tient sur la page
       if (imgHeight > 150) {
-        // Si trop grande, ajuster la hauteur
         const adjustedHeight = 150;
-        const adjustedWidth = (canvas.width * adjustedHeight) / canvas.height;
+        const adjustedWidth = (tempImg.width * adjustedHeight) / tempImg.height;
         this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, adjustedWidth, adjustedHeight);
         this.currentY += adjustedHeight + 10;
       } else {
@@ -270,6 +310,25 @@ export class PDFGenerator {
     } catch (error) {
       console.error('Erreur lors de la capture d\'écran:', error);
       this.addText('Erreur lors de la capture de la carte');
+      
+      // Fallback avec délai fixe si la détection intelligente échoue
+      try {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const mapContainer = document.querySelector('#map-container') as HTMLElement;
+        if (mapContainer) {
+          const imgData = await domtoimage.toPng(mapContainer, {
+            quality: 0.95,
+            bgcolor: '#f0f0f0'
+          });
+          
+          const pageWidth = 200 - (2 * this.margin);
+          this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pageWidth, 120);
+          this.currentY += 130;
+        }
+      } catch (fallbackError) {
+        console.error('Erreur fallback:', fallbackError);
+        this.addText('Capture impossible - carte non disponible');
+      }
     }
   }
 
