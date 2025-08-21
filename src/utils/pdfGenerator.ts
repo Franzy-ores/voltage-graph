@@ -215,7 +215,7 @@ export class PDFGenerator {
   private async waitForMapReady(): Promise<void> {
     return new Promise((resolve) => {
       let attempts = 0;
-      const maxAttempts = 15;
+      const maxAttempts = 25; // Plus d'attente pour les tuiles
       
       const checkReady = () => {
         attempts++;
@@ -223,30 +223,28 @@ export class PDFGenerator {
         const mapContainer = document.querySelector('#map-container');
         const leafletContainer = document.querySelector('#map-container .leaflet-container');
         
-        // Vérifier les éléments Canvas (câbles en mode Canvas)
-        const canvasElements = document.querySelectorAll('#map-container canvas');
-        
-        // Vérifier que les tuiles sont chargées
+        // Vérifier les tuiles de carte (fond de plan)
         const tileImages = document.querySelectorAll('#map-container .leaflet-tile');
-        const tilesLoaded = tileImages.length === 0 || Array.from(tileImages).every(img => 
-          (img as HTMLImageElement).complete
+        const tilesLoaded = tileImages.length > 0 && Array.from(tileImages).every(img => 
+          (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalHeight > 0
         );
         
-        // Vérifier que les éléments de base et les câbles Canvas sont présents
-        const mapReady = mapContainer && leafletContainer;
+        // Vérifier les éléments Canvas (câbles)
+        const canvasElements = document.querySelectorAll('#map-container canvas');
         const cablesReady = canvasElements.length > 0;
         
-        console.log(`Attempt ${attempts}: Map ready: ${mapReady}, Canvas cables: ${cablesReady}, Tiles loaded: ${tilesLoaded}`);
-        console.log(`Canvas elements: ${canvasElements.length}`);
+        const mapReady = mapContainer && leafletContainer;
+        
+        console.log(`Attempt ${attempts}: Map: ${mapReady}, Tiles: ${tilesLoaded} (${tileImages.length}), Canvas: ${cablesReady} (${canvasElements.length})`);
         
         if (mapReady && tilesLoaded && cablesReady) {
-          // Attendre 1 seconde pour que le Canvas soit complètement rendu
-          setTimeout(resolve, 1000);
+          // Attendre 2 secondes pour que tout soit stable
+          setTimeout(resolve, 2000);
         } else if (attempts >= maxAttempts) {
-          console.warn('Timeout waiting for map to be ready, proceeding anyway');
+          console.warn('Timeout - proceeding with partial map');
           resolve();
         } else {
-          setTimeout(checkReady, 500);
+          setTimeout(checkReady, 800); // Plus d'intervalle pour les tuiles
         }
       };
       
@@ -268,20 +266,21 @@ export class PDFGenerator {
       // Attendre que la carte soit prête
       await this.waitForMapReady();
 
-      // Configuration optimisée pour capturer les éléments Canvas
+      // Configuration pour capturer les tuiles et éléments Canvas
       const canvas = await html2canvas(mapContainer, {
         useCORS: true,
-        allowTaint: false,
+        allowTaint: true, // CRUCIAL: Permet de capturer les tuiles malgré CORS
         backgroundColor: '#f8f9fa',
         scale: 1,
         width: mapContainer.offsetWidth,
         height: mapContainer.offsetHeight,
         scrollX: 0,
         scrollY: 0,
-        logging: true, // Debug temporaire
+        logging: true,
         removeContainer: true,
-        foreignObjectRendering: true, // Permet de capturer les Canvas
-        imageTimeout: 15000,
+        foreignObjectRendering: true,
+        imageTimeout: 20000, // Plus de temps pour les tuiles
+        proxy: undefined, // Désactiver le proxy pour éviter les problèmes
         ignoreElements: (element) => {
           // Exclure seulement les contrôles UI
           return element.classList.contains('leaflet-control-container') ||
