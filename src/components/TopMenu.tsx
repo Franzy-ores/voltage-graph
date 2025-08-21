@@ -3,8 +3,10 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { FileText, Save, FolderOpen, Settings, Zap } from "lucide-react";
+import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
+import { PDFGenerator } from "@/utils/pdfGenerator";
+import { toast } from "sonner";
 
 interface TopMenuProps {
   onNewNetwork: () => void;
@@ -22,8 +24,32 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
     setShowVoltages,
     selectedScenario,
     setSelectedScenario,
-    changeVoltageSystem
+    changeVoltageSystem,
+    calculationResults
   } = useNetworkStore();
+
+  const handleExportPDF = async () => {
+    if (!currentProject || !selectedScenario) {
+      toast.error("Aucun projet ou scénario sélectionné.");
+      return;
+    }
+
+    try {
+      toast.loading("Génération du rapport PDF en cours...");
+      
+      const pdfGenerator = new PDFGenerator();
+      await pdfGenerator.generateReport({
+        project: currentProject,
+        results: calculationResults,
+        selectedScenario
+      });
+
+      toast.success("Rapport PDF généré avec succès !");
+    } catch (error) {
+      console.error('Erreur lors de la génération du PDF:', error);
+      toast.error("Erreur lors de la génération du rapport PDF.");
+    }
+  };
 
   return (
     <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
@@ -122,6 +148,16 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
 
         {/* Menu Actions */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            onClick={handleExportPDF}
+            disabled={!currentProject || !calculationResults[selectedScenario]}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            Exporter PDF
+          </Button>
+          
           <Button
             variant="ghost"
             onClick={onNewNetwork}

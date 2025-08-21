@@ -613,6 +613,7 @@ export const MapView = () => {
     <div className="flex-1 relative">
       <div 
         ref={mapRef} 
+        id="map-container"
         className="w-full h-full"
         style={{
           position: 'relative',
