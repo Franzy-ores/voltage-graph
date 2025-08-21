@@ -282,6 +282,16 @@ export const MapView = () => {
     }
   };
 
+  // Fonction pour vérifier si un câble existe déjà entre deux nœuds
+  const cableExistsBetweenNodes = (nodeA: string, nodeB: string): boolean => {
+    if (!currentProject) return false;
+    
+    return currentProject.cables.some(cable => 
+      (cable.nodeAId === nodeA && cable.nodeBId === nodeB) ||
+      (cable.nodeAId === nodeB && cable.nodeBId === nodeA)
+    );
+  };
+
   // Fonction pour nettoyer le routage
   const clearRouting = () => {
     const map = mapInstanceRef.current;
@@ -430,6 +440,13 @@ export const MapView = () => {
             return;
           }
           
+          // VÉRIFICATION : Empêcher la création d'un câble duplicate même en finalisation
+          if (cableExistsBetweenNodes(routingFromNode, node.id)) {
+            alert('Un câble existe déjà entre ces deux nœuds !');
+            clearRouting(); // Nettoyer le routage en cours
+            return;
+          }
+          
           // Créer le tracé complet avec tous les points intermédiaires + point final
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final cable coordinates:', finalCoords);
@@ -461,6 +478,14 @@ export const MapView = () => {
           // Deuxième clic: démarrer ou terminer le câble
           if (selectedNodeId !== node.id) {
             console.log('Second click - start to end cable connection');
+            
+            // VÉRIFICATION : Empêcher la création d'un câble duplicate
+            if (cableExistsBetweenNodes(selectedNodeId, node.id)) {
+              alert('Un câble existe déjà entre ces deux nœuds !');
+              setSelectedNode(null); // Désélectionner
+              return;
+            }
+            
             const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
             const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
             console.log('Cable type:', cableType?.id, 'isUnderground:', isUnderground);
