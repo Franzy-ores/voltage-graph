@@ -117,18 +117,29 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-1 gap-3 text-sm">
               <div>
-                <p className="text-muted-foreground">Charges totales</p>
+                <p className="text-muted-foreground">Charge contractuelle</p>
+                <p className="font-semibold">{(currentProject?.nodes.reduce((sum, node) => 
+                  sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0) || 0).toFixed(1)} kVA</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Foisonnement charges</p>
+                <p className="font-semibold">{currentProject?.foisonnementCharges || 100}%</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Charge foisonnée</p>
                 <p className="font-semibold">{currentResult.totalLoads_kVA.toFixed(1)} kVA</p>
               </div>
-              <div>
-                <p className="text-muted-foreground">Productions totales</p>
-                <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Pertes globales</p>
-                <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-muted-foreground">Productions totales</p>
+                  <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Pertes globales</p>
+                  <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
+                </div>
               </div>
               <div>
                 <p className="text-muted-foreground">Chute max.</p>

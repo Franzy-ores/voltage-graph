@@ -94,8 +94,8 @@ const createDefaultProject = (): Project => ({
   cosPhi: 0.95,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
-  defaultChargeKVA: 5,
-  defaultProductionKVA: 5,
+  defaultChargeKVA: 10,
+  defaultProductionKVA: 10,
   nodes: [
     {
       id: "source",
@@ -119,8 +119,8 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   cosPhi: 0.95,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
-  defaultChargeKVA: 5,
-  defaultProductionKVA: 5,
+  defaultChargeKVA: 10,
+  defaultProductionKVA: 10,
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]

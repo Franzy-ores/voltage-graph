@@ -65,6 +65,10 @@ All colors MUST be HSL.
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-fast: all 0.15s ease-out;
 
+    /* Slider color gradients */
+    --slider-charges-bg: linear-gradient(90deg, hsl(213 94% 35%) 0%, hsl(166 85% 35%) 100%);
+    --slider-productions-bg: linear-gradient(90deg, hsl(213 94% 35%) 0%, hsl(166 85% 35%) 100%);
+
     --sidebar-background: 0 0% 98%;
 
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -135,5 +139,29 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Slider custom styles */
+  .slider-charges .relative .absolute {
+    background: var(--slider-charges-bg);
+  }
+
+  .slider-productions .relative .absolute {
+    background: var(--slider-productions-bg);
+  }
+
+  /* Cable tooltip styles */
+  .cable-custom-tooltip {
+    background: white !important;
+    border: 1px solid #ccc !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    font-size: 12px !important;
+    padding: 8px !important;
+    min-width: 150px !important;
+  }
+  
+  .cable-custom-tooltip .leaflet-tooltip-content {
+    margin: 0 !important;
   }
 }

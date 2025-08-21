@@ -583,13 +583,33 @@ export const MapView = () => {
       const nodeA = currentProject.nodes.find(n => n.id === cable.nodeAId);
       const nodeB = currentProject.nodes.find(n => n.id === cable.nodeBId);
       
-      polyline.bindPopup(`
-        <div>
-          <strong>${cable.name}</strong><br/>
-          ${nodeA?.name} → ${nodeB?.name}<br/>
-          Longueur: ${Math.round(cable.length_m || 0)}m
-        </div>
-      `);
+      // Obtenir les résultats de calcul pour ce câble
+      const cableResults = calculationResults[selectedScenario];
+      const cableCalc = cableResults?.cables?.find(c => c.id === cable.id);
+      
+      // Trouver le type de câble
+      const cableType = currentProject.cableTypes.find(ct => ct.id === cable.typeId);
+      
+      // Tooltip au survol avec les propriétés du câble
+      let tooltipContent = `<div class="cable-tooltip">
+        <div class="font-semibold">${cable.name}</div>
+        <div>Type: ${cableType?.label || cable.typeId}</div>
+        <div>Longueur: ${Math.round(cable.length_m || 0)}m</div>`;
+      
+      if (cableCalc) {
+        tooltipContent += `
+          <div>Courant: ${cableCalc.current_A?.toFixed(1) || '-'}A</div>
+          <div>Chute: ${cableCalc.voltageDropPercent?.toFixed(2) || '-'}%</div>
+          <div>Pertes: ${(cableCalc.losses_kW || 0).toFixed(3)}kW</div>`;
+      }
+      
+      tooltipContent += `</div>`;
+      
+      polyline.bindTooltip(tooltipContent, {
+        permanent: false,
+        direction: 'top',
+        className: 'cable-custom-tooltip'
+      });
 
       polyline.on('click', () => {
         if (selectedTool === 'select') {

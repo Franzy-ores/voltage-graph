@@ -114,34 +114,37 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
               {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
             </Button>
 
-            {/* Charges Slider */}
-            <div className="flex items-center gap-3 min-w-[180px]">
-              <Label className="text-sm font-medium whitespace-nowrap">
-                Charges {currentProject.foisonnementCharges}%
-              </Label>
-              <Slider
-                value={[currentProject.foisonnementCharges]}
-                onValueChange={(value) => setFoisonnementCharges(value[0])}
-                max={100}
-                min={0}
-                step={1}
-                className="flex-1"
-              />
-            </div>
+            {/* Charges and Productions Sliders - Vertical Layout */}
+            <div className="flex flex-col gap-2">
+              {/* Charges Slider */}
+              <div className="flex items-center gap-3 min-w-[180px]">
+                <Label className="text-sm font-medium whitespace-nowrap">
+                  Charges {currentProject.foisonnementCharges}%
+                </Label>
+                <Slider
+                  value={[currentProject.foisonnementCharges]}
+                  onValueChange={(value) => setFoisonnementCharges(value[0])}
+                  max={100}
+                  min={0}
+                  step={1}
+                  className="flex-1 slider-charges"
+                />
+              </div>
 
-            {/* Productions Slider */}
-            <div className="flex items-center gap-3 min-w-[180px]">
-              <Label className="text-sm font-medium whitespace-nowrap">
-                Productions {currentProject.foisonnementProductions}%
-              </Label>
-              <Slider
-                value={[currentProject.foisonnementProductions]}
-                onValueChange={(value) => setFoisonnementProductions(value[0])}
-                max={100}
-                min={0}
-                step={1}
-                className="flex-1"
-              />
+              {/* Productions Slider */}
+              <div className="flex items-center gap-3 min-w-[180px]">
+                <Label className="text-sm font-medium whitespace-nowrap">
+                  Productions {currentProject.foisonnementProductions}%
+                </Label>
+                <Slider
+                  value={[currentProject.foisonnementProductions]}
+                  onValueChange={(value) => setFoisonnementProductions(value[0])}
+                  max={100}
+                  min={0}
+                  step={1}
+                  className="flex-1 slider-productions"
+                />
+              </div>
             </div>
           </div>
         )}
