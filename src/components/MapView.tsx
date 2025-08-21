@@ -385,7 +385,7 @@ export const MapView = () => {
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
+        html: `<div class="w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
           <div class="text-sm">${iconContent}</div>
           ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
             <div class="font-bold">${Math.round(nodeVoltage)}V</div>
@@ -393,8 +393,8 @@ export const MapView = () => {
             ${!node.isSource ? `<div>PV:${totalPV}</div>` : ''}
           </div>` : ''}
         </div>`,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24]
+        iconSize: [56, 56],
+        iconAnchor: [28, 28]
       });
 
       const marker = L.marker([node.lat, node.lng], { 
