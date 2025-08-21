@@ -27,6 +27,12 @@ export const MapView = () => {
   const cablesRef = useRef<Map<string, L.Polyline>>(new Map<string, L.Polyline>());
   const tileLayerRef = useRef<L.TileLayer | null>(null);
   const [mapType, setMapType] = useState<'osm' | 'satellite'>('osm');
+  const [routingActive, setRoutingActive] = useState(false);
+  const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
+  const [routingToNode, setRoutingToNode] = useState<string | null>(null);
+  const routingPointsRef = useRef<{ lat: number; lng: number }[]>([]);
+  const tempMarkersRef = useRef<L.Marker[]>([]);
+  const tempLineRef = useRef<L.Polyline | null>(null);
   
   const {
     currentProject,
@@ -148,14 +154,31 @@ export const MapView = () => {
     }, 3000);
   };
 
-  // Handle map clicks for adding nodes
+  // Handle map clicks for adding nodes and routing
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
-      if (selectedTool === 'addNode') {
+      if (selectedTool === 'addNode' && !routingActive) {
         addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN');
+      } else if (routingActive) {
+        // En mode routage, ajouter des points intermédiaires
+        const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
+        routingPointsRef.current = [...routingPointsRef.current, newPoint];
+        
+        // Ajouter un marqueur temporaire
+        const marker = L.marker([e.latlng.lat, e.latlng.lng], {
+          icon: L.divIcon({
+            className: 'routing-point',
+            html: '<div class="w-3 h-3 bg-blue-500 border border-white rounded-full"></div>',
+            iconSize: [12, 12],
+            iconAnchor: [6, 6]
+          })
+        }).addTo(map);
+        
+        tempMarkersRef.current.push(marker);
+        updateTempLine();
       }
     };
 
@@ -163,9 +186,74 @@ export const MapView = () => {
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [selectedTool, addNode]);
+  }, [selectedTool, addNode, routingActive]);
 
-  // Update markers when nodes change
+  // Gérer les touches clavier pendant le routage
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && routingActive) {
+        clearRouting();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
+    return () => document.removeEventListener('keydown', handleKeyPress);
+  }, [routingActive]);
+
+  // Fonction pour mettre à jour la ligne temporaire
+  const updateTempLine = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    
+    if (tempLineRef.current) {
+      map.removeLayer(tempLineRef.current);
+    }
+    
+    if (routingPointsRef.current.length > 1) {
+      tempLineRef.current = L.polyline(
+        routingPointsRef.current.map(p => [p.lat, p.lng]),
+        { 
+          color: '#3b82f6', 
+          weight: 3, 
+          opacity: 0.7,
+          dashArray: '5, 5'
+        }
+      ).addTo(map);
+    }
+  };
+
+  // Fonction pour nettoyer le routage
+  const clearRouting = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    
+    // Nettoyer les marqueurs temporaires
+    tempMarkersRef.current.forEach(marker => {
+      try {
+        map.removeLayer(marker);
+      } catch (e) {
+        console.warn('Error removing marker:', e);
+      }
+    });
+    tempMarkersRef.current = [];
+    
+    // Nettoyer la ligne temporaire
+    if (tempLineRef.current) {
+      try {
+        map.removeLayer(tempLineRef.current);
+      } catch (e) {
+        console.warn('Error removing line:', e);
+      }
+      tempLineRef.current = null;
+    }
+    
+    // Réinitialiser l'état
+    setRoutingActive(false);
+    setRoutingFromNode(null);
+    setRoutingToNode(null);
+    routingPointsRef.current = [];
+    setSelectedNode(null);
+  };
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !currentProject) return;
@@ -261,19 +349,71 @@ export const MapView = () => {
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         
+        if (routingActive && routingToNode === node.id) {
+          // Finaliser le routage en cliquant précisément sur le nœud de destination
+          const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
+          
+          if (routingFromNode && finalCoords.length >= 2) {
+            addCable(routingFromNode, node.id, selectedCableType, finalCoords);
+          }
+          clearRouting();
+          return;
+        }
+        
         if (selectedTool === 'select') {
           setSelectedNode(node.id);
           openEditPanel('node');
-        } else if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
-          // Créer un câble direct entre les deux nœuds
-          const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
-          if (fromNode) {
-            const coordinates = [
-              { lat: fromNode.lat, lng: fromNode.lng },
-              { lat: node.lat, lng: node.lng }
-            ];
-            addCable(selectedNodeId, node.id, selectedCableType, coordinates);
-            setSelectedNode(null);
+        } else if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id && !routingActive) {
+          // Vérifier le type de câble pour décider du comportement
+          const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
+          const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
+          
+          if (isUnderground) {
+            // Démarrer le routage manuel pour câble souterrain
+            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
+            if (fromNode) {
+              setRoutingFromNode(selectedNodeId);
+              setRoutingToNode(node.id);
+              // Initialiser routingPoints avec le point de départ
+              const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
+              routingPointsRef.current = initialPoints;
+              setRoutingActive(true);
+              
+              // Ajouter les marqueurs de départ et d'arrivée
+              const map = mapInstanceRef.current;
+              if (map) {
+                const startMarker = L.marker([fromNode.lat, fromNode.lng], {
+                  icon: L.divIcon({
+                    className: 'routing-start',
+                    html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                  })
+                }).addTo(map);
+                
+                const endMarker = L.marker([node.lat, node.lng], {
+                  icon: L.divIcon({
+                    className: 'routing-end',
+                    html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
+                    iconSize: [16, 16],
+                    iconAnchor: [8, 8]
+                  })
+                }).addTo(map);
+                
+                tempMarkersRef.current.push(startMarker, endMarker);
+              }
+            }
+          } else {
+            // Câble aérien : connexion directe
+            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
+            if (fromNode) {
+              const coordinates = [
+                { lat: fromNode.lat, lng: fromNode.lng },
+                { lat: node.lat, lng: node.lng }
+              ];
+              addCable(selectedNodeId, node.id, selectedCableType, coordinates);
+              setSelectedNode(null);
+            }
           }
         } else if (selectedTool === 'addCable') {
           setSelectedNode(node.id);
@@ -413,13 +553,23 @@ export const MapView = () => {
       {/* Tool indicator */}
       <div className="absolute top-4 left-20 bg-background/90 backdrop-blur-sm border rounded-lg px-3 py-2 text-sm z-40">
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
-        {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le premier nœud'}
-        {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
+        {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le premier nœud'}
+        {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
+        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez PRÉCISÉMENT sur le nœud rouge pour finaliser'}
         {selectedTool === 'select' && 'Cliquez sur un élément pour le sélectionner'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'move' && 'Cliquez et glissez un nœud pour le déplacer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
       </div>
+      
+      {/* Bouton d'annulation pendant le routage */}
+      {routingActive && (
+        <div className="absolute top-16 left-20 bg-red-500 text-white rounded-lg px-3 py-2 text-sm z-40">
+          <button onClick={clearRouting} className="hover:bg-red-600 px-2 py-1 rounded">
+            ❌ Annuler le routage (ESC)
+          </button>
+        </div>
+      )}
     </div>
   );
 };
