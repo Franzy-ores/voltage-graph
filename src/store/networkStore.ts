@@ -95,7 +95,7 @@ const createDefaultProject = (): Project => ({
   foisonnementCharges: 100,
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
-  defaultProductionKVA: 10,
+  defaultProductionKVA: 5,
   nodes: [
     {
       id: "source",
@@ -120,7 +120,7 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   foisonnementCharges: 100,
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
-  defaultProductionKVA: 10,
+  defaultProductionKVA: 5,
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
@@ -218,12 +218,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       clients: currentProject.nodes.length === 0 ? [] : [{ 
         id: `client-${Date.now()}`, 
         label: 'Charge 1', 
-        S_kVA: currentProject.defaultChargeKVA || 5 
+        S_kVA: currentProject.defaultChargeKVA || 10 
       }],
       productions: currentProject.nodes.length === 0 ? [] : [{ 
         id: `prod-${Date.now()}`, 
         label: 'PV 1', 
-        S_kVA: currentProject.defaultProductionKVA || 5 
+        S_kVA: currentProject.defaultProductionKVA || 5
       }],
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
     };

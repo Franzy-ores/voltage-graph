@@ -386,7 +386,7 @@ export const MapView = () => {
         iconContent = 'S';
         // Source colorée selon la tension du système
         const isHighVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
-        iconClass = isHighVoltage ? 'bg-green-500 border-green-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
+        iconClass = isHighVoltage ? 'bg-fuchsia-500 border-fuchsia-600 text-white' : 'bg-cyan-500 border-cyan-600 text-white';
       } else {
         const hasProduction = totalPV > 0;
         const hasLoad = totalCharge > 0;
