@@ -184,14 +184,29 @@ export const MapView = () => {
 
     const handleMapDoubleClick = (e: L.LeafletMouseEvent) => {
       if (routingActive) {
-        // Double-clic : finaliser le routage à cette position
+        // Double-clic : finaliser le routage à cette position en conservant tout le tracé
         const finalPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
         const finalCoords = [...routingPointsRef.current, finalPoint];
         
         if (routingFromNode && finalCoords.length >= 2) {
-          // Utiliser routingToNode si défini, sinon créer un nœud temporaire
-          const destinationNodeId = routingToNode || routingFromNode;
-          addCable(routingFromNode, destinationNodeId, selectedCableType, finalCoords);
+          if (routingToNode) {
+            // Connecter au nœud de destination en conservant le tracé complet
+            const destinationNode = currentProject?.nodes.find(n => n.id === routingToNode);
+            if (destinationNode) {
+              // Remplacer le dernier point par la position exacte du nœud de destination
+              finalCoords[finalCoords.length - 1] = { lat: destinationNode.lat, lng: destinationNode.lng };
+            }
+            addCable(routingFromNode, routingToNode, selectedCableType, finalCoords);
+          } else {
+            // Créer un nœud au point final et connecter avec tout le tracé
+            addNode(finalPoint.lat, finalPoint.lng, 'MONO_230V_PN');
+            setTimeout(() => {
+              const newNode = currentProject?.nodes[currentProject.nodes.length - 1];
+              if (newNode) {
+                addCable(routingFromNode, newNode.id, selectedCableType, finalCoords);
+              }
+            }, 10);
+          }
           clearRouting();
         }
       }
@@ -211,21 +226,28 @@ export const MapView = () => {
       if (e.key === 'Escape' && routingActive) {
         clearRouting();
       } else if (e.key === 'Enter' && routingActive) {
-        // Enter : finaliser le routage au dernier point ajouté
+        // Enter : finaliser le routage en conservant tout le tracé
         if (routingFromNode && routingPointsRef.current.length >= 2) {
-          // Utiliser routingToNode si défini, sinon créer un point final avec les dernières coordonnées
-          const targetNodeId = routingToNode || `temp-${Date.now()}`;
-          const lastPoint = routingPointsRef.current[routingPointsRef.current.length - 1];
           const finalCoords = [...routingPointsRef.current];
           
           if (routingToNode) {
+            // Si on a un nœud de destination défini, s'assurer que le dernier point est sa position
+            const destinationNode = currentProject?.nodes.find(n => n.id === routingToNode);
+            if (destinationNode) {
+              finalCoords[finalCoords.length - 1] = { lat: destinationNode.lat, lng: destinationNode.lng };
+            }
             addCable(routingFromNode, routingToNode, selectedCableType, finalCoords);
           } else {
-            // Créer un câble qui se termine au dernier point cliqué
-            const finalCoords = [...routingPointsRef.current];
-            if (finalCoords.length >= 2) {
-              addCable(routingFromNode, routingFromNode, selectedCableType, finalCoords);
-            }
+            // Créer un nœud temporaire au dernier point du tracé
+            const lastPoint = finalCoords[finalCoords.length - 1];
+            addNode(lastPoint.lat, lastPoint.lng, 'MONO_230V_PN');
+            // Le nœud créé aura un ID généré, on doit le récupérer
+            setTimeout(() => {
+              const newNode = currentProject?.nodes[currentProject.nodes.length - 1];
+              if (newNode) {
+                addCable(routingFromNode, newNode.id, selectedCableType, finalCoords);
+              }
+            }, 10);
           }
           clearRouting();
         }
@@ -387,9 +409,11 @@ export const MapView = () => {
         
         // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
         if (routingActive) {
+          // Ajouter le nœud cliqué comme point final et conserver tout le tracé
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           
           if (routingFromNode && finalCoords.length >= 2) {
+            console.log('Finalizing cable with', finalCoords.length, 'points:', finalCoords);
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
             clearRouting();
           }
