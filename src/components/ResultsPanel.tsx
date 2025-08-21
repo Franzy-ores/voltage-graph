@@ -228,7 +228,16 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {currentResult.cables.map((cable) => (
+                  {currentResult.cables
+                    .sort((a, b) => {
+                      // Extraire le numéro du nom du câble (ex: "Câble 1" -> 1)
+                      const getNumber = (name: string) => {
+                        const match = name.match(/Câble (\d+)/);
+                        return match ? parseInt(match[1], 10) : 999999; // Les câbles sans numéro à la fin
+                      };
+                      return getNumber(a.name) - getNumber(b.name);
+                    })
+                    .map((cable) => (
                     <TableRow key={cable.id}>
                       <TableCell className="text-xs">{cable.name}</TableCell>
                       <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
