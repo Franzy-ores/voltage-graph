@@ -439,16 +439,24 @@ export const MapView = () => {
           setSelectedNode(node.id);
           openEditPanel('node');
         } else if (selectedTool === 'addCable') {
+          console.log('=== ADD CABLE TOOL CLICKED ON NODE ===');
+          console.log('Current selectedNodeId:', selectedNodeId);
+          console.log('Clicked node:', node.id);
+          console.log('routingActive:', routingActive);
+          
           // Premier clic: sélectionner noeud de départ
           if (!selectedNodeId) {
+            console.log('Selecting start node:', node.id);
             setSelectedNode(node.id);
             return;
           }
           
           // Deuxième clic: démarrer ou terminer le câble
           if (selectedNodeId !== node.id) {
+            console.log('Second click - start to end cable connection');
             const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
             const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
+            console.log('Cable type:', cableType?.id, 'isUnderground:', isUnderground);
             
             if (isUnderground) {
               // CÂBLE SOUTERRAIN: Démarrer le mode routage
@@ -477,6 +485,8 @@ export const MapView = () => {
                 setSelectedNode(null);
               }
             }
+          } else {
+            console.log('Same node clicked - ignoring');
           }
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
