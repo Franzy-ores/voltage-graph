@@ -427,20 +427,42 @@ export const MapView = () => {
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final cable coordinates:', finalCoords);
           
-        if (finalCoords.length >= 2) {
-          addCable(routingFromNode, node.id, selectedCableType, finalCoords);
-          
-          // Réinitialisation complète et immédiate de l'état
-          console.log('=== RESETTING STATE AFTER CABLE CREATION ===');
-          setRoutingActive(false);
-          setRoutingFromNode(null);
-          setRoutingToNode(null);
-          routingPointsRef.current = [];
-          setSelectedNode(null);
-          
-          // Nettoyer aussi visuellement
-          clearRouting();
-        }
+          if (finalCoords.length >= 2) {
+            addCable(routingFromNode, node.id, selectedCableType, finalCoords);
+            
+            // Réinitialisation IMMÉDIATE et COMPLÈTE
+            console.log('=== IMMEDIATE RESET AFTER CABLE CREATION ===');
+            const map = mapInstanceRef.current;
+            if (map) {
+              // Nettoyer visuellement d'abord
+              tempMarkersRef.current.forEach(marker => {
+                try {
+                  map.removeLayer(marker);
+                } catch (e) {
+                  console.warn('Error removing marker:', e);
+                }
+              });
+              tempMarkersRef.current = [];
+              
+              if (tempLineRef.current) {
+                try {
+                  map.removeLayer(tempLineRef.current);
+                } catch (e) {
+                  console.warn('Error removing line:', e);
+                }
+                tempLineRef.current = null;
+              }
+            }
+            
+            // Réinitialiser tous les états
+            setRoutingActive(false);
+            setRoutingFromNode(null);
+            setRoutingToNode(null);
+            routingPointsRef.current = [];
+            setSelectedNode(null);
+            
+            console.log('=== RESET COMPLETE - READY FOR NEW CABLE ===');
+          }
           return;
         }
         
