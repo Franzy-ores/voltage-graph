@@ -285,7 +285,7 @@ export const MapView = () => {
 
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode]);
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, showVoltages, calculationResults, selectedScenario]);
 
   // Update cables
   useEffect(() => {
