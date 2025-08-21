@@ -1,6 +1,5 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import leafletImage from 'leaflet-image';
 import { generateCableDetailsTable } from './tableGenerator';
 import { Project, CalculationResult, CalculationScenario } from '@/types/network';
 
@@ -212,9 +211,9 @@ export class PDFGenerator {
         return numA - numB;
       });
 
-      // Headers
-      const headers = ['Câble', 'U dép.(V)', 'Type', 'L (m)', 'I (A)', 'ΔU (%)', 'Pertes (kW)', 'U arr.(V)'];
-      const colWidths = [20, 18, 25, 15, 15, 18, 18, 18];
+      // Headers fallback avec nouvelles colonnes
+      const headers = ['Câble', 'U dép.(V)', 'Type', 'L (m)', 'I (A)', 'ΔU (%)', 'Pertes (kW)', 'U arr.(V)', 'Ch.Contr.', 'Ch.Fois.', 'Prod.'];
+      const colWidths = [15, 12, 20, 12, 12, 12, 12, 12, 12, 12, 12];
       let x = this.margin;
 
       this.pdf.setFont('helvetica', 'bold');
@@ -235,12 +234,17 @@ export class PDFGenerator {
         const projectCable = data.project.cables.find(c => c.id === cable.id);
         const cableType = data.project.cableTypes.find(ct => ct.id === projectCable?.typeId);
         
-        // Calculer les tensions (logique simplifiée pour le fallback)
+        // Calculer les charges et productions (logique simplifiée pour le fallback)
         const baseVoltage = data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
         const nodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => 
           nvd.nodeId === projectCable?.nodeBId || nvd.nodeId === projectCable?.nodeAId
         );
         const distalVoltage = baseVoltage - (nodeVoltageDropResult?.deltaU_cum_V || 0);
+        
+        const distalNode = data.project.nodes.find(n => n.id === projectCable?.nodeBId);
+        const distalNodeChargesContractuelles = distalNode?.clients.reduce((sum, client) => sum + client.S_kVA, 0) || 0;
+        const distalNodeChargesFoisonnees = distalNodeChargesContractuelles * (data.project.foisonnementCharges / 100);
+        const distalNodeProductions = distalNode?.productions.reduce((sum, prod) => sum + prod.S_kVA, 0) || 0;
         
         x = this.margin;
         const values = [
@@ -251,7 +255,10 @@ export class PDFGenerator {
           cable.current_A?.toFixed(1) || '0.0',
           cable.voltageDropPercent?.toFixed(2) || '0.00',
           cable.losses_kW?.toFixed(3) || '0.000',
-          distalVoltage.toFixed(0)
+          distalVoltage.toFixed(0),
+          distalNodeChargesContractuelles.toFixed(1),
+          distalNodeChargesFoisonnees.toFixed(1),
+          distalNodeProductions.toFixed(1)
         ];
         
         values.forEach((value, i) => {
@@ -262,155 +269,6 @@ export class PDFGenerator {
       });
 
       this.currentY += 10;
-    }
-  }
-
-  private async waitForMapReady(): Promise<void> {
-    return new Promise((resolve) => {
-      let attempts = 0;
-      const maxAttempts = 10; // Réduit de 25 à 10
-      
-      const checkReady = () => {
-        attempts++;
-        
-        const mapContainer = document.querySelector('#map-container');
-        const leafletContainer = document.querySelector('#map-container .leaflet-container');
-        
-        // Vérifier les tuiles de carte (fond de plan)
-        const tileImages = document.querySelectorAll('#map-container .leaflet-tile');
-        const tilesLoaded = tileImages.length > 0 && Array.from(tileImages).every(img => 
-          (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalHeight > 0
-        );
-        
-        // Vérifier les éléments Canvas (câbles)
-        const canvasElements = document.querySelectorAll('#map-container canvas');
-        const cablesReady = canvasElements.length > 0;
-        
-        const mapReady = mapContainer && leafletContainer;
-        
-        console.log(`PDF Wait ${attempts}/${maxAttempts}: Map: ${mapReady}, Tiles: ${tilesLoaded} (${tileImages.length}), Canvas: ${cablesReady} (${canvasElements.length})`);
-        
-        if (mapReady && tilesLoaded && cablesReady) {
-          // Attente réduite de 2s à 500ms
-          setTimeout(resolve, 500);
-        } else if (attempts >= maxAttempts) {
-          console.warn('PDF: Map timeout - proceeding anyway');
-          resolve();
-        } else {
-          setTimeout(checkReady, 300); // Réduit de 800ms à 300ms
-        }
-      };
-      
-      checkReady();
-    });
-  }
-
-  /**
-   * Promisifie leaflet-image pour pouvoir utiliser await
-   */
-  private leafletImagePromise(mapInstance: any): Promise<HTMLCanvasElement> {
-    return new Promise((resolve, reject) => {
-      leafletImage(mapInstance, (err: any, canvas: HTMLCanvasElement) => {
-        if (err) {
-          reject(new Error(`leaflet-image error: ${err}`));
-        } else if (!canvas) {
-          reject(new Error('leaflet-image returned no canvas'));
-        } else {
-          resolve(canvas);
-        }
-      });
-    });
-  }
-
-  /**
-   * Ajoute l'image au PDF avec calcul des proportions
-   */
-  private addImageToPDF(canvas: HTMLCanvasElement, source: string) {
-    const imgData = canvas.toDataURL('image/png', 1.0);
-    
-    // Calculer les dimensions avec les bonnes proportions
-    const pageWidth = 200 - (2 * this.margin);
-    const canvasWidth = canvas.width;
-    const canvasHeight = canvas.height;
-    
-    let pdfWidth = pageWidth;
-    let pdfHeight = (canvasHeight * pageWidth) / canvasWidth;
-    
-    const maxHeight = 140;
-    if (pdfHeight > maxHeight) {
-      pdfHeight = maxHeight;
-      pdfWidth = (canvasWidth * maxHeight) / canvasHeight;
-    }
-    
-    this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pdfWidth, pdfHeight);
-    this.currentY += pdfHeight + 10;
-    this.addText('Légende: Nœuds sources en cyan (230V) ou magenta (400V), câbles colorés selon la chute de tension');
-    
-    console.log(`Capture réussie avec ${source}`);
-  }
-
-  private async addNetworkScreenshot() {
-    this.checkPageBreak(120);
-    this.addSubtitle('Plan du Réseau');
-
-    try {
-      const mapContainer = document.querySelector('#map-container') as HTMLElement;
-      if (!mapContainer) {
-        this.addText('Carte non trouvée');
-        return;
-      }
-
-      // Attendre que la carte soit prête
-      await this.waitForMapReady();
-
-      // Essayer d'abord avec leaflet-image pour une meilleure capture des tuiles
-      const leafletMapInstance = (window as any).globalMap;
-      if (leafletMapInstance && typeof leafletImage === 'function') {
-        try {
-          console.log('Utilisation de leaflet-image pour une capture optimisée');
-          const canvas = await this.leafletImagePromise(leafletMapInstance);
-          this.addImageToPDF(canvas, 'leaflet-image');
-          return; // Succès avec leaflet-image, on sort
-        } catch (leafletError) {
-          console.warn('Échec leaflet-image, fallback vers html2canvas:', leafletError);
-        }
-      } else {
-        console.warn('leaflet-image non disponible, fallback vers html2canvas');
-      }
-
-      // Fallback vers html2canvas avec configuration optimisée pour les tuiles
-      console.log('Fallback vers html2canvas');
-      const canvas = await html2canvas(mapContainer, {
-        useCORS: true,
-        allowTaint: true, // CRUCIAL: Permet de capturer les tuiles malgré CORS
-        backgroundColor: '#f8f9fa',
-        scale: 1,
-        width: mapContainer.offsetWidth,
-        height: mapContainer.offsetHeight,
-        scrollX: 0,
-        scrollY: 0,
-        logging: false,
-        removeContainer: true,
-        foreignObjectRendering: true,
-        imageTimeout: 10000, // Réduit de 30s à 10s
-        proxy: undefined,
-        ignoreElements: (element) => {
-          return element.classList.contains('leaflet-control-container') ||
-                 element.classList.contains('leaflet-control') ||
-                 element.classList.contains('leaflet-popup') ||
-                 (element.classList.contains('absolute') && element.tagName === 'DIV') ||
-                 element.id.includes('tooltip') ||
-                 element.tagName === 'BUTTON';
-        }
-      });
-      
-      this.addImageToPDF(canvas, 'html2canvas');
-
-    } catch (error) {
-      console.error('Erreur capture principale:', error);
-      this.addText('⚠ Capture d\'écran non disponible - Tuiles de carte non chargées');
-      this.addText('Vérifiez que la carte est bien chargée avant de générer le rapport');
-      this.currentY += 20;
     }
   }
 
@@ -428,9 +286,6 @@ export class PDFGenerator {
 
     // Détails par tronçon
     await this.addCableDetails(data);
-
-    // Capture d'écran du réseau
-    await this.addNetworkScreenshot();
 
     // Télécharger le PDF
     const fileName = `Rapport_${data.project.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;

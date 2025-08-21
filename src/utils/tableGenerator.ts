@@ -60,6 +60,11 @@ export const generateCableDetailsTable = (
       const distalCumulativeVoltageDrop = distalNodeVoltageDropResult?.deltaU_cum_V || 0;
       const distalNodeVoltage = (actualDistalNode?.tensionCible || baseVoltage) - distalCumulativeVoltageDrop;
 
+      // Calculer les charges et productions du nœud aval
+      const distalNodeChargesContractuelles = actualDistalNode?.clients.reduce((sum, client) => sum + client.S_kVA, 0) || 0;
+      const distalNodeChargesFoisonnees = distalNodeChargesContractuelles * (currentProject.foisonnementCharges / 100);
+      const distalNodeProductions = actualDistalNode?.productions.reduce((sum, prod) => sum + prod.S_kVA, 0) || 0;
+
       // Couleur pour la chute de tension
       const voltageDropPercent = Math.abs(cable.voltageDropPercent || 0);
       const colorClass = voltageDropPercent > 10 ? 'color: red; font-weight: bold;' : 
@@ -76,6 +81,9 @@ export const generateCableDetailsTable = (
           <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px; ${colorClass}">${cable.voltageDropPercent?.toFixed(2) || '-'}</td>
           <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">${cable.losses_kW?.toFixed(3) || '-'}</td>
           <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">${distalNodeVoltage.toFixed(0)}</td>
+          <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">${distalNodeChargesContractuelles.toFixed(1)}</td>
+          <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">${distalNodeChargesFoisonnees.toFixed(1)}</td>
+          <td style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">${distalNodeProductions.toFixed(1)}</td>
         </tr>
       `;
     })
@@ -95,6 +103,9 @@ export const generateCableDetailsTable = (
             <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">ΔU (%)</th>
             <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">Pertes (kW)</th>
             <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">U arr.(V)</th>
+            <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">Ch. Contr.(kVA)</th>
+            <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">Ch. Fois.(kVA)</th>
+            <th style="padding: 4px; border: 1px solid #ddd; font-size: 10px;">Prod.(kVA)</th>
           </tr>
         </thead>
         <tbody>

@@ -56,7 +56,6 @@
     "jspdf": "^3.0.1",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
-    "leaflet-image": "^0.4.0",
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "react": "^18.3.1",
