@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalculationResult, CalculationScenario } from "@/types/network";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useNetworkStore } from "@/store/networkStore";
 
 interface ResultsPanelProps {
   results: {
@@ -11,6 +12,32 @@ interface ResultsPanelProps {
 }
 
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
+  const { currentProject } = useNetworkStore();
+  
+  // Calculer les statistiques des câbles
+  const getCableStatistics = () => {
+    if (!currentProject?.cables) return { totalLength: 0, lengthByType: {} };
+    
+    let totalLength = 0;
+    const lengthByType: Record<string, number> = {};
+    
+    currentProject.cables.forEach(cable => {
+      const length = cable.length_m || 0;
+      totalLength += length;
+      
+      const cableType = currentProject.cableTypes.find(ct => ct.id === cable.typeId);
+      const typeName = cableType?.label || cable.typeId;
+      
+      if (!lengthByType[typeName]) {
+        lengthByType[typeName] = 0;
+      }
+      lengthByType[typeName] += length;
+    });
+    
+    return { totalLength, lengthByType };
+  };
+  
+  const cableStats = getCableStatistics();
   // Add safety checks
   if (!results || !selectedScenario) {
     return (
@@ -107,6 +134,35 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 <p className="text-muted-foreground">Chute max.</p>
                 <p className="font-semibold">{currentResult.maxVoltageDropPercent.toFixed(2)}%</p>
               </div>
+            </div>
+            
+            {/* Statistiques des câbles */}
+            <div className="pt-3 border-t">
+              <div className="grid grid-cols-2 gap-4 text-sm mb-3">
+                <div>
+                  <p className="text-muted-foreground">Longueur totale</p>
+                  <p className="font-semibold">{cableStats.totalLength.toFixed(0)} m</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Nombre de câbles</p>
+                  <p className="font-semibold">{currentProject?.cables?.length || 0}</p>
+                </div>
+              </div>
+              
+              {/* Détail par type de câble */}
+              {Object.keys(cableStats.lengthByType).length > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs mb-2">Longueur par type :</p>
+                  <div className="space-y-1">
+                    {Object.entries(cableStats.lengthByType).map(([type, length]) => (
+                      <div key={type} className="flex justify-between text-xs">
+                        <span className="truncate pr-2">{type}</span>
+                        <span className="font-medium">{length.toFixed(0)} m</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
