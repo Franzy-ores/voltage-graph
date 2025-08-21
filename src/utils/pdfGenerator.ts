@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import domtoimage from 'dom-to-image';
+import html2canvas from 'html2canvas';
 import { Project, CalculationResult, CalculationScenario } from '@/types/network';
 
 export interface PDFData {
@@ -270,24 +270,25 @@ export class PDFGenerator {
       // Attendre que la carte soit prête
       await this.waitForMapReady();
 
-      // Options de capture simplifiées pour plus de fiabilité
-      const imgData = await domtoimage.toPng(mapContainer, {
-        quality: 0.95,
-        bgcolor: '#f8f9fa',
-        cacheBust: true,
-        filter: (node) => {
+      // Utiliser html2canvas avec la configuration optimale pour Leaflet
+      const canvas = await html2canvas(mapContainer, {
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#f8f9fa',
+        scale: 1,
+        logging: false,
+        ignoreElements: (element) => {
           // Exclure les contrôles UI et popups
-          if (node instanceof HTMLElement) {
-            return !node.classList.contains('leaflet-control-container') &&
-                   !node.classList.contains('leaflet-control') &&
-                   !node.classList.contains('leaflet-popup') &&
-                   !node.classList.contains('absolute') &&
-                   !node.id.includes('tooltip') &&
-                   node.tagName !== 'BUTTON';
-          }
-          return true;
+          return element.classList.contains('leaflet-control-container') ||
+                 element.classList.contains('leaflet-control') ||
+                 element.classList.contains('leaflet-popup') ||
+                 element.classList.contains('absolute') ||
+                 element.id.includes('tooltip') ||
+                 element.tagName === 'BUTTON';
         }
       });
+      
+      const imgData = canvas.toDataURL('image/png');
       
       // Ajouter l'image au PDF
       const pageWidth = 200 - (2 * this.margin);
@@ -313,11 +314,16 @@ export class PDFGenerator {
           throw new Error('Container non trouvé');
         }
 
-        // Capture très simple sans options avancées
-        const imgData = await domtoimage.toPng(mapContainer, {
-          bgcolor: '#ffffff',
-          cacheBust: false
+        // Utiliser html2canvas pour le fallback
+        const canvas = await html2canvas(mapContainer, {
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: '#ffffff',
+          scale: 1,
+          logging: false
         });
+        
+        const imgData = canvas.toDataURL('image/png');
         
         const pageWidth = 200 - (2 * this.margin);
         this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pageWidth, 100);
