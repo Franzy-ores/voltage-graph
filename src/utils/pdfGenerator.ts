@@ -305,6 +305,50 @@ export class PDFGenerator {
     });
   }
 
+  /**
+   * Promisifie leaflet-image pour pouvoir utiliser await
+   */
+  private leafletImagePromise(mapInstance: any): Promise<HTMLCanvasElement> {
+    return new Promise((resolve, reject) => {
+      leafletImage(mapInstance, (err: any, canvas: HTMLCanvasElement) => {
+        if (err) {
+          reject(new Error(`leaflet-image error: ${err}`));
+        } else if (!canvas) {
+          reject(new Error('leaflet-image returned no canvas'));
+        } else {
+          resolve(canvas);
+        }
+      });
+    });
+  }
+
+  /**
+   * Ajoute l'image au PDF avec calcul des proportions
+   */
+  private addImageToPDF(canvas: HTMLCanvasElement, source: string) {
+    const imgData = canvas.toDataURL('image/png', 1.0);
+    
+    // Calculer les dimensions avec les bonnes proportions
+    const pageWidth = 200 - (2 * this.margin);
+    const canvasWidth = canvas.width;
+    const canvasHeight = canvas.height;
+    
+    let pdfWidth = pageWidth;
+    let pdfHeight = (canvasHeight * pageWidth) / canvasWidth;
+    
+    const maxHeight = 140;
+    if (pdfHeight > maxHeight) {
+      pdfHeight = maxHeight;
+      pdfWidth = (canvasWidth * maxHeight) / canvasHeight;
+    }
+    
+    this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pdfWidth, pdfHeight);
+    this.currentY += pdfHeight + 10;
+    this.addText('Légende: Nœuds sources en cyan (230V) ou magenta (400V), câbles colorés selon la chute de tension');
+    
+    console.log(`Capture réussie avec ${source}`);
+  }
+
   private async addNetworkScreenshot() {
     this.checkPageBreak(120);
     this.addSubtitle('Plan du Réseau');
@@ -320,92 +364,47 @@ export class PDFGenerator {
       await this.waitForMapReady();
 
       // Essayer d'abord avec leaflet-image pour une meilleure capture des tuiles
-      try {
-        const leafletMapInstance = (window as any).globalMap; // Référence à l'instance Leaflet
-        if (leafletMapInstance && typeof leafletImage === 'function') {
+      const leafletMapInstance = (window as any).globalMap;
+      if (leafletMapInstance && typeof leafletImage === 'function') {
+        try {
           console.log('Utilisation de leaflet-image pour une capture optimisée');
-          
-          leafletImage(leafletMapInstance, (err: any, canvas: HTMLCanvasElement) => {
-            if (!err && canvas) {
-              const imgData = canvas.toDataURL('image/png', 1.0);
-              
-              // Calculer les dimensions
-              const pageWidth = 200 - (2 * this.margin);
-              const canvasWidth = canvas.width;
-              const canvasHeight = canvas.height;
-              
-              let pdfWidth = pageWidth;
-              let pdfHeight = (canvasHeight * pageWidth) / canvasWidth;
-              
-              const maxHeight = 140;
-              if (pdfHeight > maxHeight) {
-                pdfHeight = maxHeight;
-                pdfWidth = (canvasWidth * maxHeight) / canvasHeight;
-              }
-              
-              this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pdfWidth, pdfHeight);
-              this.currentY += pdfHeight + 10;
-              this.addText('Légende: Nœuds sources en cyan (230V) ou magenta (400V), câbles colorés selon la chute de tension');
-              
-              console.log('Capture réussie avec leaflet-image');
-              return;
-            } else {
-              console.warn('Échec leaflet-image, fallback vers html2canvas');
-              throw new Error('leaflet-image failed');
-            }
-          });
-        } else {
-          throw new Error('leaflet-image non disponible');
+          const canvas = await this.leafletImagePromise(leafletMapInstance);
+          this.addImageToPDF(canvas, 'leaflet-image');
+          return; // Succès avec leaflet-image, on sort
+        } catch (leafletError) {
+          console.warn('Échec leaflet-image, fallback vers html2canvas:', leafletError);
         }
-      } catch (leafletError) {
-        console.log('Fallback vers html2canvas:', leafletError);
-        
-        // Fallback vers html2canvas avec configuration optimisée pour les tuiles
-        const canvas = await html2canvas(mapContainer, {
-          useCORS: true,
-          allowTaint: true, // CRUCIAL: Permet de capturer les tuiles malgré CORS
-          backgroundColor: '#f8f9fa',
-          scale: 1,
-          width: mapContainer.offsetWidth,
-          height: mapContainer.offsetHeight,
-          scrollX: 0,
-          scrollY: 0,
-          logging: false,
-          removeContainer: true,
-          foreignObjectRendering: true,
-          imageTimeout: 30000, // Plus de temps pour les tuiles
-          proxy: undefined,
-          ignoreElements: (element) => {
-            // Exclure seulement les contrôles UI
-            return element.classList.contains('leaflet-control-container') ||
-                   element.classList.contains('leaflet-control') ||
-                   element.classList.contains('leaflet-popup') ||
-                   (element.classList.contains('absolute') && element.tagName === 'DIV') ||
-                   element.id.includes('tooltip') ||
-                   element.tagName === 'BUTTON';
-          }
-        });
-        
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        
-        // Ajouter l'image au PDF avec les bonnes proportions
-        const pageWidth = 200 - (2 * this.margin);
-        const canvasWidth = canvas.width;
-        const canvasHeight = canvas.height;
-        
-        let pdfWidth = pageWidth;
-        let pdfHeight = (canvasHeight * pageWidth) / canvasWidth;
-        
-        const maxHeight = 140;
-        if (pdfHeight > maxHeight) {
-          pdfHeight = maxHeight;
-          pdfWidth = (canvasWidth * maxHeight) / canvasHeight;
-        }
-        
-        this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pdfWidth, pdfHeight);
-        this.currentY += pdfHeight + 10;
-        this.addText('Légende: Nœuds sources en cyan (230V) ou magenta (400V), câbles colorés selon la chute de tension');
+      } else {
+        console.warn('leaflet-image non disponible, fallback vers html2canvas');
       }
+
+      // Fallback vers html2canvas avec configuration optimisée pour les tuiles
+      console.log('Fallback vers html2canvas');
+      const canvas = await html2canvas(mapContainer, {
+        useCORS: true,
+        allowTaint: true, // CRUCIAL: Permet de capturer les tuiles malgré CORS
+        backgroundColor: '#f8f9fa',
+        scale: 1,
+        width: mapContainer.offsetWidth,
+        height: mapContainer.offsetHeight,
+        scrollX: 0,
+        scrollY: 0,
+        logging: false,
+        removeContainer: true,
+        foreignObjectRendering: true,
+        imageTimeout: 30000, // Plus de temps pour les tuiles
+        proxy: undefined,
+        ignoreElements: (element) => {
+          return element.classList.contains('leaflet-control-container') ||
+                 element.classList.contains('leaflet-control') ||
+                 element.classList.contains('leaflet-popup') ||
+                 (element.classList.contains('absolute') && element.tagName === 'DIV') ||
+                 element.id.includes('tooltip') ||
+                 element.tagName === 'BUTTON';
+        }
+      });
+      
+      this.addImageToPDF(canvas, 'html2canvas');
 
     } catch (error) {
       console.error('Erreur capture principale:', error);
