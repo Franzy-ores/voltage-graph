@@ -419,6 +419,12 @@ export const MapView = () => {
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         
+        console.log('=== NODE CLICK DEBUG ===');
+        console.log('Node clicked:', node.id);
+        console.log('routingActive:', routingActive);
+        console.log('routingFromNode:', routingFromNode);
+        console.log('routingPointsRef.current:', routingPointsRef.current);
+        
         // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
         if (routingActive) {
           // Ajouter le nœud cliqué comme point final et conserver tout le tracé
