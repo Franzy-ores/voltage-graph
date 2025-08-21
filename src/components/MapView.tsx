@@ -273,6 +273,9 @@ export const MapView = () => {
           }
         } else if (selectedTool === 'addCable') {
           setSelectedNode(node.id);
+        } else if (selectedTool === 'edit') {
+          setSelectedNode(node.id);
+          openEditPanel('node');
         } else if (selectedTool === 'delete') {
           if (confirm(`Supprimer le nœud "${node.name}" ?`)) {
             deleteNode(node.id);
@@ -338,6 +341,9 @@ export const MapView = () => {
         if (selectedTool === 'select') {
           setSelectedCable(cable.id);
           openEditPanel('cable');
+        } else if (selectedTool === 'edit') {
+          setSelectedCable(cable.id);
+          openEditPanel('cable');
         } else if (selectedTool === 'delete') {
           if (confirm(`Supprimer le câble "${cable.name}" ?`)) {
             deleteCable(cable.id);
@@ -397,6 +403,7 @@ export const MapView = () => {
         {selectedTool === 'addCable' && !selectedNodeId && 'Sélectionnez le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && 'Cliquez sur le second nœud'}
         {selectedTool === 'select' && 'Cliquez sur un élément pour le sélectionner'}
+        {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'delete' && 'Cliquez sur un élément pour le supprimer'}
       </div>
     </div>
