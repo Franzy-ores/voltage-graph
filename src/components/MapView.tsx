@@ -179,17 +179,7 @@ export const MapView = () => {
         routingPointsRef.current = [...routingPointsRef.current, newPoint];
         console.log('Current routing points after adding:', routingPointsRef.current);
         
-        // Ajouter un marqueur temporaire
-        const marker = L.marker([e.latlng.lat, e.latlng.lng], {
-          icon: L.divIcon({
-            className: 'routing-point',
-            html: '<div class="w-3 h-3 bg-blue-500 border border-white rounded-full"></div>',
-            iconSize: [12, 12],
-            iconAnchor: [6, 6]
-          })
-        }).addTo(map);
-        
-        tempMarkersRef.current.push(marker);
+        // Pas d'affichage de marqueurs temporaires comme demandé
         updateTempLine();
       }
     };
@@ -419,95 +409,76 @@ export const MapView = () => {
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         
-        console.log('=== NODE CLICK DEBUG ===');
-        console.log('Node clicked:', node.id);
-        console.log('routingActive:', routingActive);
-        console.log('routingFromNode:', routingFromNode);
-        console.log('routingPointsRef.current:', routingPointsRef.current);
-        console.log('selectedTool:', selectedTool);
-        
-        // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
+        // MODE ROUTAGE ACTIF: Finaliser le tracé sur n'importe quel nœud
         if (routingActive && routingFromNode) {
-          // Ajouter le nœud cliqué comme point final et conserver tout le tracé
           console.log('=== FINALIZING CABLE ON NODE CLICK ===');
-          console.log('routingPointsRef.current before final:', routingPointsRef.current);
-          console.log('Node final position:', { lat: node.lat, lng: node.lng });
+          console.log('Finalizing from', routingFromNode, 'to', node.id);
+          console.log('Routing points:', routingPointsRef.current);
           
-          // IMPORTANT: Créer le tracé complet avec tous les points intermédiaires + point final
+          // Créer le tracé complet avec tous les points intermédiaires + point final
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
-          console.log('Final coords for cable:', finalCoords);
-          console.log('Total points in final cable:', finalCoords.length);
+          console.log('Final cable coordinates:', finalCoords);
           
-          if (routingFromNode && finalCoords.length >= 2) {
-            console.log('Creating cable from', routingFromNode, 'to', node.id, 'with', finalCoords.length, 'points');
-            // Utiliser le tracé complet avec tous les points intermédiaires
+          if (finalCoords.length >= 2) {
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
             clearRouting();
           }
           return;
         }
         
+        // MODE NORMAL: Sélection et début de tracé
         if (selectedTool === 'select') {
           setSelectedNode(node.id);
           openEditPanel('node');
-        } else if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
-          // Vérifier le type de câble pour décider du comportement
-          const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
-          const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
+        } else if (selectedTool === 'addCable') {
+          // Premier clic: sélectionner noeud de départ
+          if (!selectedNodeId) {
+            setSelectedNode(node.id);
+            return;
+          }
           
-          if (isUnderground) {
-            // Démarrer le routage manuel pour câble souterrain
-            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
-            if (fromNode) {
-              setRoutingFromNode(selectedNodeId);
-              setRoutingToNode(node.id);
-              // Initialiser routingPoints avec le point de départ
-              console.log('=== STARTING UNDERGROUND CABLE ROUTING ===');
-              const initialPoints = [{ lat: fromNode.lat, lng: fromNode.lng }];
-              console.log('Initial point (start node):', initialPoints[0]);
-              routingPointsRef.current = initialPoints;
-              console.log('routingPointsRef initialized with:', routingPointsRef.current);
-              setRoutingActive(true);
-              
-              // Ajouter uniquement le marqueur de départ
-              const map = mapInstanceRef.current;
-              if (map) {
-                const startMarker = L.marker([fromNode.lat, fromNode.lng], {
-                  icon: L.divIcon({
-                    className: 'routing-start',
-                    html: '<div class="w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>',
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                  })
-                }).addTo(map);
+          // Deuxième clic: démarrer ou terminer le câble
+          if (selectedNodeId !== node.id) {
+            const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
+            const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
+            
+            if (isUnderground) {
+              // CÂBLE SOUTERRAIN: Démarrer le mode routage
+              const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
+              if (fromNode) {
+                console.log('=== STARTING UNDERGROUND CABLE ROUTING ===');
+                console.log('From node:', selectedNodeId, 'To node:', node.id);
                 
-                tempMarkersRef.current.push(startMarker);
+                setRoutingFromNode(selectedNodeId);
+                setRoutingToNode(node.id);
+                routingPointsRef.current = [{ lat: fromNode.lat, lng: fromNode.lng }];
+                setRoutingActive(true);
+                setSelectedNode(null); // Désélectionner pour éviter la confusion
+                
+                console.log('Routing activated, click on map to add intermediate points, then click on destination node to finish');
+              }
+            } else {
+              // CÂBLE AÉRIEN: Connexion directe
+              const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
+              if (fromNode) {
+                const coordinates = [
+                  { lat: fromNode.lat, lng: fromNode.lng },
+                  { lat: node.lat, lng: node.lng }
+                ];
+                addCable(selectedNodeId, node.id, selectedCableType, coordinates);
+                setSelectedNode(null);
               }
             }
-          } else {
-            // Câble aérien : connexion directe
-            const fromNode = currentProject.nodes.find(n => n.id === selectedNodeId);
-            if (fromNode) {
-              const coordinates = [
-                { lat: fromNode.lat, lng: fromNode.lng },
-                { lat: node.lat, lng: node.lng }
-              ];
-              addCable(selectedNodeId, node.id, selectedCableType, coordinates);
-              setSelectedNode(null);
-            }
           }
-        } else if (selectedTool === 'addCable') {
-          setSelectedNode(node.id);
         } else if (selectedTool === 'edit') {
           setSelectedNode(node.id);
           openEditPanel('node');
-        } else if (selectedTool === 'move') {
-          // Le nœud est maintenant sélectionné pour déplacement
-          setSelectedNode(node.id);
         } else if (selectedTool === 'delete') {
           if (confirm(`Supprimer le nœud "${node.name}" ?`)) {
             deleteNode(node.id);
           }
+        } else if (selectedTool === 'move') {
+          setSelectedNode(node.id);
         }
       });
 
