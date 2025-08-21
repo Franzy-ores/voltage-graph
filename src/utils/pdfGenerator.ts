@@ -270,13 +270,18 @@ export class PDFGenerator {
       // Attendre que la carte soit prête
       await this.waitForMapReady();
 
-      // Utiliser html2canvas avec la configuration optimale pour Leaflet
+      // Utiliser html2canvas avec configuration pour capture exacte
       const canvas = await html2canvas(mapContainer, {
         useCORS: true,
         allowTaint: false,
         backgroundColor: '#f8f9fa',
-        scale: 1,
+        scale: 1, // Pas de mise à l'échelle pour éviter les déformations
+        width: mapContainer.offsetWidth,
+        height: mapContainer.offsetHeight,
+        scrollX: 0,
+        scrollY: 0,
         logging: false,
+        removeContainer: true,
         ignoreElements: (element) => {
           // Exclure les contrôles UI et popups
           return element.classList.contains('leaflet-control-container') ||
@@ -288,14 +293,26 @@ export class PDFGenerator {
         }
       });
       
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png', 1.0);
       
-      // Ajouter l'image au PDF
+      // Ajouter l'image au PDF avec les bonnes proportions
       const pageWidth = 200 - (2 * this.margin);
-      const maxHeight = 140;
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
       
-      this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pageWidth, maxHeight);
-      this.currentY += maxHeight + 10;
+      // Calculer les dimensions en gardant le ratio exact
+      let pdfWidth = pageWidth;
+      let pdfHeight = (canvasHeight * pageWidth) / canvasWidth;
+      
+      // Si l'image est trop haute, ajuster en gardant le ratio
+      const maxHeight = 140;
+      if (pdfHeight > maxHeight) {
+        pdfHeight = maxHeight;
+        pdfWidth = (canvasWidth * maxHeight) / canvasHeight;
+      }
+      
+      this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, pdfWidth, pdfHeight);
+      this.currentY += pdfHeight + 10;
 
       this.addText('Légende: Nœuds sources en cyan (230V) ou magenta (400V), câbles colorés selon la chute de tension');
 
