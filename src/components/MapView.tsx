@@ -424,9 +424,10 @@ export const MapView = () => {
         console.log('routingActive:', routingActive);
         console.log('routingFromNode:', routingFromNode);
         console.log('routingPointsRef.current:', routingPointsRef.current);
+        console.log('selectedTool:', selectedTool);
         
         // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
-        if (routingActive) {
+        if (routingActive && routingFromNode) {
           // Ajouter le nœud cliqué comme point final et conserver tout le tracé
           console.log('=== FINALIZING CABLE ON NODE CLICK ===');
           console.log('routingPointsRef.current before final:', routingPointsRef.current);
