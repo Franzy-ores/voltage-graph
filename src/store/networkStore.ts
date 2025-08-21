@@ -12,7 +12,7 @@ interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
   loadProject: (project: Project) => void;
-  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi'>>) => void;
+  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA'>>) => void;
   
   // Node actions
   addNode: (lat: number, lng: number, connectionType: ConnectionType) => void;
@@ -54,6 +54,8 @@ const createDefaultProject = (): Project => ({
   cosPhi: 0.95,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
+  defaultChargeKVA: 5,
+  defaultProductionKVA: 5,
   nodes: [
     {
       id: "source",
@@ -77,6 +79,8 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   cosPhi: 0.95,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
+  defaultChargeKVA: 5,
+  defaultProductionKVA: 5,
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
@@ -157,8 +161,16 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       lat,
       lng,
       connectionType: nodeConnectionType,
-      clients: currentProject.nodes.length === 0 ? [] : [{ id: `client-${Date.now()}`, label: 'Charge 1', S_kVA: 5 }],
-      productions: currentProject.nodes.length === 0 ? [] : [{ id: `prod-${Date.now()}`, label: 'PV 1', S_kVA: 5 }],
+      clients: currentProject.nodes.length === 0 ? [] : [{ 
+        id: `client-${Date.now()}`, 
+        label: 'Charge 1', 
+        S_kVA: currentProject.defaultChargeKVA || 5 
+      }],
+      productions: currentProject.nodes.length === 0 ? [] : [{ 
+        id: `prod-${Date.now()}`, 
+        label: 'PV 1', 
+        S_kVA: currentProject.defaultProductionKVA || 5 
+      }],
       isSource: currentProject.nodes.length === 0 // Premier nœud = source
     };
 

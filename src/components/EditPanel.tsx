@@ -54,7 +54,9 @@ export const EditPanel = () => {
           voltageSystem: currentProject.voltageSystem,
           cosPhi: currentProject.cosPhi,
           foisonnementCharges: currentProject.foisonnementCharges,
-          foisonnementProductions: currentProject.foisonnementProductions
+          foisonnementProductions: currentProject.foisonnementProductions,
+          defaultChargeKVA: currentProject.defaultChargeKVA || 5,
+          defaultProductionKVA: currentProject.defaultProductionKVA || 5
         });
       }
     }
@@ -443,6 +445,36 @@ export const EditPanel = () => {
                   value={formData.foisonnementProductions || 100}
                   onChange={(e) => setFormData({ ...formData, foisonnementProductions: parseFloat(e.target.value) || 100 })}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="default-charge">Charge par défaut (kVA)</Label>
+                <Input
+                  id="default-charge"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={formData.defaultChargeKVA || 5}
+                  onChange={(e) => setFormData({ ...formData, defaultChargeKVA: parseFloat(e.target.value) || 5 })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Charge appliquée par défaut aux nouveaux nœuds
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="default-production">Production par défaut (kVA)</Label>
+                <Input
+                  id="default-production"
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={formData.defaultProductionKVA || 5}
+                  onChange={(e) => setFormData({ ...formData, defaultProductionKVA: parseFloat(e.target.value) || 5 })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Production PV appliquée par défaut aux nouveaux nœuds
+                </p>
               </div>
             </>
           )}

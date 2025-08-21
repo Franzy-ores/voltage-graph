@@ -70,6 +70,8 @@ export interface Project {
   cosPhi: number; // facteur de puissance global
   foisonnementCharges: number; // facteur de foisonnement des charges (0-100%)
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
+  defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
+  defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
   nodes: Node[];
   cables: Cable[];
   cableTypes: CableType[];
