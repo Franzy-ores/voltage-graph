@@ -182,23 +182,59 @@ export const MapView = () => {
       }
     };
 
+    const handleMapDoubleClick = (e: L.LeafletMouseEvent) => {
+      if (routingActive) {
+        // Double-clic : finaliser le routage à cette position
+        const finalPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
+        const finalCoords = [...routingPointsRef.current, finalPoint];
+        
+        if (routingFromNode && finalCoords.length >= 2) {
+          // Utiliser routingToNode si défini, sinon créer un nœud temporaire
+          const destinationNodeId = routingToNode || routingFromNode;
+          addCable(routingFromNode, destinationNodeId, selectedCableType, finalCoords);
+          clearRouting();
+        }
+      }
+    };
+
     map.on('click', handleMapClick);
+    map.on('dblclick', handleMapDoubleClick);
     return () => {
       map.off('click', handleMapClick);
+      map.off('dblclick', handleMapDoubleClick);
     };
-  }, [selectedTool, addNode, routingActive]);
+  }, [selectedTool, addNode, routingActive, routingFromNode, routingToNode, selectedCableType, addCable]);
 
   // Gérer les touches clavier pendant le routage
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && routingActive) {
         clearRouting();
+      } else if (e.key === 'Enter' && routingActive) {
+        // Enter : finaliser le routage au dernier point ajouté
+        if (routingFromNode && routingPointsRef.current.length >= 2) {
+          // Utiliser routingToNode si défini, sinon créer un point final avec les dernières coordonnées
+          const targetNodeId = routingToNode || `temp-${Date.now()}`;
+          const lastPoint = routingPointsRef.current[routingPointsRef.current.length - 1];
+          const finalCoords = [...routingPointsRef.current];
+          
+          if (routingToNode) {
+            addCable(routingFromNode, routingToNode, selectedCableType, finalCoords);
+          } else {
+            // Créer un câble qui se termine au dernier point cliqué
+            const finalCoords = [...routingPointsRef.current];
+            if (finalCoords.length >= 2) {
+              addCable(routingFromNode, routingFromNode, selectedCableType, finalCoords);
+            }
+          }
+          clearRouting();
+        }
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
     return () => document.removeEventListener('keydown', handleKeyPress);
-  }, [routingActive]);
+  }, [routingActive, routingFromNode, routingToNode, selectedCableType, addCable]);
 
   // Fonction pour mettre à jour la ligne temporaire
   const updateTempLine = () => {
@@ -349,21 +385,21 @@ export const MapView = () => {
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
         
-        if (routingActive && routingToNode === node.id) {
-          // Finaliser le routage en cliquant précisément sur le nœud de destination
+        // Si on est en mode routage, cliquer sur n'importe quel nœud termine le tracé
+        if (routingActive) {
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           
           if (routingFromNode && finalCoords.length >= 2) {
             addCable(routingFromNode, node.id, selectedCableType, finalCoords);
+            clearRouting();
           }
-          clearRouting();
           return;
         }
         
         if (selectedTool === 'select') {
           setSelectedNode(node.id);
           openEditPanel('node');
-        } else if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id && !routingActive) {
+        } else if (selectedTool === 'addCable' && selectedNodeId && selectedNodeId !== node.id) {
           // Vérifier le type de câble pour décider du comportement
           const cableType = currentProject?.cableTypes.find(ct => ct.id === selectedCableType);
           const isUnderground = cableType?.posesPermises.includes('SOUTERRAIN') && !cableType?.posesPermises.includes('AÉRIEN');
@@ -379,28 +415,19 @@ export const MapView = () => {
               routingPointsRef.current = initialPoints;
               setRoutingActive(true);
               
-              // Ajouter les marqueurs de départ et d'arrivée
+              // Ajouter uniquement le marqueur de départ
               const map = mapInstanceRef.current;
               if (map) {
                 const startMarker = L.marker([fromNode.lat, fromNode.lng], {
                   icon: L.divIcon({
                     className: 'routing-start',
-                    html: '<div class="w-4 h-4 bg-green-500 border border-white rounded-full"></div>',
+                    html: '<div class="w-4 h-4 bg-green-500 border-2 border-white rounded-full"></div>',
                     iconSize: [16, 16],
                     iconAnchor: [8, 8]
                   })
                 }).addTo(map);
                 
-                const endMarker = L.marker([node.lat, node.lng], {
-                  icon: L.divIcon({
-                    className: 'routing-end',
-                    html: '<div class="w-4 h-4 bg-red-500 border border-white rounded-full"></div>',
-                    iconSize: [16, 16],
-                    iconAnchor: [8, 8]
-                  })
-                }).addTo(map);
-                
-                tempMarkersRef.current.push(startMarker, endMarker);
+                tempMarkersRef.current.push(startMarker);
               }
             }
           } else {
@@ -555,7 +582,7 @@ export const MapView = () => {
         {selectedTool === 'addNode' && 'Cliquez pour ajouter un nœud'}
         {selectedTool === 'addCable' && !selectedNodeId && !routingActive && 'Sélectionnez le premier nœud'}
         {selectedTool === 'addCable' && selectedNodeId && !routingActive && 'Cliquez sur le second nœud'}
-        {routingActive && 'Cliquez pour ajouter des points intermédiaires, puis cliquez sur le nœud rouge pour finaliser'}
+        {routingActive && 'Ajoutez des points intermédiaires en cliquant. Finalisez avec : double-clic, Enter, ou clic sur un nœud'}
         {selectedTool === 'select' && 'Cliquez sur un élément pour le sélectionner'}
         {selectedTool === 'edit' && 'Cliquez sur un élément pour l\'éditer'}
         {selectedTool === 'move' && 'Cliquez et glissez un nœud pour le déplacer'}
@@ -566,7 +593,7 @@ export const MapView = () => {
       {routingActive && (
         <div className="absolute top-16 left-20 bg-red-500 text-white rounded-lg px-3 py-2 text-sm z-40">
           <button onClick={clearRouting} className="hover:bg-red-600 px-2 py-1 rounded">
-            ❌ Annuler le routage (ESC)
+            ❌ Annuler (ESC) | ✅ Finir (Enter/Double-clic)
           </button>
         </div>
       )}
