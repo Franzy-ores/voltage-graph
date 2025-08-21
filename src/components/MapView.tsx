@@ -287,6 +287,11 @@ export const MapView = () => {
     const map = mapInstanceRef.current;
     if (!map) return;
     
+    console.log('=== CLEARING ROUTING STATE ===');
+    console.log('Before clearing - routingActive:', routingActive);
+    console.log('Before clearing - routingFromNode:', routingFromNode);
+    console.log('Before clearing - selectedNodeId:', selectedNodeId);
+    
     // Nettoyer les marqueurs temporaires
     tempMarkersRef.current.forEach(marker => {
       try {
@@ -307,12 +312,15 @@ export const MapView = () => {
       tempLineRef.current = null;
     }
     
-    // Réinitialiser l'état
+    // Réinitialiser complètement l'état
     setRoutingActive(false);
     setRoutingFromNode(null);
     setRoutingToNode(null);
     routingPointsRef.current = [];
-    setSelectedNode(null);
+    setSelectedNode(null); // Important: remettre selectedNodeId à null
+    
+    console.log('=== ROUTING STATE CLEARED ===');
+    console.log('Ready for new cable routing');
   };
   useEffect(() => {
     const map = mapInstanceRef.current;
