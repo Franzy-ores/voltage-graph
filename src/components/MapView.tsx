@@ -424,6 +424,12 @@ export const MapView = () => {
           console.log('Finalizing from', routingFromNode, 'to', node.id);
           console.log('Routing points:', routingPointsRef.current);
           
+          // VÉRIFICATION CRITIQUE : S'assurer qu'on a vraiment des points de routage
+          if (routingPointsRef.current.length === 0) {
+            console.log('ERROR: No routing points found, ignoring finalization');
+            return;
+          }
+          
           // Créer le tracé complet avec tous les points intermédiaires + point final
           const finalCoords = [...routingPointsRef.current, { lat: node.lat, lng: node.lng }];
           console.log('Final cable coordinates:', finalCoords);
