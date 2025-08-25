@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import { generateCableDetailsTable } from './tableGenerator';
 import { Project, CalculationResult, CalculationScenario } from '@/types/network';
+import { getConnectedNodes, getConnectedCables } from '@/utils/networkConnectivity';
 
 export interface PDFData {
   project: Project;
@@ -61,10 +62,14 @@ export class PDFGenerator {
   }
 
   private getCableStatistics(project: Project) {
-    const totalLength = project.cables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
-    const cableCount = project.cables.length;
+    // Calculer les nœuds connectés
+    const connectedNodes = getConnectedNodes(project.nodes, project.cables);
+    const connectedCables = getConnectedCables(project.cables, connectedNodes);
     
-    const lengthByType = project.cables.reduce((acc, cable) => {
+    const totalLength = connectedCables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
+    const cableCount = connectedCables.length;
+    
+    const lengthByType = connectedCables.reduce((acc, cable) => {
       const cableType = project.cableTypes.find(type => type.id === cable.typeId);
       const typeName = cableType ? cableType.label : 'Inconnu';
       acc[typeName] = (acc[typeName] || 0) + (cable.length_m || 0);
@@ -105,7 +110,7 @@ export class PDFGenerator {
     this.currentY += 3;
     this.addText('Répartition par type de câble:');
     Object.entries(cableStats.lengthByType).forEach(([type, length]) => {
-      this.addText(`  • ${type}: ${length.toFixed(0)} m`, 9);
+      this.addText(`  • ${type}: ${(length as number).toFixed(0)} m`, 9);
     });
 
     this.currentY += 10;

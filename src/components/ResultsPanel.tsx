@@ -2,7 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalculationResult, CalculationScenario } from "@/types/network";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useNetworkStore } from "@/store/networkStore";
+import { useNetworkStore } from '@/store/networkStore';
+import { getConnectedNodes, getConnectedCables } from '@/utils/networkConnectivity';
 
 interface ResultsPanelProps {
   results: {
@@ -14,14 +15,17 @@ interface ResultsPanelProps {
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
   const { currentProject } = useNetworkStore();
   
-  // Calculer les statistiques des câbles
+  // Calculer les statistiques des câbles connectés uniquement
   const getCableStatistics = () => {
-    if (!currentProject?.cables) return { totalLength: 0, lengthByType: {} };
+    if (!currentProject?.cables || !currentProject?.nodes) return { totalLength: 0, lengthByType: {}, connectedCableCount: 0 };
+    
+    const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+    const connectedCables = getConnectedCables(currentProject.cables, connectedNodes);
     
     let totalLength = 0;
     const lengthByType: Record<string, number> = {};
     
-    currentProject.cables.forEach(cable => {
+    connectedCables.forEach(cable => {
       const length = cable.length_m || 0;
       totalLength += length;
       
@@ -34,7 +38,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
       lengthByType[typeName] += length;
     });
     
-    return { totalLength, lengthByType };
+    return { totalLength, lengthByType, connectedCableCount: connectedCables.length };
   };
   
   const cableStats = getCableStatistics();
@@ -119,11 +123,16 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 gap-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">Charge contractuelle</p>
-                <p className="font-semibold">{(currentProject?.nodes.reduce((sum, node) => 
-                  sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0) || 0).toFixed(1)} kVA</p>
-              </div>
+                <div>
+                  <p className="text-muted-foreground">Charge contractuelle</p>
+                  <p className="font-semibold">{(() => {
+                    if (!currentProject?.nodes || !currentProject?.cables) return '0.0';
+                    const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+                    const connectedNodesData = currentProject.nodes.filter(node => connectedNodes.has(node.id));
+                    return connectedNodesData.reduce((sum, node) => 
+                      sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0).toFixed(1);
+                  })()} kVA</p>
+                </div>
               <div>
                 <p className="text-muted-foreground">Foisonnement charges</p>
                 <p className="font-semibold">{currentProject?.foisonnementCharges || 100}%</p>
@@ -157,7 +166,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 </div>
                 <div>
                   <p className="text-muted-foreground">Nombre de câbles</p>
-                  <p className="font-semibold">{currentProject?.cables?.length || 0}</p>
+                  <p className="font-semibold">{cableStats.connectedCableCount}</p>
                 </div>
               </div>
               

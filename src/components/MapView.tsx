@@ -6,6 +6,7 @@ import { CableTypeSelector } from './CableTypeSelector';
 import { AddressSearch } from './AddressSearch';
 import { Button } from './ui/button';
 import { Globe, Map as MapIcon } from 'lucide-react';
+import { getConnectedNodes } from '@/utils/networkConnectivity';
 
 // Configuration des icônes Leaflet
 const configureLeafletIcons = () => {
@@ -344,35 +345,6 @@ export const MapView = () => {
   markersRef.current.forEach(marker => map.removeLayer(marker));
   markersRef.current.clear();
 
-  // Calculer les nœuds alimentés (connectés à une source)
-  const getConnectedNodes = (nodes: any[], cables: any[]) => {
-    const sources = nodes.filter(node => node.isSource);
-    const connectedNodes = new Set<string>();
-    
-    // Ajouter toutes les sources comme connectées
-    sources.forEach(source => connectedNodes.add(source.id));
-    
-    // Parcourir iterativement pour trouver tous les nœuds connectés
-    let hasChanged = true;
-    while (hasChanged) {
-      hasChanged = false;
-      cables.forEach(cable => {
-        const nodeAConnected = connectedNodes.has(cable.nodeAId);
-        const nodeBConnected = connectedNodes.has(cable.nodeBId);
-        
-        if (nodeAConnected && !nodeBConnected) {
-          connectedNodes.add(cable.nodeBId);
-          hasChanged = true;
-        } else if (nodeBConnected && !nodeAConnected) {
-          connectedNodes.add(cable.nodeAId);
-          hasChanged = true;
-        }
-      });
-    }
-    
-    return connectedNodes;
-  };
-
   const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
 
     // Add new markers
@@ -589,34 +561,6 @@ export const MapView = () => {
     cablesRef.current.clear();
 
     // Calculer les nœuds alimentés (connectés à une source)
-    const getConnectedNodes = (nodes: any[], cables: any[]) => {
-      const sources = nodes.filter(node => node.isSource);
-      const connectedNodes = new Set<string>();
-      
-      // Ajouter toutes les sources comme connectées
-      sources.forEach(source => connectedNodes.add(source.id));
-      
-      // Parcourir iterativement pour trouver tous les nœuds connectés
-      let hasChanged = true;
-      while (hasChanged) {
-        hasChanged = false;
-        cables.forEach(cable => {
-          const nodeAConnected = connectedNodes.has(cable.nodeAId);
-          const nodeBConnected = connectedNodes.has(cable.nodeBId);
-          
-          if (nodeAConnected && !nodeBConnected) {
-            connectedNodes.add(cable.nodeBId);
-            hasChanged = true;
-          } else if (nodeBConnected && !nodeAConnected) {
-            connectedNodes.add(cable.nodeAId);
-            hasChanged = true;
-          }
-        });
-      }
-      
-      return connectedNodes;
-    };
-
     const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
 
     currentProject.cables.forEach(cable => {

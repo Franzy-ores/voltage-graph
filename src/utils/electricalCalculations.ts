@@ -1,9 +1,5 @@
-/**
- * ElectricalCalculator corrigé
- * - cumul ΔU par chemin source → nœud
- * - conformité EN50160 basée sur ΔU cumulée au pire nœud
- */
-import { ConnectionType, Node, Cable, CableType, CalculationScenario, CalculationResult } from '@/types/network';
+import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType } from '@/types/network';
+import { getConnectedNodes } from '@/utils/networkConnectivity';
 
 export class ElectricalCalculator {
   private cosPhi: number;
@@ -168,8 +164,12 @@ export class ElectricalCalculator {
     let totalLoads = 0;
     let totalProductions = 0;
 
-    for (const n of nodes) {
-      // Appliquer les facteurs de foisonnement aux totaux aussi
+    // Calculer les nœuds connectés à une source
+    const connectedNodes = getConnectedNodes(nodes, cables);
+    const connectedNodesData = nodes.filter(node => connectedNodes.has(node.id));
+
+    for (const n of connectedNodesData) {
+      // Appliquer les facteurs de foisonnement aux totaux aussi (seulement pour les nœuds connectés)
       totalLoads += (n.clients || []).reduce((s,c) => s + (c.S_kVA || 0), 0) * (foisonnementCharges / 100);
       totalProductions += (n.productions || []).reduce((s,p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
     }
