@@ -34,21 +34,20 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
       return;
     }
 
-    try {
-      toast.loading("Génération du rapport PDF en cours...");
-      
+    const generatePDF = async () => {
       const pdfGenerator = new PDFGenerator();
       await pdfGenerator.generateReport({
         project: currentProject,
         results: calculationResults,
         selectedScenario
       });
+    };
 
-      toast.success("Rapport PDF généré avec succès !");
-    } catch (error) {
-      console.error('Erreur lors de la génération du PDF:', error);
-      toast.error("Erreur lors de la génération du rapport PDF.");
-    }
+    toast.promise(generatePDF(), {
+      loading: "Génération du rapport PDF en cours...",
+      success: "Rapport PDF généré avec succès !",
+      error: "Erreur lors de la génération du rapport PDF."
+    });
   };
 
   return (
