@@ -32,8 +32,8 @@ export const defaultCableTypes: CableType[] = [
     posesPermises: ['AÉRIEN']
   },
   {
-    id: 'cu-4x35',
-    label: 'Cuivre 4x35',
+    id: 'cu-35',
+    label: 'Cuivre 35',
     R12_ohm_per_km: 0.524,
     X12_ohm_per_km: 0.08,
     R0_ohm_per_km: 1.57,
