@@ -385,10 +385,12 @@ export const MapView = () => {
         if (nodeData) {
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
-          // Vérifier la conformité EN50160 basée sur tension nominale de référence
+          
+          // Calculer l'écart par rapport à la tension nominale de référence (230V ou 400V)
           const nominalVoltage = node.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
-          // Calculer le pourcentage SIGNÉ par rapport à la tension nominale de référence
-          nominalDropPercent = (nodeData.deltaU_cum_V / nominalVoltage) * 100;
+          const voltageDeviation = nodeVoltage - nominalVoltage; // Écart réel par rapport au nominal
+          nominalDropPercent = (voltageDeviation / nominalVoltage) * 100; // Pourcentage signé
+          
           // Conformité basée sur la valeur absolue (±10%)
           isOutOfCompliance = Math.abs(nominalDropPercent) > 10;
         }
