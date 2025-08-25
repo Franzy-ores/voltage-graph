@@ -85,6 +85,7 @@ interface NetworkActions {
   setFoisonnementCharges: (value: number) => void;
   setFoisonnementProductions: (value: number) => void;
   calculateWithTargetVoltage: (nodeId: string, targetVoltage: number) => void;
+  updateCableTypes: () => void;
 }
 
 const createDefaultProject = (): Project => ({
@@ -163,6 +164,13 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Calculer les bounds géographiques si pas encore définis
     if (!project.geographicBounds && project.nodes.length > 0) {
       project.geographicBounds = calculateProjectBounds(project.nodes);
+    }
+
+    // Vérifier si les types de câbles sont à jour
+    if (project.cableTypes.length !== defaultCableTypes.length) {
+      console.log(`Mise à jour des types de câbles: ${project.cableTypes.length} -> ${defaultCableTypes.length}`);
+      project.cableTypes = [...defaultCableTypes];
+      toast.info(`Types de câbles mis à jour: ${defaultCableTypes.length} types disponibles`);
     }
 
     set({ 
@@ -652,5 +660,20 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     get().calculateAll();
     
     toast.success(`Foisonnement ajusté automatiquement à ${Math.round(bestFoisonnement * 10) / 10}% pour atteindre la tension cible`);
+  },
+
+  updateCableTypes: () => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+    
+    set({
+      currentProject: {
+        ...currentProject,
+        cableTypes: [...defaultCableTypes]
+      }
+    });
+    
+    console.log('Cable types updated to:', defaultCableTypes.length, 'types');
+    toast.success('Types de câbles mis à jour avec succès');
   }
 }));

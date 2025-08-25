@@ -25,7 +25,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
     selectedScenario,
     setSelectedScenario,
     changeVoltageSystem,
-    calculationResults
+    calculationResults,
+    updateCableTypes
   } = useNetworkStore();
 
   const handleExportPDF = async () => {
@@ -185,6 +186,16 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
           >
             <FolderOpen className="h-4 w-4 mr-2" />
             Charger
+          </Button>
+          
+          <Button
+            variant="ghost"
+            onClick={updateCableTypes}
+            disabled={!currentProject}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Mettre à jour câbles
           </Button>
           
           <Button
