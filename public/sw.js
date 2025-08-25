@@ -1,4 +1,4 @@
-const CACHE_NAME = 'voltage-graph-v1';
+const CACHE_NAME = 'voltage-graph-v' + Date.now();
 const urlsToCache = [
   '/',
   '/src/main.tsx',
