@@ -233,8 +233,10 @@ export class ElectricalCalculator {
     // ---- CUMUL ΔU par chemin ----
     const deltaUcum_V = new Map<string, number>();
     const deltaUcum_percent = new Map<string, number>();
+    const deltaUcum_percent_nominal = new Map<string, number>(); // Pourcentage basé sur tension nominale pour conformité
     deltaUcum_V.set(source.id, 0);
     deltaUcum_percent.set(source.id, 0);
+    deltaUcum_percent_nominal.set(source.id, 0);
 
     const parentCableOf = (u: string): (typeof calculatedCables)[number] | null => {
       const p = parent.get(u);
@@ -258,7 +260,7 @@ export class ElectricalCalculator {
 
         let { U_base } = this.getVoltage((nodeById.get(v)!).connectionType);
         
-        // Utiliser la tension source si définie pour le calcul du pourcentage cumulé
+        // Utiliser la tension source si définie pour le calcul du pourcentage cumulé (affichage)
         const sourceNode = nodes.find(n => n.isSource);
         if (sourceNode?.tensionCible) {
           U_base = sourceNode.tensionCible;
@@ -266,6 +268,11 @@ export class ElectricalCalculator {
         
         const cumPct = (cumV / U_base) * 100;
         deltaUcum_percent.set(v, cumPct);
+
+        // Calculer le pourcentage basé sur la tension nominale pour la conformité
+        const nominalVoltage = (nodeById.get(v)!).connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
+        const cumPctNominal = (cumV / nominalVoltage) * 100;
+        deltaUcum_percent_nominal.set(v, cumPctNominal);
 
         stack.push(v);
       }
@@ -275,13 +282,15 @@ export class ElectricalCalculator {
     const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
     for (const n of nodes) {
       const pct = deltaUcum_percent.get(n.id) ?? 0;
-      const absPct = Math.abs(pct);
+      const pctNominal = deltaUcum_percent_nominal.get(n.id) ?? 0; // Pour la conformité
+      const absPctNominal = Math.abs(pctNominal);
       nodeVoltageDrops.push({
         nodeId: n.id,
         deltaU_cum_V: deltaUcum_V.get(n.id) ?? 0,
-        deltaU_cum_percent: pct
+        deltaU_cum_percent: pct // Affichage avec tension source
       });
-      if (absPct > worstAbsPct) worstAbsPct = absPct;
+      // Utiliser le pourcentage nominal pour déterminer la pire conformité
+      if (absPctNominal > worstAbsPct) worstAbsPct = absPctNominal;
     }
 
     const compliance = this.getComplianceStatus(worstAbsPct);

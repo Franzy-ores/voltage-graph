@@ -384,8 +384,10 @@ export const MapView = () => {
         if (nodeData) {
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
-          // Vérifier la conformité EN50160 (seuil à 10%)
-          isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
+          // Vérifier la conformité EN50160 (seuil à 10%) basée sur tension nominale
+          const nominalVoltage = node.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
+          const nominalDropPercent = (nodeData.deltaU_cum_V / nominalVoltage) * 100;
+          isOutOfCompliance = Math.abs(nominalDropPercent) > 10;
         }
       }
       
@@ -585,10 +587,14 @@ export const MapView = () => {
             const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
             
             if (nodeData) {
-              const absDropPercent = Math.abs(nodeData.deltaU_cum_percent);
-              if (absDropPercent <= 8) {
+              // Calculer le pourcentage basé sur la tension nominale pour la conformité
+              const distalNode = currentProject.nodes.find(n => n.id === distalNodeId);
+              const nominalVoltage = distalNode?.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
+              const nominalDropPercent = Math.abs(nodeData.deltaU_cum_V / nominalVoltage * 100);
+              
+              if (nominalDropPercent <= 8) {
                 cableColor = '#22c55e'; // vert - normal
-              } else if (absDropPercent <= 10) {
+              } else if (nominalDropPercent <= 10) {
                 cableColor = '#f59e0b'; // orange - warning  
               } else {
                 cableColor = '#ef4444'; // rouge - critical

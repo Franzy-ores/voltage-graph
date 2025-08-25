@@ -69,10 +69,11 @@ export const generateCableDetailsTable = (
       const distalNodeChargesFoisonnees = distalNodeChargesContractuelles * (currentProject.foisonnementCharges / 100);
       const distalNodeProductions = actualDistalNode?.productions.reduce((sum, prod) => sum + prod.S_kVA, 0) || 0;
 
-      // Couleur pour la chute de tension
-      const voltageDropPercent = Math.abs(cable.voltageDropPercent || 0);
-      const colorClass = voltageDropPercent > 10 ? 'color: red; font-weight: bold;' : 
-                        voltageDropPercent > 8 ? 'color: orange; font-weight: bold;' : 
+      // Couleur pour la chute de tension (basée sur tension nominale)
+      const nominalVoltage = (actualDistalNode?.connectionType === 'TÉTRA_3P+N_230_400V') ? 400 : 230;
+      const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
+      const colorClass = nominalDropPercent > 10 ? 'color: red; font-weight: bold;' : 
+                        nominalDropPercent > 8 ? 'color: orange; font-weight: bold;' : 
                         'color: green; font-weight: bold;';
 
       return `

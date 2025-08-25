@@ -319,11 +319,15 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                           </TableCell>
                           <TableCell className="text-xs">
                             <span className={`font-medium ${
-                              Math.abs(cable.voltageDropPercent || 0) > 10 
-                                ? 'text-destructive' 
-                                : Math.abs(cable.voltageDropPercent || 0) > 8 
-                                ? 'text-accent' 
-                                : 'text-success'
+                              (() => {
+                                const nominalVoltage = (actualDistalNode?.connectionType === 'TÉTRA_3P+N_230_400V') ? 400 : 230;
+                                const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
+                                return nominalDropPercent > 10 
+                                  ? 'text-destructive' 
+                                  : nominalDropPercent > 8 
+                                  ? 'text-accent' 
+                                  : 'text-success';
+                              })()
                             }`}>
                               {cable.voltageDropPercent?.toFixed(2) || '-'}
                             </span>
