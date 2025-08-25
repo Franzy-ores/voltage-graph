@@ -50,15 +50,19 @@ export const generateCableDetailsTable = (
       // Calculer les tensions réelles des nœuds
       const baseVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
       
+      // Trouver la tension de la source principale
+      const mainSourceNode = currentProject.nodes.find(n => n.isSource);
+      const sourceVoltage = mainSourceNode?.tensionCible || baseVoltage;
+      
       // Tension du nœud source du câble (tension réelle après chutes cumulatives)
       const sourceNodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => nvd.nodeId === actualSourceNode?.id);
       const sourceCumulativeVoltageDrop = sourceNodeVoltageDropResult?.deltaU_cum_V || 0;
-      const sourceNodeVoltage = (actualSourceNode?.tensionCible || baseVoltage) - sourceCumulativeVoltageDrop;
+      const sourceNodeVoltage = sourceVoltage - sourceCumulativeVoltageDrop;
       
       // Tension du nœud aval du câble (tension réelle après chutes cumulatives) 
       const distalNodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => nvd.nodeId === actualDistalNode?.id);
       const distalCumulativeVoltageDrop = distalNodeVoltageDropResult?.deltaU_cum_V || 0;
-      const distalNodeVoltage = (actualDistalNode?.tensionCible || baseVoltage) - distalCumulativeVoltageDrop;
+      const distalNodeVoltage = sourceVoltage - distalCumulativeVoltageDrop;
 
       // Calculer les charges et productions du nœud aval
       const distalNodeChargesContractuelles = actualDistalNode?.clients.reduce((sum, client) => sum + client.S_kVA, 0) || 0;

@@ -303,14 +303,6 @@ export const EditPanel = () => {
                           max={currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 241.5 : 420}
                           onChange={(e) => {
                             const value = parseFloat(e.target.value);
-                            const defaultVoltage = currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
-                            const minVoltage = defaultVoltage * 0.95;
-                            const maxVoltage = defaultVoltage * 1.05;
-                            
-                            if (value && (value < minVoltage || value > maxVoltage)) {
-                              return; // Ignore les valeurs hors limites
-                            }
-                            
                             setFormData({ 
                               ...formData, 
                               tensionCible: value || undefined 
