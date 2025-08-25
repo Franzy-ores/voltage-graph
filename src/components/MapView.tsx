@@ -356,7 +356,11 @@ export const MapView = () => {
       // Calculer la tension avec chute cumulée selon le type de connexion
       let baseVoltage = 230; // Par défaut
       
-      // Déterminer la tension de base selon le type de connexion du nœud
+      // Trouver la tension de la source principale
+      const mainSourceNode = currentProject.nodes.find(n => n.isSource);
+      const sourceVoltage = mainSourceNode?.tensionCible || (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
+      
+      // Déterminer la tension de base selon le type de connexion du nœud (pour l'affichage par défaut)
       switch (node.connectionType) {
         case 'TÉTRA_3P+N_230_400V':
           baseVoltage = 400;
@@ -371,15 +375,15 @@ export const MapView = () => {
           break;
       }
       
-      let nodeVoltage = baseVoltage;
+      let nodeVoltage = sourceVoltage; // Utiliser la tension source
       let isOutOfCompliance = false;
       
       if (calculationResults[selectedScenario] && !node.isSource) {
         const results = calculationResults[selectedScenario];
         const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
         if (nodeData) {
-          // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse)
-          nodeVoltage = baseVoltage - nodeData.deltaU_cum_V;
+          // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
+          nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
           // Vérifier la conformité EN50160 (seuil à 10%)
           isOutOfCompliance = Math.abs(nodeData.deltaU_cum_percent) > 10;
         }
