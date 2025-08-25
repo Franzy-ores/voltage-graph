@@ -377,7 +377,7 @@ export const MapView = () => {
       
       let nodeVoltage = sourceVoltage; // Utiliser la tension source
       let isOutOfCompliance = false;
-      let nominalDropPercent = 0; // Déclarer la variable pour la conformité
+      let nominalDropPercent = 0; // Déclarer la variable pour la conformité (signée)
       
       if (calculationResults[selectedScenario] && !node.isSource) {
         const results = calculationResults[selectedScenario];
@@ -385,10 +385,12 @@ export const MapView = () => {
         if (nodeData) {
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
-          // Vérifier la conformité EN50160 (seuil à 10%) basée sur tension nominale
+          // Vérifier la conformité EN50160 basée sur tension nominale de référence
           const nominalVoltage = node.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
-          nominalDropPercent = Math.abs(nodeData.deltaU_cum_V / nominalVoltage * 100);
-          isOutOfCompliance = nominalDropPercent > 10;
+          // Calculer le pourcentage SIGNÉ par rapport à la tension nominale de référence
+          nominalDropPercent = (nodeData.deltaU_cum_V / nominalVoltage) * 100;
+          // Conformité basée sur la valeur absolue (±10%)
+          isOutOfCompliance = Math.abs(nominalDropPercent) > 10;
         }
       }
       
@@ -411,28 +413,28 @@ export const MapView = () => {
         
         if (hasProduction && hasLoad) {
           iconContent = 'M'; // Mixte
-          // Déterminer la couleur selon le pourcentage de chute de tension nominal
-          if (nominalDropPercent <= 8) {
+          // Déterminer la couleur selon le pourcentage de variation de tension nominal (±)
+          if (Math.abs(nominalDropPercent) <= 8) {
             iconClass = 'bg-yellow-500 border-yellow-600 text-white';
-          } else if (nominalDropPercent <= 10) {
+          } else if (Math.abs(nominalDropPercent) <= 10) {
             iconClass = 'bg-voltage-warning border-orange-600 text-white';
           } else {
             iconClass = 'bg-voltage-critical border-red-600 text-white';
           }
         } else if (hasProduction) {
           iconContent = 'P'; // Production seule
-          if (nominalDropPercent <= 8) {
+          if (Math.abs(nominalDropPercent) <= 8) {
             iconClass = 'bg-voltage-normal border-green-600 text-white';
-          } else if (nominalDropPercent <= 10) {
+          } else if (Math.abs(nominalDropPercent) <= 10) {
             iconClass = 'bg-voltage-warning border-orange-600 text-white';
           } else {
             iconClass = 'bg-voltage-critical border-red-600 text-white';
           }
         } else if (hasLoad) {
           iconContent = 'C'; // Charge seule
-          if (nominalDropPercent <= 8) {
+          if (Math.abs(nominalDropPercent) <= 8) {
             iconClass = 'bg-blue-500 border-blue-600 text-white';
-          } else if (nominalDropPercent <= 10) {
+          } else if (Math.abs(nominalDropPercent) <= 10) {
             iconClass = 'bg-voltage-warning border-orange-600 text-white';
           } else {
             iconClass = 'bg-voltage-critical border-red-600 text-white';
