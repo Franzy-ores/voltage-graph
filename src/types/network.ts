@@ -19,7 +19,7 @@ export interface CableType {
   X12_ohm_per_km: number;
   R0_ohm_per_km: number;
   X0_ohm_per_km: number;
-  matiere: "ALUMINIUM";
+  matiere: "CUIVRE" | "ALUMINIUM";
   posesPermises: CablePose[];
 }
 
