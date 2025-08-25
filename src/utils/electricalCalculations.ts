@@ -70,8 +70,14 @@ export class ElectricalCalculator {
       : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
-  private calculateCurrentA(S_kVA: number, connectionType: ConnectionType): number {
-    const { U_base, isThreePhase } = this.getVoltage(connectionType);
+  private calculateCurrentA(S_kVA: number, connectionType: ConnectionType, sourceVoltage?: number): number {
+    let { U_base, isThreePhase } = this.getVoltage(connectionType);
+    
+    // Utiliser la tension source si fournie
+    if (sourceVoltage) {
+      U_base = sourceVoltage;
+    }
+    
     const denom = (isThreePhase ? Math.sqrt(3) * U_base : U_base) * this.cosPhi;
     if (denom === 0) return 0;
     return (S_kVA * 1000) / denom;
@@ -193,9 +199,18 @@ export class ElectricalCalculator {
       const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, connectionType);
       const sinPhi = Math.sqrt(1 - this.cosPhi * this.cosPhi);
 
-      const I_A = this.calculateCurrentA(distalS_kVA, connectionType);
+      // Trouver la source pour utiliser sa tension si définie
+      const sourceNode = nodes.find(n => n.isSource);
 
-      const { U_base, isThreePhase } = this.getVoltage(connectionType);
+      const I_A = this.calculateCurrentA(distalS_kVA, connectionType, sourceNode?.tensionCible);
+
+      let { U_base, isThreePhase } = this.getVoltage(connectionType);
+      
+      // Utiliser la tension source si définie
+      if (sourceNode?.tensionCible) {
+        U_base = sourceNode.tensionCible;
+      }
+      
       const reactTerm = (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi);
       const deltaU_V = (isThreePhase ? Math.sqrt(3) : 1) * I_A * reactTerm * L_km;
       const deltaU_percent = (deltaU_V / U_base) * 100;
@@ -241,7 +256,14 @@ export class ElectricalCalculator {
         const cumV = parentCumV + thisDeltaV;
         deltaUcum_V.set(v, cumV);
 
-        const { U_base } = this.getVoltage((nodeById.get(v)!).connectionType);
+        let { U_base } = this.getVoltage((nodeById.get(v)!).connectionType);
+        
+        // Utiliser la tension source si définie pour le calcul du pourcentage cumulé
+        const sourceNode = nodes.find(n => n.isSource);
+        if (sourceNode?.tensionCible) {
+          U_base = sourceNode.tensionCible;
+        }
+        
         const cumPct = (cumV / U_base) * 100;
         deltaUcum_percent.set(v, cumPct);
 

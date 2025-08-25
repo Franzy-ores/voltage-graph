@@ -282,49 +282,92 @@ export const EditPanel = () => {
                  </CardContent>
                </Card>
 
-               {/* Tension Cible */}
-               {!selectedNode?.isSource && (
-                 <Card>
-                   <CardHeader className="pb-3">
-                     <CardTitle className="text-base flex items-center gap-2">
-                       <Target className="w-4 h-4" />
-                       Tension Cible
-                     </CardTitle>
-                   </CardHeader>
-                   <CardContent className="space-y-3">
-                     <div className="space-y-2">
-                       <Label htmlFor="tension-cible">Tension cible (V)</Label>
-                       <div className="flex gap-2">
-                         <Input
-                           id="tension-cible"
-                           type="number"
-                           placeholder="Ex: 230"
-                           value={formData.tensionCible || ''}
-                           onChange={(e) => setFormData({ 
-                             ...formData, 
-                             tensionCible: parseFloat(e.target.value) || undefined 
-                           })}
-                         />
-                         {formData.tensionCible && (
-                           <Button
-                             variant="outline"
-                             onClick={() => {
-                               if (selectedNodeId && formData.tensionCible) {
-                                 calculateWithTargetVoltage(selectedNodeId, formData.tensionCible);
-                               }
-                             }}
-                           >
-                             Ajuster
-                           </Button>
-                         )}
-                       </div>
-                       <p className="text-xs text-muted-foreground">
-                         Ajuste automatiquement le foisonnement des charges pour atteindre cette tension
-                       </p>
-                     </div>
-                   </CardContent>
-                 </Card>
-               )}
+                {/* Tension Source */}
+                {selectedNode?.isSource && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Target className="w-4 h-4" />
+                        Tension Source
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="tension-source">Tension source (V)</Label>
+                        <Input
+                          id="tension-source"
+                          type="number"
+                          placeholder={`Ex: ${currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230' : '400'}`}
+                          value={formData.tensionCible || ''}
+                          min={currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 218.5 : 380}
+                          max={currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 241.5 : 420}
+                          onChange={(e) => {
+                            const value = parseFloat(e.target.value);
+                            const defaultVoltage = currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+                            const minVoltage = defaultVoltage * 0.95;
+                            const maxVoltage = defaultVoltage * 1.05;
+                            
+                            if (value && (value < minVoltage || value > maxVoltage)) {
+                              return; // Ignore les valeurs hors limites
+                            }
+                            
+                            setFormData({ 
+                              ...formData, 
+                              tensionCible: value || undefined 
+                            });
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Tension de la source (±5% max). Par défaut: {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V'}
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Tension Cible */}
+                {!selectedNode?.isSource && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Target className="w-4 h-4" />
+                        Tension Cible
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="tension-cible">Tension cible (V)</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="tension-cible"
+                            type="number"
+                            placeholder="Ex: 230"
+                            value={formData.tensionCible || ''}
+                            onChange={(e) => setFormData({ 
+                              ...formData, 
+                              tensionCible: parseFloat(e.target.value) || undefined 
+                            })}
+                          />
+                          {formData.tensionCible && (
+                            <Button
+                              variant="outline"
+                              onClick={() => {
+                                if (selectedNodeId && formData.tensionCible) {
+                                  calculateWithTargetVoltage(selectedNodeId, formData.tensionCible);
+                                }
+                              }}
+                            >
+                              Ajuster
+                            </Button>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Ajuste automatiquement le foisonnement des charges pour atteindre cette tension
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
              </>
            )}
 
