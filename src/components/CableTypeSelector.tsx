@@ -32,20 +32,25 @@ export const CableTypeSelector = () => {
           <SelectTrigger className="w-full bg-white border-2">
             <SelectValue placeholder="Sélectionner un type de câble" />
           </SelectTrigger>
-          <SelectContent className="bg-white border-2 z-[10000]">
+          <SelectContent className="bg-white border-2 z-[10000] max-h-[500px] overflow-y-auto">
             {currentProject.cableTypes.map((cableType) => (
-              <SelectItem key={cableType.id} value={cableType.id}>
-                <div className="flex items-center gap-2">
-                  <span>{cableType.label}</span>
-                  {cableType.posesPermises.map(pose => (
-                    <Badge 
-                      key={pose} 
-                      variant={pose === 'AÉRIEN' ? 'default' : 'secondary'}
-                      className="text-xs"
-                    >
-                      {pose}
-                    </Badge>
-                  ))}
+              <SelectItem key={cableType.id} value={cableType.id} className="min-h-[60px] py-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{cableType.label}</span>
+                    <span className="text-xs text-gray-500">({cableType.matiere})</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {cableType.posesPermises.map(pose => (
+                      <Badge 
+                        key={pose} 
+                        variant={pose === 'AÉRIEN' ? 'default' : 'secondary'}
+                        className="text-xs"
+                      >
+                        {pose}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </SelectItem>
             ))}
