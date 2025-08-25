@@ -580,8 +580,7 @@ export const MapView = () => {
         { 
           color: cableColor,
           weight: 4,
-          opacity: 0.8,
-          renderer: L.canvas() // Force le rendu Canvas pour cette polyline
+          opacity: 0.8
         }
       ).addTo(map);
 
