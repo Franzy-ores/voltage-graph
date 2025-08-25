@@ -60,7 +60,7 @@ export const defaultCableTypes: CableType[] = [
     X0_ohm_per_km: 0.21,
     matiere: 'CUIVRE',
     posesPermises: ['AÉRIEN']
-  } 
+  } ,
   {
     id: 'baxb-70',
     label: 'BAXB 70',
