@@ -340,9 +340,40 @@ export const MapView = () => {
     const map = mapInstanceRef.current;
     if (!map || !currentProject) return;
 
-    // Clear existing markers
-    markersRef.current.forEach(marker => map.removeLayer(marker));
-    markersRef.current.clear();
+  // Clear existing markers
+  markersRef.current.forEach(marker => map.removeLayer(marker));
+  markersRef.current.clear();
+
+  // Calculer les nœuds alimentés (connectés à une source)
+  const getConnectedNodes = (nodes: any[], cables: any[]) => {
+    const sources = nodes.filter(node => node.isSource);
+    const connectedNodes = new Set<string>();
+    
+    // Ajouter toutes les sources comme connectées
+    sources.forEach(source => connectedNodes.add(source.id));
+    
+    // Parcourir iterativement pour trouver tous les nœuds connectés
+    let hasChanged = true;
+    while (hasChanged) {
+      hasChanged = false;
+      cables.forEach(cable => {
+        const nodeAConnected = connectedNodes.has(cable.nodeAId);
+        const nodeBConnected = connectedNodes.has(cable.nodeBId);
+        
+        if (nodeAConnected && !nodeBConnected) {
+          connectedNodes.add(cable.nodeBId);
+          hasChanged = true;
+        } else if (nodeBConnected && !nodeAConnected) {
+          connectedNodes.add(cable.nodeAId);
+          hasChanged = true;
+        }
+      });
+    }
+    
+    return connectedNodes;
+  };
+
+  const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
 
     // Add new markers
     currentProject.nodes.forEach(node => {
@@ -386,7 +417,11 @@ export const MapView = () => {
       let iconContent = 'N';
       let iconClass = 'bg-secondary border-secondary-foreground text-secondary-foreground';
       
-      if (node.isSource) {
+      // Si le nœud n'est pas alimenté (pas connecté à une source), le mettre en gris
+      if (!connectedNodes.has(node.id)) {
+        iconClass = 'bg-gray-400 border-gray-500 text-white';
+        iconContent = node.isSource ? 'S' : 'N';
+      } else if (node.isSource) {
         iconContent = 'S';
         // Source colorée selon la tension du système
         const isHighVoltage = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
@@ -553,23 +588,63 @@ export const MapView = () => {
     cablesRef.current.forEach(cable => map.removeLayer(cable));
     cablesRef.current.clear();
 
+    // Calculer les nœuds alimentés (connectés à une source)
+    const getConnectedNodes = (nodes: any[], cables: any[]) => {
+      const sources = nodes.filter(node => node.isSource);
+      const connectedNodes = new Set<string>();
+      
+      // Ajouter toutes les sources comme connectées
+      sources.forEach(source => connectedNodes.add(source.id));
+      
+      // Parcourir iterativement pour trouver tous les nœuds connectés
+      let hasChanged = true;
+      while (hasChanged) {
+        hasChanged = false;
+        cables.forEach(cable => {
+          const nodeAConnected = connectedNodes.has(cable.nodeAId);
+          const nodeBConnected = connectedNodes.has(cable.nodeBId);
+          
+          if (nodeAConnected && !nodeBConnected) {
+            connectedNodes.add(cable.nodeBId);
+            hasChanged = true;
+          } else if (nodeBConnected && !nodeAConnected) {
+            connectedNodes.add(cable.nodeAId);
+            hasChanged = true;
+          }
+        });
+      }
+      
+      return connectedNodes;
+    };
+
+    const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+
     currentProject.cables.forEach(cable => {
       let cableColor = '#6b7280'; // gris par défaut
-      const results = calculationResults[selectedScenario];
-      if (results) {
-        const calculatedCable = results.cables.find(c => c.id === cable.id);
-        if (calculatedCable) {
-          const distalNodeId = calculatedCable.nodeBId;
-          const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
-          
-          if (nodeData) {
-            const absDropPercent = Math.abs(nodeData.deltaU_cum_percent);
-            if (absDropPercent <= 8) {
-              cableColor = '#22c55e'; // vert - normal
-            } else if (absDropPercent <= 10) {
-              cableColor = '#f59e0b'; // orange - warning  
-            } else {
-              cableColor = '#ef4444'; // rouge - critical
+      
+      // Si les deux nœuds connectés par le câble ne sont pas alimentés, mettre le câble en gris
+      const nodeAConnected = connectedNodes.has(cable.nodeAId);
+      const nodeBConnected = connectedNodes.has(cable.nodeBId);
+      
+      if (!nodeAConnected || !nodeBConnected) {
+        cableColor = '#9ca3af'; // gris pour câbles non alimentés
+      } else {
+        const results = calculationResults[selectedScenario];
+        if (results) {
+          const calculatedCable = results.cables.find(c => c.id === cable.id);
+          if (calculatedCable) {
+            const distalNodeId = calculatedCable.nodeBId;
+            const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
+            
+            if (nodeData) {
+              const absDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+              if (absDropPercent <= 8) {
+                cableColor = '#22c55e'; // vert - normal
+              } else if (absDropPercent <= 10) {
+                cableColor = '#f59e0b'; // orange - warning  
+              } else {
+                cableColor = '#ef4444'; // rouge - critical
+              }
             }
           }
         }
