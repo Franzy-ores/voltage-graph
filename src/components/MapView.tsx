@@ -377,6 +377,7 @@ export const MapView = () => {
       
       let nodeVoltage = sourceVoltage; // Utiliser la tension source
       let isOutOfCompliance = false;
+      let nominalDropPercent = 0; // Déclarer la variable pour la conformité
       
       if (calculationResults[selectedScenario] && !node.isSource) {
         const results = calculationResults[selectedScenario];
@@ -386,8 +387,8 @@ export const MapView = () => {
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
           // Vérifier la conformité EN50160 (seuil à 10%) basée sur tension nominale
           const nominalVoltage = node.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
-          const nominalDropPercent = (nodeData.deltaU_cum_V / nominalVoltage) * 100;
-          isOutOfCompliance = Math.abs(nominalDropPercent) > 10;
+          nominalDropPercent = Math.abs(nodeData.deltaU_cum_V / nominalVoltage * 100);
+          isOutOfCompliance = nominalDropPercent > 10;
         }
       }
       
@@ -410,13 +411,32 @@ export const MapView = () => {
         
         if (hasProduction && hasLoad) {
           iconContent = 'M'; // Mixte
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-yellow-500 border-yellow-600 text-white';
+          // Déterminer la couleur selon le pourcentage de chute de tension nominal
+          if (nominalDropPercent <= 8) {
+            iconClass = 'bg-node-mixed border-amber-600 text-white';
+          } else if (nominalDropPercent <= 10) {
+            iconClass = 'bg-voltage-warning border-orange-600 text-white';
+          } else {
+            iconClass = 'bg-voltage-critical border-red-600 text-white';
+          }
         } else if (hasProduction) {
           iconContent = 'P'; // Production seule
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-green-500 border-green-600 text-white';
+          if (nominalDropPercent <= 8) {
+            iconClass = 'bg-voltage-normal border-green-600 text-white';
+          } else if (nominalDropPercent <= 10) {
+            iconClass = 'bg-voltage-warning border-orange-600 text-white';
+          } else {
+            iconClass = 'bg-voltage-critical border-red-600 text-white';
+          }
         } else if (hasLoad) {
           iconContent = 'C'; // Charge seule
-          iconClass = isOutOfCompliance ? 'bg-red-500 border-red-600 text-white' : 'bg-blue-500 border-blue-600 text-white';
+          if (nominalDropPercent <= 8) {
+            iconClass = 'bg-blue-500 border-blue-600 text-white';
+          } else if (nominalDropPercent <= 10) {
+            iconClass = 'bg-voltage-warning border-orange-600 text-white';
+          } else {
+            iconClass = 'bg-voltage-critical border-red-600 text-white';
+          }
         }
       }
 
@@ -570,14 +590,14 @@ export const MapView = () => {
     const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
 
     currentProject.cables.forEach(cable => {
-      let cableColor = '#6b7280'; // gris par défaut
+      let cableColor = 'hsl(var(--muted-foreground))'; // gris par défaut
       
       // Si les deux nœuds connectés par le câble ne sont pas alimentés, mettre le câble en gris
       const nodeAConnected = connectedNodes.has(cable.nodeAId);
       const nodeBConnected = connectedNodes.has(cable.nodeBId);
       
       if (!nodeAConnected || !nodeBConnected) {
-        cableColor = '#9ca3af'; // gris pour câbles non alimentés
+        cableColor = 'hsl(var(--muted-foreground))'; // gris pour câbles non alimentés
       } else {
         const results = calculationResults[selectedScenario];
         if (results) {
@@ -593,11 +613,11 @@ export const MapView = () => {
               const nominalDropPercent = Math.abs(nodeData.deltaU_cum_V / nominalVoltage * 100);
               
               if (nominalDropPercent <= 8) {
-                cableColor = '#22c55e'; // vert - normal
+                cableColor = 'hsl(var(--voltage-normal))'; // vert - normal
               } else if (nominalDropPercent <= 10) {
-                cableColor = '#f59e0b'; // orange - warning  
+                cableColor = 'hsl(var(--voltage-warning))'; // orange - warning  
               } else {
-                cableColor = '#ef4444'; // rouge - critical
+                cableColor = 'hsl(var(--voltage-critical))'; // rouge - critical
               }
             }
           }

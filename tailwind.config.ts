@@ -60,6 +60,7 @@ export default {
 				'voltage-normal': 'hsl(var(--voltage-normal))',
 				'voltage-warning': 'hsl(var(--voltage-warning))',
 				'voltage-critical': 'hsl(var(--voltage-critical))',
+				'node-mixed': 'hsl(var(--node-mixed))',
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',

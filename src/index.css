@@ -54,6 +54,9 @@ All colors MUST be HSL.
     --voltage-normal: 166 85% 35%; /* Green ≤ ±8% */
     --voltage-warning: 43 96% 56%; /* Orange ±8% to ±10% */
     --voltage-critical: 0 84% 60%; /* Red > ±10% */
+    
+    /* Node types colors */
+    --node-mixed: 43 74% 66%; /* #E3CD8B for mixed nodes */
 
     /* Professional shadows */
     --shadow-sm: 0 2px 4px -1px hsl(var(--primary) / 0.1);
