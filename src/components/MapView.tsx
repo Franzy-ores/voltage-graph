@@ -413,7 +413,7 @@ export const MapView = () => {
           iconContent = 'M'; // Mixte
           // Déterminer la couleur selon le pourcentage de chute de tension nominal
           if (nominalDropPercent <= 8) {
-            iconClass = 'bg-node-mixed border-amber-600 text-white';
+            iconClass = 'bg-yellow-500 border-yellow-600 text-white';
           } else if (nominalDropPercent <= 10) {
             iconClass = 'bg-voltage-warning border-orange-600 text-white';
           } else {
