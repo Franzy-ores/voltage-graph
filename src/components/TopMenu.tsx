@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
   const [busbarEffect, setBusbarEffect] = useState<BusbarEffect | null>(null);
 
   // Calcul avec offset TGBT
-  React.useEffect(() => {
+  useEffect(() => {
     const calculateBusbar = async () => {
       if (!currentProject || !currentProject.transformer || !selectedScenario) {
         setBusbarEffect(null);
