@@ -1,16 +1,12 @@
-import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-// import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 import { PDFGenerator } from "@/utils/pdfGenerator";
 import { toast } from "sonner";
-// import { calculateWithBusbar } from '@/services/calculationRunner';
-// import type { BusbarEffect } from '@/types/network';
 
 interface TopMenuProps {
   onNewNetwork: () => void;
@@ -32,35 +28,6 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
     calculationResults,
     updateCableTypes
   } = useNetworkStore();
-
-  // const [busbarEffect, setBusbarEffect] = useState<BusbarEffect | null>(null);
-
-  // // Calcul avec offset TGBT - TEMPORAIREMENT DÉSACTIVÉ
-  // useEffect(() => {
-  //   const calculateBusbar = async () => {
-  //     if (!currentProject || !currentProject.transformer || !selectedScenario) {
-  //       setBusbarEffect(null);
-  //       return;
-  //     }
-
-  //     try {
-  //       const { busbar } = await calculateWithBusbar(
-  //         currentProject.nodes,
-  //         currentProject.cables,
-  //         currentProject.cableTypes,
-  //         currentProject.transformer,
-  //         currentProject.cosPhi,
-  //         selectedScenario
-  //       );
-  //       setBusbarEffect(busbar);
-  //     } catch (error) {
-  //       console.error('Erreur calcul TGBT:', error);
-  //       setBusbarEffect(null);
-  //     }
-  //   };
-
-  //   calculateBusbar();
-  // }, [currentProject, selectedScenario, calculationResults]);
 
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
