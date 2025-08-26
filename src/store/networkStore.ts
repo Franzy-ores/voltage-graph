@@ -97,6 +97,15 @@ const createDefaultProject = (): Project => ({
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
+  transformer: {
+    id: 'xfm-1',
+    name: 'Transfo BT',
+    connectionType: 'TÉTRA_3P+N_230_400V',
+    R12_ohm: 0.01, // valeurs par défaut éditables
+    X12_ohm: 0.02,
+    R0_ohm: 0.02,
+    X0_ohm: 0.04
+  },
   nodes: [
     {
       id: "source",

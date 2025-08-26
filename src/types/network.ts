@@ -63,6 +63,25 @@ export interface Cable {
   losses_kW?: number;
 }
 
+export interface TransformerConfig {
+  id: string;
+  name: string;
+  connectionType: ConnectionType; // typiquement 'TÉTRA_3P+N_230_400V' ou 'TRI_230V_3F'
+  // Impédances équivalentes VERS le TGBT (par phase), en ohms (pas Ω/km)
+  R12_ohm: number;
+  X12_ohm: number;
+  R0_ohm?: number; // optionnel, utilisé si MONO_230V_PN
+  X0_ohm?: number; // optionnel, utilisé si MONO_230V_PN
+}
+
+export interface BusbarEffect {
+  U_nominal: number;         // 230 ou 400
+  U_busbar_V: number;        // tension résultante au TGBT
+  deltaU_busbar_V: number;   // offset en volts (signé)
+  deltaU_busbar_percent: number; // offset en %
+  S_total_kVA: number;       // solde global (charges - PV)
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -72,6 +91,7 @@ export interface Project {
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
+  transformer?: TransformerConfig; // optionnel
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
     south: number;
