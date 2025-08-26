@@ -131,6 +131,15 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
+  transformer: {
+    id: 'xfm-1',
+    name: 'Transfo BT',
+    connectionType: voltageSystem === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F',
+    R12_ohm: 0.01,
+    X12_ohm: 0.02,
+    R0_ohm: 0.02,
+    X0_ohm: 0.04
+  },
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
