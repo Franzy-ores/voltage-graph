@@ -4,13 +4,13 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { FileText, Save, FolderOpen, Settings, Zap, FileDown, Info } from "lucide-react";
+// import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 import { PDFGenerator } from "@/utils/pdfGenerator";
 import { toast } from "sonner";
-import { calculateWithBusbar } from '@/services/calculationRunner';
-import type { BusbarEffect } from '@/types/network';
+// import { calculateWithBusbar } from '@/services/calculationRunner';
+// import type { BusbarEffect } from '@/types/network';
 
 interface TopMenuProps {
   onNewNetwork: () => void;
@@ -33,34 +33,34 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
     updateCableTypes
   } = useNetworkStore();
 
-  const [busbarEffect, setBusbarEffect] = useState<BusbarEffect | null>(null);
+  // const [busbarEffect, setBusbarEffect] = useState<BusbarEffect | null>(null);
 
-  // Calcul avec offset TGBT
-  useEffect(() => {
-    const calculateBusbar = async () => {
-      if (!currentProject || !currentProject.transformer || !selectedScenario) {
-        setBusbarEffect(null);
-        return;
-      }
+  // // Calcul avec offset TGBT - TEMPORAIREMENT DÉSACTIVÉ
+  // useEffect(() => {
+  //   const calculateBusbar = async () => {
+  //     if (!currentProject || !currentProject.transformer || !selectedScenario) {
+  //       setBusbarEffect(null);
+  //       return;
+  //     }
 
-      try {
-        const { busbar } = await calculateWithBusbar(
-          currentProject.nodes,
-          currentProject.cables,
-          currentProject.cableTypes,
-          currentProject.transformer,
-          currentProject.cosPhi,
-          selectedScenario
-        );
-        setBusbarEffect(busbar);
-      } catch (error) {
-        console.error('Erreur calcul TGBT:', error);
-        setBusbarEffect(null);
-      }
-    };
+  //     try {
+  //       const { busbar } = await calculateWithBusbar(
+  //         currentProject.nodes,
+  //         currentProject.cables,
+  //         currentProject.cableTypes,
+  //         currentProject.transformer,
+  //         currentProject.cosPhi,
+  //         selectedScenario
+  //       );
+  //       setBusbarEffect(busbar);
+  //     } catch (error) {
+  //       console.error('Erreur calcul TGBT:', error);
+  //       setBusbarEffect(null);
+  //     }
+  //   };
 
-    calculateBusbar();
-  }, [currentProject, selectedScenario, calculationResults]);
+  //   calculateBusbar();
+  // }, [currentProject, selectedScenario, calculationResults]);
 
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
@@ -97,34 +97,6 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
             <p className="text-primary-foreground/80 text-sm">Réseau Électrique BT</p>
           </div>
         </div>
-        
-        {/* Offset TGBT Display */}
-        {busbarEffect && currentProject?.transformer && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="ml-6 p-2 bg-white/10 rounded-lg border border-white/20">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Info className="h-4 w-4" />
-                    <span className="font-medium">TGBT:</span>
-                    <span>{busbarEffect.U_busbar_V.toFixed(1)} V</span>
-                    <span className={`font-bold ${Math.abs(busbarEffect.deltaU_busbar_percent) > 8 ? 'text-red-200' : 'text-green-200'}`}>
-                      ({busbarEffect.deltaU_busbar_percent >= 0 ? '+' : ''}{busbarEffect.deltaU_busbar_percent.toFixed(2)}%)
-                    </span>
-                  </div>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <div className="text-sm space-y-1">
-                  <p><strong>Offset commun au TGBT</strong></p>
-                  <p>Transformateur + liaison: ΔU = {busbarEffect.deltaU_busbar_V.toFixed(2)} V</p>
-                  <p>Solde total: {busbarEffect.S_total_kVA.toFixed(1)} kVA</p>
-                  <p className="text-muted-foreground">Impact de tous les départs sur la tension commune</p>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
       </div>
 
       {/* Controls and Buttons Section */}
