@@ -1,5 +1,17 @@
 import { create } from 'zustand';
-import { NetworkState, Project, Node, Cable, CalculationScenario, CalculationResult, VoltageSystem, ConnectionType } from '@/types/network';
+import { 
+  NetworkState, 
+  Project, 
+  Node, 
+  Cable, 
+  ConnectionType, 
+  VoltageSystem, 
+  CalculationScenario, 
+  CalculationResult,
+  TransformerConfig,
+  TransformerRating,
+  VirtualBusbar
+} from '@/types/network';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { toast } from 'sonner';
@@ -88,6 +100,19 @@ interface NetworkActions {
   updateCableTypes: () => void;
 }
 
+// Fonction utilitaire pour créer la configuration par défaut du transformateur
+const createDefaultTransformerConfig = (voltageSystem: VoltageSystem): TransformerConfig => {
+  const nominalVoltage = voltageSystem === "TRIPHASÉ_230V" ? 230 : 400;
+  
+  return {
+    rating: "160kVA" as TransformerRating,
+    nominalPower_kVA: 160,
+    nominalVoltage_V: nominalVoltage,
+    shortCircuitVoltage_percent: 4.0, // Valeur typique pour un transformateur 160kVA
+    cosPhi: 0.95 // Facteur de puissance typique PV
+  };
+};
+
 const createDefaultProject = (): Project => ({
   id: `project-${Date.now()}`,
   name: "Nouveau Projet",
@@ -97,6 +122,7 @@ const createDefaultProject = (): Project => ({
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
+  transformerConfig: createDefaultTransformerConfig("TÉTRAPHASÉ_400V"), // Configuration transformateur par défaut
   nodes: [
     {
       id: "source",
@@ -122,6 +148,7 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
+  transformerConfig: createDefaultTransformerConfig(voltageSystem), // Configuration transformateur adaptée au système
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]

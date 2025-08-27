@@ -12,6 +12,25 @@ export type CablePose = "AÉRIEN" | "SOUTERRAIN";
 
 export type CalculationScenario = "PRÉLÈVEMENT" | "MIXTE" | "PRODUCTION";
 
+// Types pour le transformateur HT1/BT
+export type TransformerRating = "160kVA" | "250kVA" | "400kVA" | "630kVA";
+
+export interface TransformerConfig {
+  rating: TransformerRating;
+  nominalPower_kVA: number;    // Puissance nominale en kVA
+  nominalVoltage_V: number;    // Tension nominale BT en V (230 ou 400)
+  shortCircuitVoltage_percent: number; // Tension de court-circuit en %
+  cosPhi: number;              // Facteur de puissance (typique 0.95 pour PV)
+}
+
+// Interface pour le jeu de barres virtuel
+export interface VirtualBusbar {
+  voltage_V: number;           // Tension du jeu de barres en V
+  current_A: number;           // Courant total du jeu de barres en A
+  totalInjection_kVA: number;  // Puissance totale injectée en kVA
+  voltageRise_V: number;       // Élévation de tension due au transformateur
+}
+
 export interface CableType {
   id: string;
   label: string;       // ex: "BAXB 95"
@@ -72,6 +91,7 @@ export interface Project {
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
+  transformerConfig: TransformerConfig; // Configuration du transformateur HT1/BT
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
     south: number;
@@ -94,6 +114,7 @@ export interface CalculationResult {
   maxVoltageDropPercent: number;
   compliance: 'normal' | 'warning' | 'critical';
   nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
+  virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
 }
 
 export interface NetworkState {
