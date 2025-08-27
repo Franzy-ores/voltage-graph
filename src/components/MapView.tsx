@@ -601,7 +601,7 @@ export const MapView = () => {
       const nodeBConnected = connectedNodes.has(cable.nodeBId);
       
       if (!nodeAConnected || !nodeBConnected) {
-        cableColor = 'hsl(var(--muted-foreground))'; // gris pour câbles non alimentés
+        cableColor = '#000000'; // noir pour câbles non alimentés
       } else {
         const results = calculationResults[selectedScenario];
         if (results) {
