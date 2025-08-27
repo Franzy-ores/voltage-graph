@@ -594,35 +594,26 @@ export const MapView = () => {
     const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
 
     currentProject.cables.forEach(cable => {
-      let cableColor = 'hsl(var(--muted-foreground))'; // gris par défaut
+      let cableColor = '#000000'; // noir par défaut (non calculé)
       
-      // Si les deux nœuds connectés par le câble ne sont pas alimentés, mettre le câble en gris
+      // Vérifier si les nœuds sont connectés
       const nodeAConnected = connectedNodes.has(cable.nodeAId);
       const nodeBConnected = connectedNodes.has(cable.nodeBId);
       
-      if (!nodeAConnected || !nodeBConnected) {
-        cableColor = '#000000'; // noir pour câbles non alimentés
-      } else {
+      // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
+      if (nodeAConnected && nodeBConnected) {
         const results = calculationResults[selectedScenario];
-        if (results) {
+        if (results && results.cables) {
           const calculatedCable = results.cables.find(c => c.id === cable.id);
-          if (calculatedCable) {
-            const distalNodeId = calculatedCable.nodeBId;
-            const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === distalNodeId);
+          if (calculatedCable && calculatedCable.voltageDropPercent !== undefined) {
+            const voltageDropPercent = Math.abs(calculatedCable.voltageDropPercent);
             
-            if (nodeData) {
-              // Calculer le pourcentage basé sur la tension nominale pour la conformité
-              const distalNode = currentProject.nodes.find(n => n.id === distalNodeId);
-              const nominalVoltage = distalNode?.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
-              const nominalDropPercent = Math.abs(nodeData.deltaU_cum_V / nominalVoltage * 100);
-              
-              if (nominalDropPercent <= 8) {
-                cableColor = 'hsl(var(--voltage-normal))'; // vert - normal
-              } else if (nominalDropPercent <= 10) {
-                cableColor = 'hsl(var(--voltage-warning))'; // orange - warning  
-              } else {
-                cableColor = 'hsl(var(--voltage-critical))'; // rouge - critical
-              }
+            if (voltageDropPercent < 8) {
+              cableColor = '#22c55e'; // VERT - dans la norme (<8%)
+            } else if (voltageDropPercent < 10) {
+              cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+            } else {
+              cableColor = '#ef4444'; // ROUGE - critique (≥10%)
             }
           }
         }
