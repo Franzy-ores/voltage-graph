@@ -603,17 +603,23 @@ export const MapView = () => {
       // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
       if (nodeAConnected && nodeBConnected) {
         const results = calculationResults[selectedScenario];
-        if (results && results.cables) {
+        if (results && results.nodeVoltageDrops) {
           const calculatedCable = results.cables.find(c => c.id === cable.id);
-          if (calculatedCable && calculatedCable.voltageDropPercent !== undefined) {
-            const voltageDropPercent = Math.abs(calculatedCable.voltageDropPercent);
+          if (calculatedCable) {
+            // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
+            const arrivalNodeId = calculatedCable.nodeBId;
+            const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
             
-            if (voltageDropPercent < 8) {
-              cableColor = '#22c55e'; // VERT - dans la norme (<8%)
-            } else if (voltageDropPercent < 10) {
-              cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
-            } else {
-              cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+            if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
+              const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+              
+              if (voltageDropPercent < 8) {
+                cableColor = '#22c55e'; // VERT - dans la norme (<8%)
+              } else if (voltageDropPercent < 10) {
+                cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+              } else {
+                cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+              }
             }
           }
         }
