@@ -131,10 +131,12 @@ export class ElectricalCalculator {
     foisonnementProductions: number = 100,
     transformerConfig?: TransformerConfig
   ): CalculationResult {
+    console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
 
     const sources = nodes.filter(n => n.isSource);
+    console.log('🔄 Found sources:', sources.length);
     if (sources.length !== 1) throw new Error('Le réseau doit avoir exactement une source.');
     const source = sources[0];
 
@@ -330,13 +332,16 @@ export class ElectricalCalculator {
     // Calcul du jeu de barres virtuel si transformateur fourni
     let virtualBusbar: VirtualBusbar | undefined;
     if (transformerConfig) {
+      console.log('🔄 Calculating virtual busbar with transformer:', transformerConfig.rating);
       // Calculer la puissance totale injectée et le courant total
       const totalInjection = Math.max(0, totalProductions - totalLoads); // Seulement en cas d'injection nette
       const totalCurrent = calculatedCables.reduce((sum, cable) => sum + (cable.current_A || 0), 0);
       
       virtualBusbar = this.calculateVirtualBusbar(transformerConfig, totalInjection, totalCurrent);
+      console.log('✅ Virtual busbar calculated:', virtualBusbar);
     }
 
+    console.log('🔄 Creating result object...');
     const result: CalculationResult = {
       scenario,
       cables: calculatedCables,
@@ -349,6 +354,7 @@ export class ElectricalCalculator {
       virtualBusbar
     };
 
+    console.log('✅ calculateScenario completed successfully for scenario:', scenario);
     return result;
   }
 }

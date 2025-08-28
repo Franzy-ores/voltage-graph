@@ -189,6 +189,13 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   loadProject: (project) => {
+    console.log('🔄 Store.loadProject called with:', project.name);
+    
+    // Vérifier que le projet a la structure minimale requise
+    if (!project.transformerConfig) {
+      console.log('⚠️ Projet sans transformerConfig, ajout de la config par défaut');
+      project.transformerConfig = createDefaultTransformerConfig(project.voltageSystem || "TÉTRAPHASÉ_400V");
+    }
     // Calculer les bounds géographiques si pas encore définis
     if (!project.geographicBounds && project.nodes.length > 0) {
       project.geographicBounds = calculateProjectBounds(project.nodes);
@@ -201,6 +208,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       toast.info(`Types de câbles mis à jour: ${defaultCableTypes.length} types disponibles`);
     }
 
+    console.log('🔄 Setting state with project:', project.name);
     set({ 
       currentProject: project,
       selectedNodeId: null,
@@ -209,14 +217,24 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       editPanelOpen: false,
       editTarget: null
     });
+    console.log('✅ State updated successfully');
+    
+    // Recalculer immédiatement
+    console.log('🔄 Triggering calculations...');
+    get().updateAllCalculations();
+    console.log('✅ Calculations triggered');
     
     // Déclencher le zoom sur le projet chargé après un court délai
     setTimeout(() => {
+      console.log('🔄 Triggering zoom to project bounds');
       const event = new CustomEvent('zoomToProject', { 
         detail: project.geographicBounds 
       });
       window.dispatchEvent(event);
+      console.log('✅ Zoom event dispatched');
     }, 100);
+    
+    console.log('✅ loadProject completed successfully');
   },
 
   updateProjectConfig: (updates) => {

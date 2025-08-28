@@ -83,9 +83,11 @@ const Index = () => {
         const reader = new FileReader();
         reader.onload = (e) => {
           try {
+            console.log('🔄 Début du chargement JSON...');
             const project = JSON.parse(e.target?.result as string);
+            console.log('✅ JSON parsé:', project.name, 'nodes:', project.nodes?.length, 'cables:', project.cables?.length);
             loadProject(project);
-            console.log('Project loaded successfully:', project.name);
+            console.log('✅ Project loaded successfully:', project.name);
           } catch (error) {
             console.error('Error loading project:', error);
             alert('Erreur lors du chargement du projet. Vérifiez le format du fichier JSON.');
