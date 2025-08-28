@@ -10,30 +10,19 @@ export const CableTypeSelector = () => {
     selectedTool 
   } = useNetworkStore();
 
-  console.log('CableTypeSelector render:', { 
-    selectedTool, 
-    hasProject: !!currentProject,
-    cableTypesCount: currentProject?.cableTypes?.length || 0,
-    cableTypes: currentProject?.cableTypes?.map(ct => ct.label) || []
-  });
-
+  // Retourner early si pas les bonnes conditions
   if (!currentProject || selectedTool !== 'addCable') {
     return null;
   }
 
   const selectedType = currentProject.cableTypes.find(ct => ct.id === selectedCableType);
-  console.log('Selected cable type:', selectedCableType, selectedType);
 
   return (
     <div className="fixed top-4 left-20 bg-white border-2 border-blue-500 rounded-lg p-4 min-w-[300px] shadow-2xl z-[9999]">
       <div className="space-y-3">
         <div className="text-lg font-bold text-blue-600">🔌 Sélection du type de câble</div>
         
-        <Select value={selectedCableType} onValueChange={(value) => {
-          console.log('Cable type changing from', selectedCableType, 'to', value);
-          setSelectedCableType(value);
-          console.log('Cable type changed successfully to:', value);
-        }}>
+        <Select value={selectedCableType} onValueChange={setSelectedCableType}>
           <SelectTrigger className="w-full bg-white border-2">
             <SelectValue placeholder="Sélectionner un type de câble" />
           </SelectTrigger>

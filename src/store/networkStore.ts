@@ -205,7 +205,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       currentProject: project,
       selectedNodeId: null,
       selectedCableId: null,
-      editPanelOpen: false
+      selectedTool: 'select', // Forcer le retour à l'outil de sélection
+      editPanelOpen: false,
+      editTarget: null
     });
     
     // Déclencher le zoom sur le projet chargé après un court délai
