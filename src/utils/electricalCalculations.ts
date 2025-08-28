@@ -1,4 +1,4 @@
-import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType } from '@/types/network';
+import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
 
 export class ElectricalCalculator {
@@ -90,6 +90,37 @@ export class ElectricalCalculator {
     return 'critical';
   }
 
+  // Calcul de l'élévation de tension du transformateur
+  private calculateTransformerVoltageRise(
+    transformerConfig: TransformerConfig,
+    totalInjection_kVA: number
+  ): number {
+    // Formule: ΔU = (Ucc% / 100) × (P_injection / P_nom) × U_nom × cos(φ)
+    const loadRatio = totalInjection_kVA / transformerConfig.nominalPower_kVA;
+    const deltaU = (transformerConfig.shortCircuitVoltage_percent / 100) * 
+                   loadRatio * 
+                   transformerConfig.nominalVoltage_V * 
+                   transformerConfig.cosPhi;
+    return deltaU;
+  }
+
+  // Calcul du jeu de barres virtuel
+  private calculateVirtualBusbar(
+    transformerConfig: TransformerConfig,
+    totalInjection_kVA: number,
+    totalCurrent_A: number
+  ): VirtualBusbar {
+    const voltageRise = this.calculateTransformerVoltageRise(transformerConfig, totalInjection_kVA);
+    const busVoltage = transformerConfig.nominalVoltage_V + voltageRise;
+    
+    return {
+      voltage_V: busVoltage,
+      current_A: totalCurrent_A,
+      totalInjection_kVA: totalInjection_kVA,
+      voltageRise_V: voltageRise
+    };
+  }
+
   // ---- calcul d'un scénario ----
   calculateScenario(
     nodes: Node[],
@@ -97,7 +128,8 @@ export class ElectricalCalculator {
     cableTypes: CableType[],
     scenario: CalculationScenario,
     foisonnementCharges: number = 100,
-    foisonnementProductions: number = 100
+    foisonnementProductions: number = 100,
+    transformerConfig?: TransformerConfig
   ): CalculationResult {
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
@@ -295,6 +327,16 @@ export class ElectricalCalculator {
 
     const compliance = this.getComplianceStatus(worstAbsPct);
 
+    // Calcul du jeu de barres virtuel si transformateur fourni
+    let virtualBusbar: VirtualBusbar | undefined;
+    if (transformerConfig) {
+      // Calculer la puissance totale injectée et le courant total
+      const totalInjection = Math.max(0, totalProductions - totalLoads); // Seulement en cas d'injection nette
+      const totalCurrent = calculatedCables.reduce((sum, cable) => sum + (cable.current_A || 0), 0);
+      
+      virtualBusbar = this.calculateVirtualBusbar(transformerConfig, totalInjection, totalCurrent);
+    }
+
     const result: CalculationResult = {
       scenario,
       cables: calculatedCables,
@@ -303,7 +345,8 @@ export class ElectricalCalculator {
       globalLosses_kW: Number(globalLosses.toFixed(6)),
       maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
       compliance,
-      nodeVoltageDrops
+      nodeVoltageDrops,
+      virtualBusbar
     };
 
     return result;

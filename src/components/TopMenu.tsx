@@ -86,9 +86,21 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
               </Select>
             </div>
 
-            {/* Voltage System Info */}
-            <div className="text-xs text-primary-foreground/80">
-              {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
+            {/* Transformer and Virtual Busbar Info */}
+            <div className="text-xs text-primary-foreground/80 flex flex-col gap-1">
+              <div>
+                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
+              </div>
+              <div>
+                Transformateur: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
+              </div>
+              {calculationResults[selectedScenario]?.virtualBusbar && (
+                <div className="font-medium">
+                  Jeu de barres: {calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1)}V - 
+                  {calculationResults[selectedScenario]!.virtualBusbar!.current_A.toFixed(1)}A - 
+                  ΔU: +{calculationResults[selectedScenario]!.virtualBusbar!.voltageRise_V.toFixed(2)}V
+                </div>
+              )}
             </div>
 
             {/* Voltage Display Switch */}

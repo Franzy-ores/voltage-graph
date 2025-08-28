@@ -67,7 +67,7 @@ interface NetworkActions {
   
   // Node actions
   addNode: (lat: number, lng: number, connectionType: ConnectionType) => void;
-  updateNode: (nodeId: string, updates: Partial<Node>) => void;
+  updateNode: (nodeId: string, updates: Partial<Node> & { transformerConfig?: TransformerConfig }) => void;
   deleteNode: (nodeId: string) => void;
   moveNode: (nodeId: string, lat: number, lng: number) => void;
   
@@ -87,6 +87,7 @@ interface NetworkActions {
   
   // Calculations
   calculateAll: () => void;
+  updateAllCalculations: () => void;
   
   // Validation
   validateConnectionType: (connectionType: ConnectionType, voltageSystem: VoltageSystem) => boolean;
@@ -276,17 +277,34 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   updateNode: (nodeId, updates) => {
-    const { currentProject } = get();
-    if (!currentProject) return;
-
-    set({
-      currentProject: {
-        ...currentProject,
-        nodes: currentProject.nodes.map(node =>
-          node.id === nodeId ? { ...node, ...updates } : node
-        )
+    set((state) => {
+      if (!state.currentProject) return state;
+      
+      const nodeIndex = state.currentProject.nodes.findIndex(n => n.id === nodeId);
+      if (nodeIndex === -1) return state;
+      
+      const updatedNodes = [...state.currentProject.nodes];
+      const nodeUpdates = { ...updates };
+      
+      // Si on met à jour la configuration du transformateur d'une source
+      let projectUpdates = {};
+      if (updates.transformerConfig && updatedNodes[nodeIndex].isSource) {
+        projectUpdates = { transformerConfig: updates.transformerConfig };
+        delete nodeUpdates.transformerConfig;
       }
+      
+      updatedNodes[nodeIndex] = { ...updatedNodes[nodeIndex], ...nodeUpdates };
+      
+      return {
+        ...state,
+        currentProject: {
+          ...state.currentProject,
+          ...projectUpdates,
+          nodes: updatedNodes
+        }
+      };
     });
+    get().updateAllCalculations();
   },
 
   deleteNode: (nodeId) => {
@@ -424,6 +442,45 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     editTarget: null 
   }),
 
+  updateAllCalculations: () => {
+    const { currentProject } = get();
+    if (!currentProject) return;
+
+    const calculator = new ElectricalCalculator(currentProject.cosPhi);
+    
+    const results = {
+      PRÉLÈVEMENT: calculator.calculateScenario(
+        currentProject.nodes,
+        currentProject.cables,
+        currentProject.cableTypes,
+        'PRÉLÈVEMENT',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig // Ajouter la configuration du transformateur
+      ),
+      MIXTE: calculator.calculateScenario(
+        currentProject.nodes,
+        currentProject.cables,
+        currentProject.cableTypes,
+        'MIXTE',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig
+      ),
+      PRODUCTION: calculator.calculateScenario(
+        currentProject.nodes,
+        currentProject.cables,
+        currentProject.cableTypes,
+        'PRODUCTION',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig
+      )
+    };
+
+    set({ calculationResults: results });
+  },
+
   calculateAll: () => {
     const { currentProject } = get();
     if (!currentProject) return;
@@ -498,7 +555,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.cableTypes, 
         'PRÉLÈVEMENT',
         currentProject.foisonnementCharges,
-        currentProject.foisonnementProductions
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes, 
@@ -506,7 +564,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.cableTypes, 
         'MIXTE',
         currentProject.foisonnementCharges,
-        currentProject.foisonnementProductions
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes, 
@@ -514,7 +573,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.cableTypes, 
         'PRODUCTION',
         currentProject.foisonnementCharges,
-        currentProject.foisonnementProductions
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig
       )
     };
 
@@ -565,7 +625,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         updatedProject.cableTypes, 
         'PRÉLÈVEMENT',
         updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions
+        updatedProject.foisonnementProductions,
+        updatedProject.transformerConfig
       ),
       MIXTE: calculator.calculateScenario(
         updatedProject.nodes, 
@@ -573,7 +634,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         updatedProject.cableTypes, 
         'MIXTE',
         updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions
+        updatedProject.foisonnementProductions,
+        updatedProject.transformerConfig
       ),
       PRODUCTION: calculator.calculateScenario(
         updatedProject.nodes, 
@@ -581,7 +643,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         updatedProject.cableTypes, 
         'PRODUCTION',
         updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions
+        updatedProject.foisonnementProductions,
+        updatedProject.transformerConfig
       )
     };
 
@@ -589,7 +652,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   setFoisonnementCharges: (value: number) => {
-    const { currentProject, calculateAll } = get();
+    const { currentProject, updateAllCalculations } = get();
     if (!currentProject) return;
 
     set({
@@ -598,11 +661,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         foisonnementCharges: Math.max(0, Math.min(100, value))
       }
     });
-    calculateAll();
+    updateAllCalculations();
   },
 
   setFoisonnementProductions: (value: number) => {
-    const { currentProject, calculateAll } = get();
+    const { currentProject, updateAllCalculations } = get();
     if (!currentProject) return;
 
     set({
@@ -611,7 +674,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         foisonnementProductions: Math.max(0, Math.min(100, value))
       }
     });
-    calculateAll();
+    updateAllCalculations();
   },
 
   calculateWithTargetVoltage: (nodeId: string, targetVoltage: number) => {
