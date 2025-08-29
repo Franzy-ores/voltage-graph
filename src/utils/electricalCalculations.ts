@@ -97,6 +97,18 @@ export class ElectricalCalculator {
     netSkVA: number,
     baseVoltageOverride_V?: number
   ): number {
+    console.log('🔧 calculateTransformerVoltageShift called with:', {
+      netSkVA,
+      baseVoltageOverride_V,
+      transformerConfig: {
+        rating: transformerConfig.rating,
+        nominalPower_kVA: transformerConfig.nominalPower_kVA,
+        nominalVoltage_V: transformerConfig.nominalVoltage_V,
+        shortCircuitVoltage_percent: transformerConfig.shortCircuitVoltage_percent,
+        cosPhi: transformerConfig.cosPhi
+      }
+    });
+
     const cosPhi = transformerConfig.cosPhi ?? this.cosPhi;
     const baseU = baseVoltageOverride_V ?? transformerConfig.nominalVoltage_V;
     const Sabs = Math.abs(netSkVA);
@@ -111,7 +123,19 @@ export class ElectricalCalculator {
 
     // signe : + en injection (netSkVA > 0), - en prélèvement (netSkVA < 0)
     const sign = Math.sign(netSkVA) || 0;
-    return sign * deltaU_abs;
+    const result = sign * deltaU_abs;
+    
+    console.log('🔧 Transformer calculation result:', {
+      cosPhi,
+      baseU,
+      Sabs,
+      Snom,
+      deltaU_abs,
+      sign,
+      result
+    });
+    
+    return result;
   }
 
   // Calcul du jeu de barres virtuel avec analyse par départ
@@ -124,20 +148,33 @@ export class ElectricalCalculator {
     children: Map<string, string[]>,
     deltaUcum_V: Map<string, number>
   ): VirtualBusbar {
+    console.log('🔧 calculateVirtualBusbar called with:', {
+      transformerRating: transformerConfig.rating,
+      netSkVA_total,
+      sourceId: source.id,
+      sourceTensionCible: source.tensionCible,
+      nominalVoltage: transformerConfig.nominalVoltage_V
+    });
+
     // base tension = consigne source si fournie sinon tension nominale transformateur
     const baseU = source.tensionCible ?? transformerConfig.nominalVoltage_V;
+    console.log('🔧 Base voltage:', baseU);
 
     // ΔU total du transformateur (signed)
     const voltageShift_total = this.calculateTransformerVoltageShift(transformerConfig, netSkVA_total, baseU);
+    console.log('🔧 Voltage shift total:', voltageShift_total);
 
     // tension du jeu de barres
     const busVoltage = baseU + voltageShift_total;
+    console.log('🔧 Bus voltage:', busVoltage);
 
     // courant total au bus (calculé à partir de la puissance nette absolue)
     const busCurrent = this.calculateCurrentA(Math.abs(netSkVA_total), source.connectionType, busVoltage);
+    console.log('🔧 Bus current:', busCurrent);
 
     // calcul indépendant pour chaque départ (voisin direct de la source)
     const sourceAdj = adj.get(source.id) || [];
+    console.log('🔧 Source adjacency:', sourceAdj.length, 'edges');
     const circuits: VirtualBusbar['circuits'] = [];
 
     // fonction utilitaire pour récupérer les nœuds d'un sous-arbre (depuis root)
