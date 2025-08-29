@@ -27,8 +27,18 @@ export interface TransformerConfig {
 export interface VirtualBusbar {
   voltage_V: number;           // Tension du jeu de barres en V
   current_A: number;           // Courant total du jeu de barres en A
-  totalInjection_kVA: number;  // Puissance totale injectée en kVA
-  voltageRise_V: number;       // Élévation de tension due au transformateur
+  totalInjection_kVA: number;  // Puissance totale injectée en kVA (signed)
+  voltageRise_V: number;       // Élévation/abaissement de tension due au transformateur (signed)
+  circuits: Array<{            // Analyse détaillée par départ/circuit
+    cableId: string;
+    totalInjection_kVA: number; // Puissance nette du départ (signed)
+    current_A: number;          // Courant du départ
+    voltageRise_V: number;      // Contribution du départ à l'élévation totale
+    U_depart_V: number;         // Tension du départ (= tension bus)
+    minNodeVoltage_V: number;   // Tension minimale dans le sous-arbre
+    maxNodeVoltage_V: number;   // Tension maximale dans le sous-arbre
+    nodesCount: number;         // Nombre de nœuds dans le sous-arbre
+  }>;
 }
 
 export interface CableType {

@@ -90,34 +90,121 @@ export class ElectricalCalculator {
     return 'critical';
   }
 
-  // Calcul de l'élévation de tension du transformateur
-  private calculateTransformerVoltageRise(
+  // Calcul de la variation de tension du transformateur (signed)
+  // netSkVA doit être exprimé comme: productions - charges
+  private calculateTransformerVoltageShift(
     transformerConfig: TransformerConfig,
-    totalInjection_kVA: number
+    netSkVA: number,
+    baseVoltageOverride_V?: number
   ): number {
-    // Formule: ΔU = (Ucc% / 100) × (P_injection / P_nom) × U_nom × cos(φ)
-    const loadRatio = totalInjection_kVA / transformerConfig.nominalPower_kVA;
-    const deltaU = (transformerConfig.shortCircuitVoltage_percent / 100) * 
-                   loadRatio * 
-                   transformerConfig.nominalVoltage_V * 
-                   transformerConfig.cosPhi;
-    return deltaU;
+    const cosPhi = transformerConfig.cosPhi ?? this.cosPhi;
+    const baseU = baseVoltageOverride_V ?? transformerConfig.nominalVoltage_V;
+    const Sabs = Math.abs(netSkVA);
+    const Snom = transformerConfig.nominalPower_kVA || 1;
+
+    // |ΔU| = (Ucc%/100) * (|S|/S_nom) * baseU * cosφ
+    const deltaU_abs =
+      (transformerConfig.shortCircuitVoltage_percent / 100) *
+      (Sabs / Snom) *
+      baseU *
+      cosPhi;
+
+    // signe : + en injection (netSkVA > 0), - en prélèvement (netSkVA < 0)
+    const sign = Math.sign(netSkVA) || 0;
+    return sign * deltaU_abs;
   }
 
-  // Calcul du jeu de barres virtuel
+  // Calcul du jeu de barres virtuel avec analyse par départ
   private calculateVirtualBusbar(
     transformerConfig: TransformerConfig,
-    totalInjection_kVA: number,
-    totalCurrent_A: number
+    netSkVA_total: number,
+    source: Node,
+    adj: Map<string, { cableId:string; neighborId:string }[]>,
+    S_aval: Map<string, number>,
+    children: Map<string, string[]>,
+    deltaUcum_V: Map<string, number>
   ): VirtualBusbar {
-    const voltageRise = this.calculateTransformerVoltageRise(transformerConfig, totalInjection_kVA);
-    const busVoltage = transformerConfig.nominalVoltage_V + voltageRise;
-    
+    // base tension = consigne source si fournie sinon tension nominale transformateur
+    const baseU = source.tensionCible ?? transformerConfig.nominalVoltage_V;
+
+    // ΔU total du transformateur (signed)
+    const voltageShift_total = this.calculateTransformerVoltageShift(transformerConfig, netSkVA_total, baseU);
+
+    // tension du jeu de barres
+    const busVoltage = baseU + voltageShift_total;
+
+    // courant total au bus (calculé à partir de la puissance nette absolue)
+    const busCurrent = this.calculateCurrentA(Math.abs(netSkVA_total), source.connectionType, busVoltage);
+
+    // calcul indépendant pour chaque départ (voisin direct de la source)
+    const sourceAdj = adj.get(source.id) || [];
+    const circuits: VirtualBusbar['circuits'] = [];
+
+    // fonction utilitaire pour récupérer les nœuds d'un sous-arbre (depuis root)
+    const collectSubtreeNodes = (rootId: string): string[] => {
+      const res: string[] = [];
+      const stack2 = [rootId];
+      while (stack2.length) {
+        const u = stack2.pop()!;
+        res.push(u);
+        for (const v of children.get(u) || []) stack2.push(v);
+      }
+      return res;
+    };
+
+    for (const edge of sourceAdj) {
+      const departNeighbor = edge.neighborId;
+      // puissance aval (charges - prod) pour le sous-arbre => convertir en injection = - (charges - prod)
+      const subtree_load_minus_prod = S_aval.get(departNeighbor) || 0;
+      const subtree_injection_kVA = - subtree_load_minus_prod; // positif si injection
+
+      // courant sur le départ (A) basé sur la puissance dudit départ et la tension du bus
+      const departCurrent_A = this.calculateCurrentA(Math.abs(subtree_injection_kVA), source.connectionType, busVoltage);
+
+      // attribution proportionnelle de la ΔU transfo sur ce départ (si netSkVA_total != 0)
+      const voltageShare = (netSkVA_total !== 0) ? (voltageShift_total * (subtree_injection_kVA / netSkVA_total)) : 0;
+
+      // tension disponible au départ = tension du bus
+      const U_depart_V = busVoltage;
+
+      // analyser les nœuds du sous-arbre pour obtenir tension min/max
+      const subtreeNodes = collectSubtreeNodes(departNeighbor);
+      let minNodeVoltage = Number.POSITIVE_INFINITY;
+      let maxNodeVoltage = Number.NEGATIVE_INFINITY;
+
+      for (const nid of subtreeNodes) {
+        const cumV = deltaUcum_V.get(nid) || 0; // cumul depuis la source
+        const nodeVoltage = busVoltage - cumV; // appliquer le cumul (signe inclus)
+        if (nodeVoltage < minNodeVoltage) minNodeVoltage = nodeVoltage;
+        if (nodeVoltage > maxNodeVoltage) maxNodeVoltage = nodeVoltage;
+      }
+
+      if (subtreeNodes.length === 0 || minNodeVoltage === Number.POSITIVE_INFINITY) {
+        // sécurité: si pas de nœuds (rare), considérer le noeud voisin lui-même
+        const cumV = deltaUcum_V.get(departNeighbor) || 0;
+        const nodeVoltage = busVoltage - cumV;
+        minNodeVoltage = nodeVoltage;
+        maxNodeVoltage = nodeVoltage;
+      }
+
+      circuits.push({
+        cableId: edge.cableId,
+        totalInjection_kVA: subtree_injection_kVA, // signé (pos: injection, neg: charge)
+        current_A: departCurrent_A,
+        voltageRise_V: voltageShare, // fraction de ΔU du transfo imputée au départ
+        U_depart_V,
+        minNodeVoltage_V: minNodeVoltage,
+        maxNodeVoltage_V: maxNodeVoltage,
+        nodesCount: subtreeNodes.length
+      });
+    }
+
     return {
       voltage_V: busVoltage,
-      current_A: totalCurrent_A,
-      totalInjection_kVA: totalInjection_kVA,
-      voltageRise_V: voltageRise
+      current_A: busCurrent,
+      totalInjection_kVA: netSkVA_total,
+      voltageRise_V: voltageShift_total,
+      circuits
     };
   }
 
@@ -329,16 +416,25 @@ export class ElectricalCalculator {
 
     const compliance = this.getComplianceStatus(worstAbsPct);
 
-    // Calcul du jeu de barres virtuel si transformateur fourni
+    // ---- VIRTUAL BUSBAR : calcul détaillé PAR DÉPART ----
     let virtualBusbar: VirtualBusbar | undefined;
     if (transformerConfig) {
       console.log('🔄 Calculating virtual busbar with transformer:', transformerConfig.rating);
-      // Calculer la puissance totale injectée et le courant total
-      const totalInjection = Math.max(0, totalProductions - totalLoads); // Seulement en cas d'injection nette
-      const totalCurrent = calculatedCables.reduce((sum, cable) => sum + (cable.current_A || 0), 0);
       
-      virtualBusbar = this.calculateVirtualBusbar(transformerConfig, totalInjection, totalCurrent);
-      console.log('✅ Virtual busbar calculated:', virtualBusbar);
+      // Puissance nette signée (productions - charges)
+      const netSkVA_total = totalProductions - totalLoads;
+
+      virtualBusbar = this.calculateVirtualBusbar(
+        transformerConfig, 
+        netSkVA_total, 
+        source, 
+        adj, 
+        S_aval, 
+        children, 
+        deltaUcum_V
+      );
+      
+      console.log('✅ Virtual busbar calculated (per-depart):', virtualBusbar);
     }
 
     console.log('🔄 Creating result object...');
