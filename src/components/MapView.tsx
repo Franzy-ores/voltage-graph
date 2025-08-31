@@ -341,6 +341,56 @@ export const MapView = () => {
     const map = mapInstanceRef.current;
     if (!map || !currentProject) return;
 
+  // Fonction pour obtenir le circuit d'un nœud
+  const getNodeCircuit = (nodeId: string) => {
+    if (!calculationResults[selectedScenario]?.virtualBusbar?.circuits || !currentProject) {
+      return null;
+    }
+    
+    const node = currentProject.nodes.find(n => n.id === nodeId);
+    if (!node || node.isSource) return null;
+    
+    // Chercher le circuit auquel appartient ce nœud
+    for (const circuit of calculationResults[selectedScenario].virtualBusbar.circuits) {
+      const cable = currentProject.cables.find(c => c.id === circuit.circuitId);
+      if (cable) {
+        // Vérifier si le nœud est directement connecté au câble principal du circuit
+        if (cable.nodeAId === nodeId || cable.nodeBId === nodeId) {
+          return circuit.circuitId.replace('cable-', '');
+        }
+        
+        // Vérifier si le nœud fait partie du sous-arbre de ce circuit
+        // Pour cela, on vérifie s'il existe un chemin depuis le nœud aval du câble principal
+        const sourceNodeId = currentProject.nodes.find(n => n.isSource)?.id;
+        const targetNodeId = cable.nodeAId === sourceNodeId ? cable.nodeBId : cable.nodeAId;
+        
+        // Recherche simple: voir si le nœud est connecté dans le même sous-réseau
+        const visited = new Set<string>();
+        const stack = [targetNodeId];
+        
+        while (stack.length > 0) {
+          const currentId = stack.pop()!;
+          if (visited.has(currentId)) continue;
+          visited.add(currentId);
+          
+          if (currentId === nodeId) {
+            return circuit.circuitId.replace('cable-', '');
+          }
+          
+          // Ajouter les nœuds voisins (sauf la source)
+          const neighbors = currentProject.cables
+            .filter(c => (c.nodeAId === currentId || c.nodeBId === currentId))
+            .map(c => c.nodeAId === currentId ? c.nodeBId : c.nodeAId)
+            .filter(id => id !== sourceNodeId && !visited.has(id));
+          
+          stack.push(...neighbors);
+        }
+      }
+    }
+    
+    return null;
+  };
+
   // Clear existing markers
   markersRef.current.forEach(marker => map.removeLayer(marker));
   markersRef.current.clear();
@@ -444,10 +494,14 @@ export const MapView = () => {
         }
       }
 
+      // Obtenir le numéro de circuit
+      const circuitNumber = getNodeCircuit(node.id);
+
       const icon = L.divIcon({
         className: 'custom-node-marker',
         html: `<div class="w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
           <div class="text-sm">${iconContent}</div>
+          ${circuitNumber ? `<div class="text-[8px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
           ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
             <div class="font-bold">${Math.round(nodeVoltage)}V</div>
             ${!node.isSource ? `<div>C:${totalCharge}</div>` : ''}
