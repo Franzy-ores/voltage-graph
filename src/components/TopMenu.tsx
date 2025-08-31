@@ -97,9 +97,9 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
               {calculationResults[selectedScenario]?.virtualBusbar && (
                 <div className="font-medium">
                   Jeu de barres: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltage_V === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1) : '0.0'}V - 
-                  {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.current_A.toFixed(1) : '0.0'}A - 
-                  ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltageRise_V === 'number' ? 
-                    (calculationResults[selectedScenario]!.virtualBusbar!.voltageRise_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.voltageRise_V.toFixed(2) : 
+                  {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A - 
+                  ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V === 'number' ? 
+                    (calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V.toFixed(2) : 
                     '0.00'}V
                 </div>
               )}

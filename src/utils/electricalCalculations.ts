@@ -91,14 +91,15 @@ export class ElectricalCalculator {
   }
 
   // Calcul de la variation de tension du transformateur (signed)
-  // netSkVA doit être exprimé comme: productions - charges
+  // Formule: ΔU = (Ucc%/100) * (|S|/S_nom) * U_base * cosφ * sign
+  // sign = +1 si injection nette (charges < productions), -1 si prélèvement (charges > productions)  
   private calculateTransformerVoltageShift(
     transformerConfig: TransformerConfig,
-    netSkVA: number,
+    chargesMinusProductions_kVA: number,
     baseVoltageOverride_V?: number
   ): number {
     console.log('🔧 calculateTransformerVoltageShift called with:', {
-      netSkVA,
+      chargesMinusProductions_kVA,
       baseVoltageOverride_V,
       transformerConfig: {
         rating: transformerConfig.rating,
@@ -111,7 +112,7 @@ export class ElectricalCalculator {
 
     const cosPhi = transformerConfig.cosPhi ?? this.cosPhi;
     const baseU = baseVoltageOverride_V ?? transformerConfig.nominalVoltage_V;
-    const Sabs = Math.abs(netSkVA);
+    const Sabs = Math.abs(chargesMinusProductions_kVA);
     const Snom = transformerConfig.nominalPower_kVA || 1;
 
     // |ΔU| = (Ucc%/100) * (|S|/S_nom) * baseU * cosφ
@@ -121,8 +122,10 @@ export class ElectricalCalculator {
       baseU *
       cosPhi;
 
-    // signe : + en injection (netSkVA > 0), - en prélèvement (netSkVA < 0)
-    const sign = Math.sign(netSkVA) || 0;
+    // Convention de signe : 
+    // chargesMinusProductions > 0 => prélèvement net => ΔU négatif (abaissement)
+    // chargesMinusProductions < 0 => injection nette => ΔU positif (élévation)
+    const sign = chargesMinusProductions_kVA > 0 ? -1 : (chargesMinusProductions_kVA < 0 ? 1 : 0);
     const result = sign * deltaU_abs;
     
     console.log('🔧 Transformer calculation result:', {
@@ -141,7 +144,8 @@ export class ElectricalCalculator {
   // Calcul du jeu de barres virtuel avec analyse par départ
   private calculateVirtualBusbar(
     transformerConfig: TransformerConfig,
-    netSkVA_total: number,
+    totalLoads_kVA: number,
+    totalProductions_kVA: number,
     source: Node,
     adj: Map<string, { cableId:string; neighborId:string }[]>,
     S_aval: Map<string, number>,
@@ -150,7 +154,8 @@ export class ElectricalCalculator {
   ): VirtualBusbar {
     console.log('🔧 calculateVirtualBusbar called with:', {
       transformerRating: transformerConfig.rating,
-      netSkVA_total,
+      totalLoads_kVA,
+      totalProductions_kVA,
       sourceId: source.id,
       sourceTensionCible: source.tensionCible,
       nominalVoltage: transformerConfig.nominalVoltage_V
@@ -160,8 +165,12 @@ export class ElectricalCalculator {
     const baseU = source.tensionCible ?? transformerConfig.nominalVoltage_V;
     console.log('🔧 Base voltage:', baseU);
 
+    // Calcul de la puissance nette (charges - productions)
+    const chargesMinusProductions_kVA = totalLoads_kVA - totalProductions_kVA;
+    console.log('🔧 Charges minus productions:', chargesMinusProductions_kVA);
+
     // ΔU total du transformateur (signed)
-    const voltageShift_total = this.calculateTransformerVoltageShift(transformerConfig, netSkVA_total, baseU);
+    const voltageShift_total = this.calculateTransformerVoltageShift(transformerConfig, chargesMinusProductions_kVA, baseU);
     console.log('🔧 Voltage shift total:', voltageShift_total);
 
     // tension du jeu de barres
@@ -169,7 +178,7 @@ export class ElectricalCalculator {
     console.log('🔧 Bus voltage:', busVoltage);
 
     // courant total au bus (calculé à partir de la puissance nette absolue)
-    const busCurrent = this.calculateCurrentA(Math.abs(netSkVA_total), source.connectionType, busVoltage);
+    const busCurrent = this.calculateCurrentA(Math.abs(chargesMinusProductions_kVA), source.connectionType, busVoltage);
     console.log('🔧 Bus current:', busCurrent);
 
     // calcul indépendant pour chaque départ (voisin direct de la source)
@@ -191,18 +200,18 @@ export class ElectricalCalculator {
 
     for (const edge of sourceAdj) {
       const departNeighbor = edge.neighborId;
-      // puissance aval (charges - prod) pour le sous-arbre => convertir en injection = - (charges - prod)
-      const subtree_load_minus_prod = S_aval.get(departNeighbor) || 0;
-      const subtree_injection_kVA = - subtree_load_minus_prod; // positif si injection
+      // S_aval contient charges - productions pour le sous-arbre
+      const subtreeChargesMinusProductions = S_aval.get(departNeighbor) || 0;
+      
+      // Déterminer la direction
+      const direction: 'injection' | 'prélèvement' = subtreeChargesMinusProductions < 0 ? 'injection' : 'prélèvement';
 
       // courant sur le départ (A) basé sur la puissance dudit départ et la tension du bus
-      const departCurrent_A = this.calculateCurrentA(Math.abs(subtree_injection_kVA), source.connectionType, busVoltage);
+      const departCurrent_A = this.calculateCurrentA(subtreeChargesMinusProductions, source.connectionType, busVoltage);
 
-      // attribution proportionnelle de la ΔU transfo sur ce départ (si netSkVA_total != 0)
-      const voltageShare = (netSkVA_total !== 0) ? (voltageShift_total * (subtree_injection_kVA / netSkVA_total)) : 0;
-
-      // tension disponible au départ = tension du bus
-      const U_depart_V = busVoltage;
+      // attribution proportionnelle de la ΔU transfo sur ce départ (si chargesMinusProductions_kVA != 0)
+      const voltageShare = (chargesMinusProductions_kVA !== 0) ? 
+        (voltageShift_total * (subtreeChargesMinusProductions / chargesMinusProductions_kVA)) : 0;
 
       // analyser les nœuds du sous-arbre pour obtenir tension min/max
       const subtreeNodes = collectSubtreeNodes(departNeighbor);
@@ -225,11 +234,12 @@ export class ElectricalCalculator {
       }
 
       circuits.push({
-        cableId: edge.cableId,
-        totalInjection_kVA: subtree_injection_kVA, // signé (pos: injection, neg: charge)
+        circuitId: edge.cableId,
+        subtreeSkVA: subtreeChargesMinusProductions,
+        direction,
         current_A: departCurrent_A,
-        voltageRise_V: voltageShare, // fraction de ΔU du transfo imputée au départ
-        U_depart_V,
+        deltaU_V: voltageShare,
+        voltageBus_V: busVoltage,
         minNodeVoltage_V: minNodeVoltage,
         maxNodeVoltage_V: maxNodeVoltage,
         nodesCount: subtreeNodes.length
@@ -239,8 +249,8 @@ export class ElectricalCalculator {
     return {
       voltage_V: busVoltage,
       current_A: busCurrent,
-      totalInjection_kVA: netSkVA_total,
-      voltageRise_V: voltageShift_total,
+      netSkVA: chargesMinusProductions_kVA,
+      deltaU_V: voltageShift_total,
       circuits
     };
   }
@@ -457,13 +467,11 @@ export class ElectricalCalculator {
     let virtualBusbar: VirtualBusbar | undefined;
     if (transformerConfig) {
       console.log('🔄 Calculating virtual busbar with transformer:', transformerConfig.rating);
-      
-      // Puissance nette signée (productions - charges)
-      const netSkVA_total = totalProductions - totalLoads;
 
       virtualBusbar = this.calculateVirtualBusbar(
         transformerConfig, 
-        netSkVA_total, 
+        totalLoads, 
+        totalProductions, 
         source, 
         adj, 
         S_aval, 
