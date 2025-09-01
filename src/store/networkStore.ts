@@ -238,19 +238,47 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   updateProjectConfig: (updates) => {
-    const { currentProject } = get();
+    const { currentProject, updateAllCalculations } = get();
     if (!currentProject) return;
     
-    const updatedProject = { ...currentProject, ...updates };
-    
+    let updatedProject = { ...currentProject, ...updates } as Project;
+
+    // Si le système de tension change, harmoniser tout le projet
+    if (updates.voltageSystem && updates.voltageSystem !== currentProject.voltageSystem) {
+      const newVS: VoltageSystem = updates.voltageSystem;
+      const newConnectionType: ConnectionType = newVS === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
+      const newNominal = newVS === 'TRIPHASÉ_230V' ? 230 : 400;
+
+      // Mettre à jour tous les nœuds (et retirer la tensionCible de la source pour éviter les incohérences)
+      const updatedNodes = currentProject.nodes.map((n) => ({
+        ...n,
+        connectionType: newConnectionType,
+        tensionCible: n.isSource ? undefined : n.tensionCible,
+      }));
+
+      // Mettre à jour la config transformateur (ou créer une valeur par défaut)
+      const updatedTransformer: TransformerConfig = {
+        ...(currentProject.transformerConfig || createDefaultTransformerConfig(newVS)),
+        nominalVoltage_V: newNominal,
+      };
+
+      updatedProject = {
+        ...updatedProject,
+        voltageSystem: newVS,
+        nodes: updatedNodes,
+        transformerConfig: updatedTransformer,
+      } as Project;
+    }
+
     // Recalculer les bounds géographiques si les nœuds ont changé
     if (updatedProject.nodes.length > 0) {
       updatedProject.geographicBounds = calculateProjectBounds(updatedProject.nodes);
     }
     
-    set({
-      currentProject: updatedProject
-    });
+    set({ currentProject: updatedProject });
+
+    // Recalculs après mise à jour de la config
+    updateAllCalculations();
   },
 
   addNode: (lat, lng, connectionType) => {
@@ -613,62 +641,38 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   setShowVoltages: (show) => set({ showVoltages: show }),
 
   changeVoltageSystem: () => {
-    const { currentProject } = get();
+    const { currentProject, updateAllCalculations } = get();
     if (!currentProject) return;
 
     const newVoltageSystem: VoltageSystem = 
       currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 'TÉTRAPHASÉ_400V' : 'TRIPHASÉ_230V';
     
-    // Déterminer le nouveau type de connexion par défaut selon le système
     const newConnectionType: ConnectionType = 
       newVoltageSystem === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
+    const newNominal = newVoltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
 
-    // Mettre à jour le projet avec le nouveau système et tous les nœuds
+    const updatedNodes = currentProject.nodes.map(node => ({
+      ...node,
+      connectionType: newConnectionType,
+      tensionCible: node.isSource ? undefined : node.tensionCible,
+    }));
+
+    const updatedTransformer: TransformerConfig = {
+      ...(currentProject.transformerConfig || createDefaultTransformerConfig(newVoltageSystem)),
+      nominalVoltage_V: newNominal,
+    };
+
     const updatedProject = {
       ...currentProject,
       voltageSystem: newVoltageSystem,
-      nodes: currentProject.nodes.map(node => ({
-        ...node,
-        connectionType: node.isSource ? newConnectionType : newConnectionType
-      }))
+      nodes: updatedNodes,
+      transformerConfig: updatedTransformer,
     };
 
     set({ currentProject: updatedProject });
 
-    // Déclencher un recalcul automatique
-    const calculator = new ElectricalCalculator(updatedProject.cosPhi);
-    
-    const results = {
-      PRÉLÈVEMENT: calculator.calculateScenario(
-        updatedProject.nodes, 
-        updatedProject.cables, 
-        updatedProject.cableTypes, 
-        'PRÉLÈVEMENT',
-        updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions,
-        updatedProject.transformerConfig
-      ),
-      MIXTE: calculator.calculateScenario(
-        updatedProject.nodes, 
-        updatedProject.cables, 
-        updatedProject.cableTypes, 
-        'MIXTE',
-        updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions,
-        updatedProject.transformerConfig
-      ),
-      PRODUCTION: calculator.calculateScenario(
-        updatedProject.nodes, 
-        updatedProject.cables, 
-        updatedProject.cableTypes, 
-        'PRODUCTION',
-        updatedProject.foisonnementCharges,
-        updatedProject.foisonnementProductions,
-        updatedProject.transformerConfig
-      )
-    };
-
-    set({ calculationResults: results });
+    // Recalcul automatique
+    updateAllCalculations();
   },
 
   setFoisonnementCharges: (value: number) => {
