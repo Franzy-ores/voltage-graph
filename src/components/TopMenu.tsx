@@ -55,93 +55,161 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
 
   return (
     <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
-      {/* Title Section - Full Width */}
-      <div className="flex items-center justify-center px-6 py-3 border-b border-primary-foreground/10">
+      {/* Title Section */}
+      <div className="flex items-center justify-between px-6 py-2 border-b border-primary-foreground/10">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-white/10 rounded-lg">
-            <Zap className="h-6 w-6" />
+            <Zap className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Calcul de Chute de Tension</h1>
-            <p className="text-primary-foreground/80 text-sm">Réseau Électrique BT</p>
+            <h1 className="text-lg font-bold">Calcul de Chute de Tension</h1>
+            <p className="text-primary-foreground/80 text-xs">Réseau Électrique BT</p>
           </div>
+        </div>
+
+        {/* Menu Actions - Always Visible */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleExportPDF}
+            disabled={!currentProject || !calculationResults[selectedScenario]}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4 mr-1" />
+            PDF
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNewNetwork}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            Nouveau
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSave}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <Save className="h-4 w-4 mr-1" />
+            Sauvegarder
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onLoad}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <FolderOpen className="h-4 w-4 mr-1" />
+            Charger
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={updateCableTypes}
+            disabled={!currentProject}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            Câbles
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSettings}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            Paramètres
+          </Button>
         </div>
       </div>
 
-      {/* Controls and Buttons Section */}
-      <div className="flex items-center justify-between px-6 py-3">
-        {/* Controls */}
-        {currentProject && (
-          <div className="flex items-center gap-6">
-            {/* Scenario Selector */}
-            <div className="flex items-center gap-2">
-              <Label className="text-sm font-medium whitespace-nowrap">Scénario:</Label>
-              <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
-                <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background border z-[10000]">
-                  <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
-                  <SelectItem value="MIXTE">Mixte</SelectItem>
-                  <SelectItem value="PRODUCTION">Production</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Transformer and Virtual Busbar Info */}
-            <div className="text-xs text-primary-foreground/80 flex flex-col gap-1">
-              <div>
-                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi}
+      {/* Controls - When Project Exists */}
+      {currentProject && (
+        <div className="px-6 py-2 space-y-2">
+          {/* First Row: Scenario, System Info, Voltage Switch */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              {/* Scenario Selector */}
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Scénario:</Label>
+                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
+                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-[10000]">
+                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
+                    <SelectItem value="MIXTE">Mixte</SelectItem>
+                    <SelectItem value="PRODUCTION">Production</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                Transformateur: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
+
+              {/* System Info */}
+              <div className="text-xs text-primary-foreground/80">
+                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
+                Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
-              {calculationResults[selectedScenario]?.virtualBusbar && (
-                <div className="font-medium">
-                  Jeu de barres: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltage_V === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1) : '0.0'}V - 
-                  {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A - 
-                  ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V === 'number' ? 
-                    (calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V.toFixed(2) : 
-                    '0.00'}V
-                </div>
-              )}
             </div>
 
-            {/* Voltage Display Switch */}
-            <div className="flex items-center gap-2">
-              <Switch 
-                id="voltage-display" 
-                checked={showVoltages} 
-                onCheckedChange={setShowVoltages}
-                className="data-[state=checked]:bg-white/20"
-              />
-              <Label htmlFor="voltage-display" className="text-sm font-medium whitespace-nowrap">
-                Tensions
-              </Label>
+            <div className="flex items-center gap-4">
+              {/* Voltage Display Switch */}
+              <div className="flex items-center gap-2">
+                <Switch 
+                  id="voltage-display" 
+                  checked={showVoltages} 
+                  onCheckedChange={setShowVoltages}
+                  className="data-[state=checked]:bg-white/20"
+                />
+                <Label htmlFor="voltage-display" className="text-sm font-medium">Tensions</Label>
+              </div>
+
+              {/* Change Voltage System Button */}
+              <Button
+                onClick={changeVoltageSystem}
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+              >
+                {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
+              </Button>
             </div>
+          </div>
 
-            {/* Change Voltage System Button */}
-            <Button
-              onClick={changeVoltageSystem}
-              variant="ghost"
-              size="sm"
-              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-            >
-              {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
-            </Button>
+          {/* Second Row: Virtual Busbar Info (if exists) */}
+          {calculationResults[selectedScenario]?.virtualBusbar && (
+            <div className="text-xs text-primary-foreground/90 font-medium bg-white/5 px-3 py-1 rounded">
+              Jeu de barres: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltage_V === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1) : '0.0'}V - 
+              {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A - 
+              ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V === 'number' ? 
+                (calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V.toFixed(2) : 
+                '0.00'}V
+            </div>
+          )}
 
-            {/* Load Model and Unbalance Controls */}
-            <div className="flex flex-col gap-2">
+          {/* Third Row: Load Model and Controls */}
+          <div className="flex items-center justify-between gap-4">
+            {/* Load Model Controls */}
+            <div className="flex items-center gap-4">
               {/* Load Model Selector */}
               <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium whitespace-nowrap">Modèle:</Label>
+                <Label className="text-sm font-medium">Modèle:</Label>
                 <Select 
                   value={currentProject.loadModel || 'polyphase_equilibre'} 
                   onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => 
                     updateProjectConfig({ loadModel: value })
                   }
                 >
-                  <SelectTrigger className="w-[160px] bg-white/10 border-white/20 text-primary-foreground">
+                  <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-background border z-[10000]">
@@ -151,13 +219,13 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                 </Select>
               </div>
 
-              {/* Unbalance Progress Bar - Only for monophase_reparti */}
+              {/* Unbalance Controls - Only for monophase_reparti */}
               {currentProject.loadModel === 'monophase_reparti' && (
-                <div className="flex items-center gap-3 min-w-[200px]">
-                  <Label className="text-sm font-medium whitespace-nowrap">
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm font-medium">
                     Déséquilibre {currentProject.desequilibrePourcent || 0}%
                   </Label>
-                  <div className="flex-1 flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-[150px]">
                     <Progress 
                       value={currentProject.desequilibrePourcent || 0} 
                       max={10}
@@ -169,107 +237,44 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                       max={10}
                       min={0}
                       step={0.5}
-                      className="w-16"
+                      className="w-12"
                     />
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Charges and Productions Sliders - Vertical Layout */}
-            <div className="flex flex-col gap-2">
+            {/* Foisonnement Sliders */}
+            <div className="flex items-center gap-4">
               {/* Charges Slider */}
-              <div className="flex items-center gap-3 min-w-[180px]">
-                <Label className="text-sm font-medium whitespace-nowrap">
-                  Charges {currentProject.foisonnementCharges}%
-                </Label>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
                 <Slider
                   value={[currentProject.foisonnementCharges]}
                   onValueChange={(value) => setFoisonnementCharges(value[0])}
                   max={100}
                   min={0}
                   step={1}
-                  className="flex-1 slider-charges"
+                  className="w-20 slider-charges"
                 />
               </div>
 
               {/* Productions Slider */}
-              <div className="flex items-center gap-3 min-w-[180px]">
-                <Label className="text-sm font-medium whitespace-nowrap">
-                  Productions {currentProject.foisonnementProductions}%
-                </Label>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
                 <Slider
                   value={[currentProject.foisonnementProductions]}
                   onValueChange={(value) => setFoisonnementProductions(value[0])}
                   max={100}
                   min={0}
                   step={1}
-                  className="flex-1 slider-productions"
+                  className="w-20 slider-productions"
                 />
               </div>
             </div>
           </div>
-        )}
-
-        {/* Menu Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            onClick={handleExportPDF}
-            disabled={!currentProject || !calculationResults[selectedScenario]}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
-          >
-            <FileDown className="h-4 w-4 mr-2" />
-            Exporter PDF
-          </Button>
-          
-          <Button
-            variant="ghost"
-            onClick={onNewNetwork}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
-            <FileText className="h-4 w-4 mr-2" />
-            Nouveau Réseau
-          </Button>
-          
-          <Button
-            variant="ghost"
-            onClick={onSave}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
-            <Save className="h-4 w-4 mr-2" />
-            Sauvegarder
-          </Button>
-          
-          <Button
-            variant="ghost"
-            onClick={onLoad}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Charger
-          </Button>
-          
-          <Button
-            variant="ghost"
-            onClick={updateCableTypes}
-            disabled={!currentProject}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Mettre à jour câbles
-          </Button>
-          
-          <Button
-            variant="ghost"
-            onClick={onSettings}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Paramètres généraux
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 };
