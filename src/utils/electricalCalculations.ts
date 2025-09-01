@@ -368,7 +368,7 @@ export class ElectricalCalculator {
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
       // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
-      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
+      const Zbase = (U_line_base * U_line_base) / (Sbase_VA * Math.sqrt(3)); // Ω
       const Zmag = Zpu * Zbase; // |Z|
 
       const xOverR = transformerConfig.xOverR;
