@@ -26,19 +26,21 @@ export interface TransformerConfig {
 
 // Interface pour le jeu de barres virtuel
 export interface VirtualBusbar {
-  voltage_V: number;          // tension au jeu de barres après ΔU global
-  current_A: number;          // courant net (signé)
-  netSkVA: number;            // total charges - productions
-  deltaU_V: number;           // ΔU global appliqué au bus
+  voltage_V: number;          // tension au jeu de barres après ΔU global (ligne)
+  current_A: number;          // courant net (RMS)
+  netSkVA: number;            // total charges - productions (kVA)
+  deltaU_V: number;           // ΔU global appliqué au bus (V, ligne)
+  deltaU_percent?: number;    // ΔU global en %/U_line
+  losses_kW?: number;         // pertes cuivre transfo (kW)
   circuits: Array<{
     circuitId: string;
-    subtreeSkVA: number;      // charges - productions du sous-arbre
+    subtreeSkVA: number;      // charges - productions du sous-arbre (kVA)
     direction: 'injection' | 'prélèvement';
-    current_A: number;        // courant du départ (signé)
-    deltaU_V: number;         // ΔU proportionnel au départ
-    voltageBus_V: number;     // tension du bus
-    minNodeVoltage_V: number; // tension min dans le sous-arbre
-    maxNodeVoltage_V: number; // tension max dans le sous-arbre
+    current_A: number;        // courant du départ (A RMS)
+    deltaU_V: number;         // ΔU proportionnel au départ (V)
+    voltageBus_V: number;     // tension du bus (V)
+    minNodeVoltage_V: number; // tension min dans le sous-arbre (V ligne)
+    maxNodeVoltage_V: number; // tension max dans le sous-arbre (V ligne)
     nodesCount: number;       // nombre de nœuds dans le sous-arbre
   }>;
 }
@@ -92,6 +94,7 @@ export interface Cable {
   voltageDrop_V?: number;
   voltageDropPercent?: number;
   losses_kW?: number;
+  apparentPower_kVA?: number;
 }
 
 export interface Project {
@@ -126,6 +129,7 @@ export interface CalculationResult {
   maxVoltageDropPercent: number;
   compliance: 'normal' | 'warning' | 'critical';
   nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
+  nodeMetrics?: { nodeId: string; V_phase_V: number; V_pu: number; I_inj_A: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
 }
 

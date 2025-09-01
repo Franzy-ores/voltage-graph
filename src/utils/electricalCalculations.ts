@@ -71,19 +71,24 @@ export class ElectricalCalculator {
       : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
+  /**
+   * Calcule le courant RMS par phase (A) à partir de la puissance apparente S_kVA.
+   * Conventions:
+   * - Triphasé: I = |S_kVA| * 1000 / (√3 · U_line)
+   * - Monophasé: I = |S_kVA| * 1000 / U_phase
+   * S_kVA est la puissance apparente totale (kVA), positive en consommation, négative en injection.
+   * sourceVoltage, s'il est fourni, est interprété comme U_line (tri) ou U_phase (mono).
+   */
   private calculateCurrentA(S_kVA: number, connectionType: ConnectionType, sourceVoltage?: number): number {
-    // S_kVA = puissance apparente (kVA)
-    // Retourne le courant par phase (A) en utilisant la tension de phase/ligne selon le cas
     let { U_base, isThreePhase } = this.getVoltage(connectionType);
 
-    // Utiliser la tension source si fournie (ex: tension bus mesurée)
     if (sourceVoltage) {
       U_base = sourceVoltage;
     }
 
     const Sabs_kVA = Math.abs(S_kVA);
     const denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
-    if (denom === 0) return 0;
+    if (!isFinite(denom) || denom <= 0) return 0;
     return (Sabs_kVA * 1000) / denom;
   }
 
@@ -94,56 +99,9 @@ export class ElectricalCalculator {
     return 'critical';
   }
 
-  // Calcul de la variation de tension du transformateur (signed)
-  // Formule: ΔU = (Ucc%/100) * (|S|/S_nom) * U_base * cosφ * sign
-  // sign = +1 si injection nette (charges < productions), -1 si prélèvement (charges > productions)  
-  private calculateTransformerVoltageShift(
-    transformerConfig: TransformerConfig,
-    chargesMinusProductions_kVA: number,
-    baseVoltageOverride_V?: number
-  ): number {
-    console.log('🔧 calculateTransformerVoltageShift called with:', {
-      chargesMinusProductions_kVA,
-      baseVoltageOverride_V,
-      transformerConfig: {
-        rating: transformerConfig.rating,
-        nominalPower_kVA: transformerConfig.nominalPower_kVA,
-        nominalVoltage_V: transformerConfig.nominalVoltage_V,
-        shortCircuitVoltage_percent: transformerConfig.shortCircuitVoltage_percent,
-        cosPhi: transformerConfig.cosPhi
-      }
-    });
+  // [Supprimé] Ancienne formule simplifiée de ΔU transfo basée sur cosφ.
+  // Les calculs transfo sont désormais exclusivement phasoriels via Ztr_phase et I_source_net.
 
-    const cosPhi = transformerConfig.cosPhi ?? this.cosPhi;
-    const baseU = baseVoltageOverride_V ?? transformerConfig.nominalVoltage_V;
-    const Sabs = Math.abs(chargesMinusProductions_kVA);
-    const Snom = transformerConfig.nominalPower_kVA || 1;
-
-    // |ΔU| = (Ucc%/100) * (|S|/S_nom) * baseU * cosφ
-    const deltaU_abs =
-      (transformerConfig.shortCircuitVoltage_percent / 100) *
-      (Sabs / Snom) *
-      baseU *
-      cosPhi;
-
-    // Convention de signe : 
-    // chargesMinusProductions > 0 => prélèvement net => ΔU négatif (abaissement)
-    // chargesMinusProductions < 0 => injection nette => ΔU positif (élévation)
-    const sign = chargesMinusProductions_kVA > 0 ? -1 : (chargesMinusProductions_kVA < 0 ? 1 : 0);
-    const result = sign * deltaU_abs;
-    
-    console.log('🔧 Transformer calculation result:', {
-      cosPhi,
-      baseU,
-      Sabs,
-      Snom,
-      deltaU_abs,
-      sign,
-      result
-    });
-    
-    return result;
-  }
 
   // Calcul du jeu de barres virtuel (phasors) avec analyse par départ
   private calculateVirtualBusbar(
@@ -246,6 +204,8 @@ export class ElectricalCalculator {
       current_A: busCurrent_A,
       netSkVA,
       deltaU_V: dVtr_line_signed,
+      deltaU_percent: U_ref_line ? (dVtr_line_signed / U_ref_line) * 100 : 0,
+      losses_kW: (abs(I_source_net) ** 2) * (Ztr_phase?.re || 0) * (isSourceThree ? 3 : 1) / 1000,
       circuits
     };
   }
@@ -392,6 +352,12 @@ export class ElectricalCalculator {
     if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
     if (source.tensionCible) U_line_base = source.tensionCible;
     const isSrcThree = VcfgSrc.isThreePhase;
+
+    if (!isFinite(U_line_base) || U_line_base <= 0) {
+      console.warn('⚠️ U_line incohérent pour la source, utilisation d\'une valeur par défaut.', { U_line_base, connectionType: source.connectionType });
+      U_line_base = isSrcThree ? 400 : 230;
+    }
+
     const Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
     const Vslack = C(Vslack_phase, 0);
 
@@ -423,16 +389,21 @@ export class ElectricalCalculator {
     const V_node = new Map<string, Complex>();
     for (const n of nodes) V_node.set(n.id, Vslack);
 
-    const sinPhi = Math.sqrt(Math.max(0, 1 - this.cosPhi * this.cosPhi));
+    // Sécurité: cosΦ dans [0,1]
+    const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
+    if (!isFinite(this.cosPhi) || this.cosPhi < 0 || this.cosPhi > 1) {
+      console.warn('⚠️ cosΦ hors [0,1], application d\'un clamp.', { cosPhi_in: this.cosPhi, cosPhi_eff });
+    }
+    const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
     // Helper: per-node per-phase complex power in VA (signed)
     const S_node_phase_VA = new Map<string, Complex>();
     const computeNodeS = () => {
       S_node_phase_VA.clear();
       for (const n of nodes) {
-        const S_kVA = S_node_total_kVA.get(n.id) || 0; // signed
-        const P_kW = S_kVA * this.cosPhi;
-        const Q_kVAr = S_kVA * sinPhi;
+        const S_kVA = S_node_total_kVA.get(n.id) || 0; // S_total (kVA), signé: >0 charge, <0 injection
+        const P_kW = S_kVA * cosPhi_eff;
+        const Q_kVAr = Math.abs(S_kVA) * sinPhi * Math.sign(S_kVA);
         const S_VA_total = C(P_kW * 1000, Q_kVAr * 1000);
         const { isThreePhase } = this.getVoltage(n.connectionType);
         const divisor = isThreePhase ? 3 : 1;
@@ -442,7 +413,7 @@ export class ElectricalCalculator {
     computeNodeS();
 
     // Iterative BFS
-    const maxIter = 50;
+    const maxIter = 100;
     const tol = 1e-4;
     let iter = 0;
     let converged = false;
@@ -520,6 +491,9 @@ export class ElectricalCalculator {
       }
       if (maxDelta / (Vslack_phase || 1) < tol) { converged = true; break; }
     }
+    if (!converged) {
+      console.warn('⚠️ Backward–Forward Sweep non convergé (tol=1e-4, maxIter=100). Les résultats peuvent être approximatifs.');
+    }
 
     // Compose cable results from final branch currents and voltages
     calculatedCables.length = 0;
@@ -557,8 +531,14 @@ export class ElectricalCalculator {
       if (srcTarget) U_base = srcTarget;
       const deltaU_percent = U_base ? (deltaU_line_V / U_base) * 100 : 0;
 
-      const R_total = Z!.re; // per phase
+      // Apparent power through the branch (kVA), computed at sending end (parent)
+      const parentIdForCab = parentId ?? (parent.get(cab.nodeBId) === cab.nodeAId ? cab.nodeAId : cab.nodeBId);
+      const Vu = V_node.get(parentIdForCab || cab.nodeAId) || Vslack;
+      const S_flow_phase = mul(Vu, conj(Iph)); // VA per phase (complex)
       const phaseFactor = isThreePhase ? 3 : 1;
+      const apparentPower_kVA = (abs(S_flow_phase) * phaseFactor) / 1000;
+
+      const R_total = Z!.re; // per phase
       const losses_kW = (current_A * current_A * R_total * phaseFactor) / 1000;
 
       globalLosses += losses_kW;
@@ -569,7 +549,8 @@ export class ElectricalCalculator {
         current_A,
         voltageDrop_V: deltaU_line_V,
         voltageDropPercent: deltaU_percent,
-        losses_kW
+        losses_kW,
+        apparentPower_kVA
       });
     }
 
@@ -634,6 +615,17 @@ export class ElectricalCalculator {
       console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);
     }
 
+    // ---- Node metrics (V_phase and p.u., I_inj per node) ----
+    const nodeMetrics = nodes.map(n => {
+      const Vn = V_node.get(n.id) || Vslack;
+      const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
+      const V_phase_V = abs(Vn);
+      const V_nom_phase = U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
+      const V_pu = V_nom_phase ? V_phase_V / V_nom_phase : 0;
+      const Iinj = I_inj_node.get(n.id) || C(0, 0);
+      return { nodeId: n.id, V_phase_V, V_pu, I_inj_A: abs(Iinj) };
+    });
+
     console.log('🔄 Creating result object...');
     const result: CalculationResult = {
       scenario,
@@ -644,6 +636,7 @@ export class ElectricalCalculator {
       maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
       compliance,
       nodeVoltageDrops,
+      nodeMetrics,
       virtualBusbar
     };
 
