@@ -15,6 +15,8 @@ interface ResultsPanelProps {
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
   const { currentProject } = useNetworkStore();
   
+  const currentResult = results[selectedScenario];
+
   // Fonction pour identifier le circuit d'un nœud
   const getNodeCircuit = (nodeId: string): { circuitId: string; circuitName: string } | null => {
     if (!currentResult?.virtualBusbar?.circuits || !currentProject) return null;
@@ -108,7 +110,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
     );
   }
   
-  const currentResult = results[selectedScenario];
+  // currentResult moved up to avoid TDZ error
 
   const getComplianceBadge = (compliance: 'normal' | 'warning' | 'critical') => {
     const variants = {
