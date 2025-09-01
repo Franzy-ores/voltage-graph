@@ -579,7 +579,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'PRÉLÈVEMENT',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig // Ajouter la configuration du transformateur
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes,

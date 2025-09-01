@@ -1,6 +1,6 @@
 import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
-import { Complex, C, add, sub, mul, div, conj, scale, abs } from '@/utils/complex';
+import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
 
 export class ElectricalCalculator {
   private cosPhi: number;
@@ -218,7 +218,9 @@ export class ElectricalCalculator {
     scenario: CalculationScenario,
     foisonnementCharges: number = 100,
     foisonnementProductions: number = 100,
-    transformerConfig?: TransformerConfig
+    transformerConfig?: TransformerConfig,
+    loadModel: LoadModel = 'polyphase_equilibre',
+    desequilibrePourcent: number = 0
   ): CalculationResult {
     console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
@@ -396,6 +398,242 @@ export class ElectricalCalculator {
     }
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
+    // ---- Mode déséquilibré (monophasé réparti) -> calcul triphasé par phase ----
+    const d = Math.max(0, Math.min(1, (desequilibrePourcent || 0) / 100));
+    const isUnbalanced = loadModel === 'monophase_reparti' && d > 0;
+
+    if (isUnbalanced) {
+      // Répartition S_total -> S_A/S_B/S_C selon d (appliqué sur L1/A)
+      const pA = (1 / 3) * (1 + d);
+      const rem = Math.max(0, 1 - pA);
+      const pB = rem / 2;
+      const pC = rem / 2;
+
+      const S_A_map = new Map<string, Complex>();
+      const S_B_map = new Map<string, Complex>();
+      const S_C_map = new Map<string, Complex>();
+
+      for (const n of nodes) {
+        const S_kVA_tot = S_node_total_kVA.get(n.id) || 0; // signé
+        const sign = Math.sign(S_kVA_tot) || 1;
+        const S_A_kVA = S_kVA_tot * pA;
+        const S_B_kVA = S_kVA_tot * pB;
+        const S_C_kVA = S_kVA_tot * pC;
+        const P_A_kW = S_A_kVA * cosPhi_eff;
+        const Q_A_kVAr = Math.abs(S_A_kVA) * sinPhi * sign;
+        const P_B_kW = S_B_kVA * cosPhi_eff;
+        const Q_B_kVAr = Math.abs(S_B_kVA) * sinPhi * sign;
+        const P_C_kW = S_C_kVA * cosPhi_eff;
+        const Q_C_kVAr = Math.abs(S_C_kVA) * sinPhi * sign;
+        S_A_map.set(n.id, C(P_A_kW * 1000, Q_A_kVAr * 1000));
+        S_B_map.set(n.id, C(P_B_kW * 1000, Q_B_kVAr * 1000));
+        S_C_map.set(n.id, C(P_C_kW * 1000, Q_C_kVAr * 1000));
+      }
+
+      const runBFSForPhase = (angleDeg: number, S_map: Map<string, Complex>) => {
+        const V_node_phase = new Map<string, Complex>();
+        const I_branch_phase = new Map<string, Complex>();
+        const I_inj_node_phase = new Map<string, Complex>();
+
+        const Vslack_phase_ph = fromPolar(Vslack_phase, this.deg2rad(angleDeg));
+        for (const n of nodes) V_node_phase.set(n.id, Vslack_phase_ph);
+
+        let iter2 = 0;
+        let converged2 = false;
+        while (iter2 < 100) {
+          iter2++;
+          const V_prev2 = new Map(V_node_phase);
+
+          I_branch_phase.clear();
+          I_inj_node_phase.clear();
+
+          for (const n of nodes) {
+            const Vn = V_node_phase.get(n.id) || Vslack_phase_ph;
+            const Sph = S_map.get(n.id) || C(0, 0);
+            const Vsafe = abs(Vn) > 1e-6 ? Vn : Vslack_phase_ph;
+            const Iinj = conj(div(Sph, Vsafe));
+            I_inj_node_phase.set(n.id, Iinj);
+          }
+
+          for (const u of postOrder) {
+            if (u === source.id) continue;
+            const childrenIds = children.get(u) || [];
+            let I_sum = C(0, 0);
+            for (const v of childrenIds) {
+              const cabChild = parentCableOfChild.get(v);
+              if (!cabChild) continue;
+              const Ichild = I_branch_phase.get(cabChild.id) || C(0, 0);
+              I_sum = add(I_sum, Ichild);
+            }
+            I_sum = add(I_sum, I_inj_node_phase.get(u) || C(0, 0));
+            const cab = parentCableOfChild.get(u);
+            if (cab) I_branch_phase.set(cab.id, I_sum);
+          }
+
+          let I_source_net = C(0, 0);
+          for (const v of children.get(source.id) || []) {
+            const cab = parentCableOfChild.get(v);
+            if (!cab) continue;
+            I_source_net = add(I_source_net, I_branch_phase.get(cab.id) || C(0, 0));
+          }
+          I_source_net = add(I_source_net, I_inj_node_phase.get(source.id) || C(0, 0));
+
+          const V_source_bus = Ztr_phase ? sub(Vslack_phase_ph, mul(Ztr_phase, I_source_net)) : Vslack_phase_ph;
+          V_node_phase.set(source.id, V_source_bus);
+
+          const stack2 = [source.id];
+          while (stack2.length) {
+            const u = stack2.pop()!;
+            for (const v of children.get(u) || []) {
+              const cab = parentCableOfChild.get(v);
+              if (!cab) continue;
+              const Z = cableZ_phase.get(cab.id) || C(0, 0);
+              const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
+              const Vu = V_node_phase.get(u) || Vslack_phase_ph;
+              const Vv = sub(Vu, mul(Z, Iuv));
+              V_node_phase.set(v, Vv);
+              stack2.push(v);
+            }
+          }
+
+          // Convergence per-phase
+          let maxDelta = 0;
+          for (const [nid, Vn] of V_node_phase.entries()) {
+            const Vp = V_prev2.get(nid) || Vslack_phase_ph;
+            const d = abs(sub(Vn, Vp));
+            if (d > maxDelta) maxDelta = d;
+          }
+          if (maxDelta / (Vslack_phase || 1) < 1e-4) { converged2 = true; break; }
+        }
+        if (!converged2) {
+          console.warn(`⚠️ BFS phase ${angleDeg}° non convergé`);
+        }
+        return { V_node_phase, I_branch_phase };
+      };
+
+      const phaseA = runBFSForPhase(0, S_A_map);
+      const phaseB = runBFSForPhase(-120, S_B_map);
+      const phaseC = runBFSForPhase(120, S_C_map);
+
+      // Compose cable results (par phase)
+      calculatedCables.length = 0;
+      globalLosses = 0;
+      const is400V = U_line_base >= 350; // heuristique
+
+      for (const cab of cables) {
+        const childId = cableChildId.get(cab.id);
+        const parentId = cableParentId.get(cab.id);
+        const length_m = this.calculateLengthMeters(cab.coordinates || []);
+        const ct = cableTypeById.get(cab.typeId);
+        if (!ct) throw new Error(`Cable type ${cab.typeId} introuvable`);
+
+        const distalId = childId && parentId ? childId : (parent.get(cab.nodeBId) === cab.nodeAId ? cab.nodeBId : cab.nodeAId);
+        const distalNode = nodeById.get(distalId)!;
+        const { isThreePhase } = this.getVoltage(distalNode.connectionType);
+        const Z = cableZ_phase.get(cab.id) || C(0, 0);
+
+        const IA = phaseA.I_branch_phase.get(cab.id) || C(0, 0);
+        const IB = phaseB.I_branch_phase.get(cab.id) || C(0, 0);
+        const IC = phaseC.I_branch_phase.get(cab.id) || C(0, 0);
+
+        const IA_mag = abs(IA);
+        const IB_mag = abs(IB);
+        const IC_mag = abs(IC);
+
+        const dVA = abs(mul(Z, IA));
+        const dVB = abs(mul(Z, IB));
+        const dVC = abs(mul(Z, IC));
+
+        const current_A = Math.max(IA_mag, IB_mag, IC_mag);
+        const deltaU_line_V = Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
+
+        // Base voltage for percent
+        let { U_base } = this.getVoltage(distalNode.connectionType);
+        const srcTarget = nodes.find(n => n.isSource)?.tensionCible;
+        if (srcTarget) U_base = srcTarget;
+        const deltaU_percent = U_base ? (deltaU_line_V / U_base) * 100 : 0;
+
+        // Pertes (somme des 3 phases)
+        const R_total = Z.re;
+        const losses_kW = ((IA_mag*IA_mag) + (IB_mag*IB_mag) + (IC_mag*IC_mag)) * R_total / 1000;
+        globalLosses += losses_kW;
+
+        // Courant de neutre (si 400V L-N)
+        const IN_mag = is400V ? abs(add(add(IA, IB), IC)) : 0;
+
+        calculatedCables.push({
+          ...cab,
+          length_m,
+          current_A,
+          voltageDrop_V: deltaU_line_V,
+          voltageDropPercent: deltaU_percent,
+          losses_kW,
+          apparentPower_kVA: undefined,
+          currentsPerPhase_A: { A: IA_mag, B: IB_mag, C: IC_mag, N: is400V ? IN_mag : undefined },
+          voltageDropPerPhase_V: { A: dVA, B: dVB, C: dVC }
+        });
+      }
+
+      // Tension nodale (pire phase) et conformité
+      let worstAbsPct = 0;
+      const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
+      const nodePhasorsPerPhase: { nodeId: string; phase: 'A'|'B'|'C'; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[] = [];
+
+      const sourceNode = nodes.find(n => n.isSource);
+      for (const n of nodes) {
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, 0);
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(-120));
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(120));
+        const Va_mag = abs(Va);
+        const Vb_mag = abs(Vb);
+        const Vc_mag = abs(Vc);
+
+        nodePhasorsPerPhase.push(
+          { nodeId: n.id, phase: 'A', V_real: Va.re, V_imag: Va.im, V_phase_V: Va_mag, V_angle_deg: (Math.atan2(Va.im, Va.re)*180)/Math.PI },
+          { nodeId: n.id, phase: 'B', V_real: Vb.re, V_imag: Vb.im, V_phase_V: Vb_mag, V_angle_deg: (Math.atan2(Vb.im, Vb.re)*180)/Math.PI },
+          { nodeId: n.id, phase: 'C', V_real: Vc.re, V_imag: Vc.im, V_phase_V: Vc_mag, V_angle_deg: (Math.atan2(Vc.im, Vc.re)*180)/Math.PI },
+        );
+
+        const { isThreePhase } = this.getVoltage(n.connectionType);
+        const U_node_line_worst = Math.min(Va_mag, Vb_mag, Vc_mag) * (isThreePhase ? Math.sqrt(3) : 1);
+
+        let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
+        if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
+
+        const deltaU_V = U_ref_display - U_node_line_worst;
+        const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
+
+        const { U_base: U_nom } = this.getVoltage(n.connectionType);
+        const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_worst) / U_nom) * 100 : 0;
+        const absPctNom = Math.abs(deltaU_pct_nominal);
+        if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
+
+        nodeVoltageDrops.push({ nodeId: n.id, deltaU_cum_V: deltaU_V, deltaU_cum_percent: deltaU_pct });
+      }
+
+      const compliance = this.getComplianceStatus(worstAbsPct);
+
+      const result: CalculationResult = {
+        scenario,
+        cables: calculatedCables,
+        totalLoads_kVA: totalLoads,
+        totalProductions_kVA: totalProductions,
+        globalLosses_kW: Number(globalLosses.toFixed(6)),
+        maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
+        maxVoltageDropCircuitNumber: undefined,
+        compliance,
+        nodeVoltageDrops,
+        nodeMetrics: undefined,
+        nodePhasors: undefined,
+        nodePhasorsPerPhase,
+        cablePowerFlows: undefined,
+        virtualBusbar: undefined
+      };
+
+      return result;
+    }
+
+    // ---- Mode équilibré (inchangé) ----
     // Helper: per-node per-phase complex power in VA (signed)
     const S_node_phase_VA = new Map<string, Complex>();
     const computeNodeS = () => {
