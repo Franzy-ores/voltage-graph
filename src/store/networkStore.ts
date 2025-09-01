@@ -590,7 +590,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'MIXTE',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes,
@@ -599,7 +601,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'PRODUCTION',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       )
     };
 
@@ -681,7 +685,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'PRÉLÈVEMENT',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes, 
@@ -690,7 +696,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'MIXTE',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes, 
@@ -699,7 +707,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         'PRODUCTION',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       )
     };
 

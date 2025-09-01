@@ -5,9 +5,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Trash2, Plus, Target, Zap } from 'lucide-react';
+import { Trash2, Plus, Target, Zap, Network } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
-import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV } from '@/types/network';
+import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV, LoadModel } from '@/types/network';
 import { toast } from 'sonner';
 
 export const EditPanel = () => {
@@ -57,7 +57,9 @@ export const EditPanel = () => {
           foisonnementCharges: currentProject.foisonnementCharges,
           foisonnementProductions: currentProject.foisonnementProductions,
           defaultChargeKVA: currentProject.defaultChargeKVA || 5,
-          defaultProductionKVA: currentProject.defaultProductionKVA || 5
+          defaultProductionKVA: currentProject.defaultProductionKVA || 5,
+          loadModel: currentProject.loadModel ?? 'polyphase_equilibre',
+          desequilibrePourcent: currentProject.desequilibrePourcent ?? 0
         });
       }
     }
@@ -572,6 +574,68 @@ export const EditPanel = () => {
                   Production PV appliquée par défaut aux nouveaux nœuds
                 </p>
               </div>
+
+              {/* Configuration Modèle de Charge */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Network className="w-4 h-4" />
+                    Modèle de Charge
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="load-model">Type de modèle</Label>
+                    <Select
+                      value={formData.loadModel || 'polyphase_equilibre'}
+                      onValueChange={(value: LoadModel) => setFormData({ ...formData, loadModel: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="polyphase_equilibre">
+                          Polyphasé équilibré
+                        </SelectItem>
+                        <SelectItem value="monophase_reparti">
+                          Monophasé réparti
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Mode équilibré: calcul simplifié triphasé. Mode réparti: calcul complet par phase avec déséquilibre possible.
+                    </p>
+                  </div>
+
+                  {formData.loadModel === 'monophase_reparti' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="desequilibre">Taux de déséquilibre (%)</Label>
+                      <Input
+                        id="desequilibre"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={formData.desequilibrePourcent || 0}
+                        onChange={(e) => setFormData({ 
+                          ...formData, 
+                          desequilibrePourcent: Math.max(0, Math.min(100, parseFloat(e.target.value) || 0))
+                        })}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        0% = équilibré (33,3% par phase). Plus élevé = plus de charge sur la phase A, moins sur B et C.
+                      </p>
+                      {formData.desequilibrePourcent > 0 && (
+                        <div className="text-xs text-muted-foreground p-2 bg-muted rounded">
+                          <strong>Répartition avec {formData.desequilibrePourcent}% :</strong><br />
+                          • Phase A : {((1/3) * (1 + (formData.desequilibrePourcent || 0)/100) * 100).toFixed(1)}%<br />
+                          • Phase B/C : {((1 - (1/3) * (1 + (formData.desequilibrePourcent || 0)/100))/2 * 100).toFixed(1)}% chacune
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </>
           )}
 
