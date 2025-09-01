@@ -34,10 +34,17 @@ export class PDFGenerator {
     this.currentY += 8;
   }
 
-  private addText(text: string, fontSize = 10) {
+  private addText(text: string, fontSize = 10, x = this.margin) {
     this.pdf.setFontSize(fontSize);
     this.pdf.setFont('helvetica', 'normal');
-    this.pdf.text(text, this.margin, this.currentY);
+    this.pdf.text(text, x, this.currentY);
+    this.currentY += 6;
+  }
+
+  private addBoldText(text: string, fontSize = 10, x = this.margin) {
+    this.pdf.setFontSize(fontSize);
+    this.pdf.setFont('helvetica', 'bold');
+    this.pdf.text(text, x, this.currentY);
     this.currentY += 6;
   }
 
@@ -55,32 +62,158 @@ export class PDFGenerator {
 
   private formatScenarioName(scenario: CalculationScenario): string {
     switch (scenario) {
-      case 'PRÉLÈVEMENT': return 'Prélèvement';
-      case 'MIXTE': return 'Mixte';
-      case 'PRODUCTION': return 'Production';
+      case 'PRÉLÈVEMENT': return 'Prélèvement seul';
+      case 'MIXTE': return 'Mixte (Prélèvement + Production)';
+      case 'PRODUCTION': return 'Production seule';
     }
   }
 
-  private getCableStatistics(project: Project) {
-    // Calculer les nœuds connectés
+  private getComplianceText(compliance: 'normal' | 'warning' | 'critical'): string {
+    switch (compliance) {
+      case 'normal': return 'Conforme EN 50160';
+      case 'warning': return 'Attention ±8-10%';
+      case 'critical': return 'Non conforme >±10%';
+    }
+  }
+
+  // Fonction pour obtenir la numérotation séquentielle des circuits
+  private getCircuitNumber(circuitId: string, project: Project, result: CalculationResult): number {
+    if (!result?.virtualBusbar?.circuits) return 0;
+    
+    const sourceNode = project.nodes.find(n => n.isSource);
+    if (!sourceNode) return 0;
+    
+    const mainCircuitCables = project.cables
+      .filter(cable => cable.nodeAId === sourceNode.id || cable.nodeBId === sourceNode.id)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    
+    const circuitIndex = mainCircuitCables.findIndex(cable => cable.id === circuitId);
+    return circuitIndex >= 0 ? circuitIndex + 1 : 0;
+  }
+
+  // Calculer les statistiques par circuit (similaire à ResultsPanel)
+  private getCircuitStatistics(project: Project, result: CalculationResult) {
+    if (!project?.cables || !project?.nodes || !result?.virtualBusbar?.circuits) {
+      return { totalLength: 0, circuitStats: [], connectedCableCount: 0 };
+    }
+    
     const connectedNodes = getConnectedNodes(project.nodes, project.cables);
     const connectedCables = getConnectedCables(project.cables, connectedNodes);
     
-    const totalLength = connectedCables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
-    const cableCount = connectedCables.length;
+    const getAllCablesInSubtree = (startNodeId: string, sourceNodeId: string): string[] => {
+      const cableIds = new Set<string>();
+      const visited = new Set<string>();
+      const stack = [startNodeId];
+      
+      while (stack.length > 0) {
+        const currentNodeId = stack.pop()!;
+        if (visited.has(currentNodeId)) continue;
+        visited.add(currentNodeId);
+        
+        const connectedCablesFromNode = project.cables.filter(cable => {
+          const isConnected = cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId;
+          const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+          return isConnected && (otherNodeId !== sourceNodeId || cableIds.size === 0);
+        });
+        
+        connectedCablesFromNode.forEach(cable => {
+          if (!cableIds.has(cable.id)) {
+            cableIds.add(cable.id);
+            const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+            if (!visited.has(otherNodeId) && otherNodeId !== sourceNodeId) {
+              stack.push(otherNodeId);
+            }
+          }
+        });
+      }
+      
+      return Array.from(cableIds);
+    };
     
-    const lengthByType = connectedCables.reduce((acc, cable) => {
-      const cableType = project.cableTypes.find(type => type.id === cable.typeId);
-      const typeName = cableType ? cableType.label : 'Inconnu';
-      acc[typeName] = (acc[typeName] || 0) + (cable.length_m || 0);
-      return acc;
-    }, {} as Record<string, number>);
-
-    return { totalLength, cableCount, lengthByType };
+    let totalLength = 0;
+    const circuitStats: Array<{
+      circuitId: string;
+      circuitName: string;
+      circuitNumber: number;
+      length: number;
+      cableCount: number;
+      subtreeSkVA: number;
+      direction: string;
+      cables: any[];
+      compliance: 'normal' | 'warning' | 'critical';
+      minVoltage: number;
+      maxVoltage: number;
+    }> = [];
+    
+    const sourceNode = project.nodes.find(n => n.isSource);
+    if (!sourceNode) {
+      return { totalLength: 0, circuitStats: [], connectedCableCount: connectedCables.length };
+    }
+    
+    const sortedCircuits = result.virtualBusbar.circuits
+      .map(circuit => ({ ...circuit, circuitNumber: this.getCircuitNumber(circuit.circuitId, project, result) }))
+      .sort((a, b) => a.circuitNumber - b.circuitNumber);
+    
+    const allAssignedCableIds = new Set<string>();
+    
+    sortedCircuits.forEach(circuit => {
+      const mainCable = project.cables.find(c => c.id === circuit.circuitId);
+      if (!mainCable) return;
+      
+      const downstreamNodeId = mainCable.nodeAId === sourceNode.id ? mainCable.nodeBId : mainCable.nodeAId;
+      const subtreeCableIds = getAllCablesInSubtree(downstreamNodeId, sourceNode.id);
+      
+      if (!subtreeCableIds.includes(circuit.circuitId)) {
+        subtreeCableIds.unshift(circuit.circuitId);
+      }
+      
+      const circuitCables = connectedCables.filter(cable => {
+        const isInSubtree = subtreeCableIds.includes(cable.id);
+        const notAlreadyAssigned = !allAssignedCableIds.has(cable.id);
+        
+        if (isInSubtree && notAlreadyAssigned) {
+          allAssignedCableIds.add(cable.id);
+          return true;
+        }
+        return false;
+      });
+      
+      const circuitLength = circuitCables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
+      totalLength += circuitLength;
+      
+      const circuitNumber = this.getCircuitNumber(circuit.circuitId, project, result);
+      
+      // Déterminer la conformité du circuit
+      let circuitCompliance: 'normal' | 'warning' | 'critical' = 'normal';
+      const nominalVoltage = project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+      const minDropPercent = Math.abs((nominalVoltage - circuit.minNodeVoltage_V) / nominalVoltage * 100);
+      const maxDropPercent = Math.abs((nominalVoltage - circuit.maxNodeVoltage_V) / nominalVoltage * 100);
+      const worstDrop = Math.max(minDropPercent, maxDropPercent);
+      
+      if (worstDrop > 10) circuitCompliance = 'critical';
+      else if (worstDrop > 8) circuitCompliance = 'warning';
+      
+      circuitStats.push({
+        circuitId: circuit.circuitId,
+        circuitName: `Circuit ${circuitNumber}`,
+        circuitNumber,
+        length: circuitLength,
+        cableCount: circuitCables.length,
+        subtreeSkVA: circuit.subtreeSkVA,
+        direction: circuit.direction,
+        cables: circuitCables,
+        compliance: circuitCompliance,
+        minVoltage: circuit.minNodeVoltage_V,
+        maxVoltage: circuit.maxNodeVoltage_V
+      });
+    });
+    
+    return { totalLength, circuitStats, connectedCableCount: connectedCables.length };
   }
 
-  private addGlobalSummary(data: PDFData) {
-    this.addSubtitle('Résumé Global');
+  // Section 1: Détail général de la source
+  private addSourceDetails(data: PDFData) {
+    this.addSubtitle('Détail Général de la Source');
     
     const currentResult = data.results[data.selectedScenario];
     if (!currentResult) {
@@ -88,209 +221,202 @@ export class PDFGenerator {
       return;
     }
 
-    // Informations du projet
+    // Informations générales du projet
+    this.addBoldText('Informations du projet :', 10);
     this.addText(`Projet: ${data.project.name}`);
-    this.addText(`Système de tension: ${data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'}`);
+    this.addText(`Système de tension: ${data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V Tétraphasé' : '230V Triphasé'}`);
     this.addText(`cos φ = ${data.project.cosPhi}`);
-    this.addText(`Scénario sélectionné: ${this.formatScenarioName(data.selectedScenario)}`);
+    this.addText(`Scénario: ${this.formatScenarioName(data.selectedScenario)}`);
+    this.addText(`Conformité: ${this.getComplianceText(currentResult.compliance)}`);
     this.currentY += 5;
 
-    // Charges et productions totales
-    this.addText(`Charges totales: ${currentResult.totalLoads_kVA.toFixed(2)} kVA`);
-    this.addText(`Productions totales: ${currentResult.totalProductions_kVA.toFixed(2)} kVA`);
-    this.addText(`Pertes totales: ${currentResult.globalLosses_kW.toFixed(2)} kW`);
-    this.addText(`Chute de tension max: ${currentResult.maxVoltageDropPercent.toFixed(2)} %`);
+    // Calcul charge contractuelle
+    const connectedNodes = getConnectedNodes(data.project.nodes, data.project.cables);
+    const connectedNodesData = data.project.nodes.filter(node => connectedNodes.has(node.id));
+    const chargeContractuelle = connectedNodesData.reduce((sum, node) => 
+      sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0);
+
+    // Charges, productions et pertes
+    this.addBoldText('Bilan énergétique :', 10);
+    this.addText(`Charge contractuelle: ${chargeContractuelle.toFixed(1)} kVA`);
+    this.addText(`Foisonnement charges: ${data.project.foisonnementCharges}%`);
+    this.addText(`Charge foisonnée: ${currentResult.totalLoads_kVA.toFixed(1)} kVA`);
+    this.addText(`Productions totales: ${currentResult.totalProductions_kVA.toFixed(1)} kVA`);
+    this.addText(`Pertes globales: ${currentResult.globalLosses_kW.toFixed(3)} kW`);
+    this.addText(`Chute de tension max: ${currentResult.maxVoltageDropPercent.toFixed(2)}%${currentResult.maxVoltageDropCircuitNumber ? ` (Circuit ${currentResult.maxVoltageDropCircuitNumber})` : ''}`);
     this.currentY += 5;
 
-    // Statistiques des câbles
-    const cableStats = this.getCableStatistics(data.project);
-    this.addText(`Longueur totale des câbles: ${cableStats.totalLength.toFixed(0)} m`);
-    this.addText(`Nombre de tronçons: ${cableStats.cableCount}`);
+    // Informations transformateur et jeu de barres
+    if (currentResult.virtualBusbar) {
+      this.addBoldText('Transformateur :', 10);
+      this.addText(`Puissance: ${data.project.transformerConfig.rating}`);
+      this.addText(`Tension de court-circuit: ${data.project.transformerConfig.shortCircuitVoltage_percent}% Ucc`);
+      this.addText(`Pertes transformateur: ${currentResult.virtualBusbar.losses_kW?.toFixed(3) || 0} kW`);
+      this.currentY += 3;
+
+      this.addBoldText('Jeu de barres :', 10);
+      this.addText(`Tension: ${currentResult.virtualBusbar.voltage_V.toFixed(1)} V`);
+      this.addText(`Courant total: ${currentResult.virtualBusbar.current_A.toFixed(1)} A`);
+      this.addText(`Puissance nette: ${currentResult.virtualBusbar.netSkVA.toFixed(1)} kVA`);
+      this.addText(`Chute de tension: ${currentResult.virtualBusbar.deltaU_percent?.toFixed(2) || 0}%`);
+      this.currentY += 5;
+    }
+
+    // Statistiques câbles globales
+    const cableStats = this.getCircuitStatistics(data.project, currentResult);
+    this.addBoldText('Statistiques des câbles :', 10);
+    this.addText(`Longueur totale: ${cableStats.totalLength.toFixed(0)} m`);
+    this.addText(`Nombre de tronçons: ${cableStats.connectedCableCount}`);
     
-    this.currentY += 3;
-    this.addText('Répartition par type de câble:');
-    Object.entries(cableStats.lengthByType).forEach(([type, length]) => {
-      this.addText(`  • ${type}: ${(length as number).toFixed(0)} m`, 9);
-    });
-
     this.currentY += 10;
   }
 
-  private addScenarioComparison(data: PDFData) {
-    this.checkPageBreak(60);
-    this.addSubtitle('Comparaison des Scénarios');
-
-    const scenarios: CalculationScenario[] = ['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'];
+  // Section 2: Détail par circuits avec conformité
+  private addCircuitDetails(data: PDFData) {
+    this.checkPageBreak(80);
+    this.addSubtitle('Détail par Circuits');
     
-    // Headers
-    const headers = ['Scénario', 'Charges (kVA)', 'Productions (kVA)', 'Pertes (kW)', 'Chute max (%)'];
-    const colWidths = [40, 30, 35, 25, 30];
+    const currentResult = data.results[data.selectedScenario];
+    if (!currentResult) {
+      this.addText('Aucun calcul disponible');
+      return;
+    }
+
+    const cableStats = this.getCircuitStatistics(data.project, currentResult);
+    
+    if (cableStats.circuitStats.length === 0) {
+      this.addText('Aucun circuit détecté');
+      return;
+    }
+
+    cableStats.circuitStats.forEach(circuit => {
+      this.checkPageBreak(40);
+      
+      // Nom du circuit avec indicateur de conformité
+      const complianceText = this.getComplianceText(circuit.compliance);
+      this.addBoldText(`${circuit.circuitName} - ${complianceText}`, 11);
+      
+      // Informations générales du circuit
+      this.addText(`Direction: ${circuit.direction}`);
+      this.addText(`Puissance: ${Math.abs(circuit.subtreeSkVA).toFixed(1)} kVA`);
+      this.addText(`Longueur: ${circuit.length.toFixed(0)} m`);
+      this.addText(`Nombre de tronçons: ${circuit.cableCount}`);
+      this.addText(`Tension min: ${circuit.minVoltage.toFixed(1)} V`);
+      this.addText(`Tension max: ${circuit.maxVoltage.toFixed(1)} V`);
+      
+      const nominalVoltage = data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+      const minDropPercent = Math.abs((nominalVoltage - circuit.minVoltage) / nominalVoltage * 100);
+      const maxDropPercent = Math.abs((nominalVoltage - circuit.maxVoltage) / nominalVoltage * 100);
+      const worstDrop = Math.max(minDropPercent, maxDropPercent);
+      this.addText(`Chute de tension max: ${worstDrop.toFixed(2)}%`);
+      
+      this.currentY += 5;
+      
+      // Scénarios pour ce circuit (si plusieurs scénarios calculés)
+      this.addText(`Scénario actuel: ${this.formatScenarioName(data.selectedScenario)}`, 9);
+      
+      // Aperçu des tronçons principaux de ce circuit
+      if (circuit.cables.length > 0) {
+        this.addText('Principaux tronçons:', 9);
+        circuit.cables.slice(0, 3).forEach(cable => {
+          const cableResult = currentResult.cables.find(c => c.id === cable.id);
+          const cableType = data.project.cableTypes.find(ct => ct.id === cable.typeId);
+          this.addText(`  • ${cable.name}: ${cableType?.label || 'N/A'}, ${cable.length_m?.toFixed(0) || 0}m, ${cableResult?.current_A?.toFixed(1) || 0}A`, 8);
+        });
+        if (circuit.cables.length > 3) {
+          this.addText(`  ... et ${circuit.cables.length - 3} autres tronçons`, 8);
+        }
+      }
+      
+      this.currentY += 8;
+    });
+  }
+
+  // Section 3: Détail des tronçons
+  private addCableDetails(data: PDFData) {
+    this.checkPageBreak(120);
+    this.addSubtitle('Détail des Tronçons');
+
+    const currentResult = data.results[data.selectedScenario];
+    if (!currentResult) {
+      this.addText('Aucun calcul disponible');
+      return;
+    }
+
+    // Trier les câbles par nom/numéro
+    const sortedCables = [...currentResult.cables].sort((a, b) => {
+      const numA = parseInt(a.name.match(/\d+/)?.[0] || '999');
+      const numB = parseInt(b.name.match(/\d+/)?.[0] || '999');
+      return numA - numB;
+    });
+
+    // En-têtes du tableau
+    const headers = ['Câble', 'Type', 'L(m)', 'I(A)', 'ΔU(%)', 'Pertes(kW)', 'U dép.(V)', 'U arr.(V)'];
+    const colWidths = [20, 25, 15, 15, 15, 18, 18, 18];
     let x = this.margin;
 
     this.pdf.setFont('helvetica', 'bold');
+    this.pdf.setFontSize(9);
     headers.forEach((header, i) => {
       this.pdf.text(header, x, this.currentY);
       x += colWidths[i];
     });
-    this.currentY += 8;
+    this.currentY += 6;
     this.addLine();
 
-    // Data rows
+    // Données des câbles
     this.pdf.setFont('helvetica', 'normal');
-    scenarios.forEach(scenario => {
-      const result = data.results[scenario];
-      if (result) {
-        x = this.margin;
-        const values = [
-          this.formatScenarioName(scenario),
-          result.totalLoads_kVA.toFixed(1),
-          result.totalProductions_kVA.toFixed(1),
-          result.globalLosses_kW.toFixed(2),
-          result.maxVoltageDropPercent.toFixed(2)
-        ];
-        
-        values.forEach((value, i) => {
-          this.pdf.text(value, x, this.currentY);
-          x += colWidths[i];
-        });
-        this.currentY += 6;
-      }
+    this.pdf.setFontSize(8);
+    
+    sortedCables.forEach(cable => {
+      this.checkPageBreak(8);
+      
+      const projectCable = data.project.cables.find(c => c.id === cable.id);
+      const cableType = data.project.cableTypes.find(ct => ct.id === projectCable?.typeId);
+      
+      // Tensions de départ et d'arrivée
+      const baseVoltage = data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+      const nodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => 
+        nvd.nodeId === projectCable?.nodeBId || nvd.nodeId === projectCable?.nodeAId
+      );
+      const arrivalVoltage = baseVoltage - (nodeVoltageDropResult?.deltaU_cum_V || 0);
+      
+      x = this.margin;
+      const values = [
+        cable.name,
+        cableType?.label || '-',
+        cable.length_m?.toFixed(0) || '0',
+        cable.current_A?.toFixed(1) || '0.0',
+        cable.voltageDropPercent?.toFixed(2) || '0.00',
+        cable.losses_kW?.toFixed(3) || '0.000',
+        baseVoltage.toFixed(0),
+        arrivalVoltage.toFixed(0)
+      ];
+      
+      values.forEach((value, i) => {
+        this.pdf.text(value, x, this.currentY);
+        x += colWidths[i];
+      });
+      this.currentY += 5;
     });
 
     this.currentY += 10;
   }
 
-  private async addCableDetails(data: PDFData) {
-    this.checkPageBreak(120);
-    this.addSubtitle('Détail par Tronçon');
-
-    const currentResult = data.results[data.selectedScenario];
-    if (!currentResult) {
-      this.addText('Aucun calcul disponible');
-      return;
-    }
-
-    try {
-      // Générer le tableau HTML
-      const tableHTML = generateCableDetailsTable(currentResult, data.project);
-      
-      // Créer un élément temporaire pour calculer la hauteur
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = tableHTML;
-      tempDiv.style.position = 'absolute';
-      tempDiv.style.left = '-9999px';
-      tempDiv.style.width = '170mm'; // Largeur PDF moins marges
-      document.body.appendChild(tempDiv);
-
-      // Capturer le tableau en image
-      const canvas = await html2canvas(tempDiv, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        width: 640, // ~170mm à 96 DPI
-        useCORS: true
-      });
-      
-      const imgData = canvas.toDataURL('image/png', 1.0);
-      
-      // Calculer les dimensions pour le PDF
-      const imgWidth = 170; // mm
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // Vérifier si on a besoin d'une nouvelle page
-      this.checkPageBreak(imgHeight + 10);
-      
-      // Ajouter l'image au PDF
-      this.pdf.addImage(imgData, 'PNG', this.margin, this.currentY, imgWidth, imgHeight);
-      this.currentY += imgHeight + 10;
-      
-      // Nettoyer
-      document.body.removeChild(tempDiv);
-      
-    } catch (error) {
-      console.error('Erreur lors de la génération du tableau:', error);
-      
-      // Fallback: tableau texte simple
-      const sortedCables = [...currentResult.cables].sort((a, b) => {
-        const numA = parseInt(a.name.match(/\d+/)?.[0] || '999');
-        const numB = parseInt(b.name.match(/\d+/)?.[0] || '999');
-        return numA - numB;
-      });
-
-      // Headers fallback avec nouvelles colonnes
-      const headers = ['Câble', 'U dép.(V)', 'Type', 'L (m)', 'I (A)', 'ΔU (%)', 'Pertes (kW)', 'U arr.(V)', 'Ch.Contr.', 'Ch.Fois.', 'Prod.'];
-      const colWidths = [15, 12, 20, 12, 12, 12, 12, 12, 12, 12, 12];
-      let x = this.margin;
-
-      this.pdf.setFont('helvetica', 'bold');
-      this.pdf.setFontSize(8);
-      headers.forEach((header, i) => {
-        this.pdf.text(header, x, this.currentY);
-        x += colWidths[i];
-      });
-      this.currentY += 6;
-      this.addLine();
-
-      // Data rows
-      this.pdf.setFont('helvetica', 'normal');
-      sortedCables.forEach(cable => {
-        this.checkPageBreak(8);
-        
-        // Récupérer les informations du câble depuis le projet
-        const projectCable = data.project.cables.find(c => c.id === cable.id);
-        const cableType = data.project.cableTypes.find(ct => ct.id === projectCable?.typeId);
-        
-        // Calculer les charges et productions (logique simplifiée pour le fallback)
-        const baseVoltage = data.project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
-        const nodeVoltageDropResult = currentResult.nodeVoltageDrops?.find(nvd => 
-          nvd.nodeId === projectCable?.nodeBId || nvd.nodeId === projectCable?.nodeAId
-        );
-        const distalVoltage = baseVoltage - (nodeVoltageDropResult?.deltaU_cum_V || 0);
-        
-        const distalNode = data.project.nodes.find(n => n.id === projectCable?.nodeBId);
-        const distalNodeChargesContractuelles = distalNode?.clients.reduce((sum, client) => sum + client.S_kVA, 0) || 0;
-        const distalNodeChargesFoisonnees = distalNodeChargesContractuelles * (data.project.foisonnementCharges / 100);
-        const distalNodeProductions = distalNode?.productions.reduce((sum, prod) => sum + prod.S_kVA, 0) || 0;
-        
-        x = this.margin;
-        const values = [
-          cable.name,
-          baseVoltage.toFixed(0),
-          cableType?.label || '-',
-          cable.length_m?.toFixed(0) || '0',
-          cable.current_A?.toFixed(1) || '0.0',
-          cable.voltageDropPercent?.toFixed(2) || '0.00',
-          cable.losses_kW?.toFixed(3) || '0.000',
-          distalVoltage.toFixed(0),
-          distalNodeChargesContractuelles.toFixed(1),
-          distalNodeChargesFoisonnees.toFixed(1),
-          distalNodeProductions.toFixed(1)
-        ];
-        
-        values.forEach((value, i) => {
-          this.pdf.text(value, x, this.currentY);
-          x += colWidths[i];
-        });
-        this.currentY += 5;
-      });
-
-      this.currentY += 10;
-    }
-  }
-
   public async generateReport(data: PDFData): Promise<void> {
     // Page de titre
-    this.addTitle('Rapport de Calcul de Chute de Tension', 20);
+    this.addTitle('Rapport de Calcul de Réseau Électrique', 18);
     this.addText(`Généré le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR')}`);
     this.currentY += 15;
 
-    // Résumé global
-    this.addGlobalSummary(data);
+    // Section 1: Détail général de la source
+    this.addSourceDetails(data);
 
-    // Comparaison des scénarios
-    this.addScenarioComparison(data);
+    // Section 2: Détail par circuits
+    this.addCircuitDetails(data);
 
-    // Détails par tronçon
-    await this.addCableDetails(data);
+    // Section 3: Détail des tronçons
+    this.addCableDetails(data);
 
     // Télécharger le PDF
     const fileName = `Rapport_${data.project.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
