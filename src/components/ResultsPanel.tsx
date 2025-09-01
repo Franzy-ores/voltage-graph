@@ -67,6 +67,43 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
     const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
     const connectedCables = getConnectedCables(currentProject.cables, connectedNodes);
     
+    // Fonction pour trouver tous les câbles dans un sous-arbre à partir d'un nœud
+    const getAllCablesInSubtree = (startNodeId: string, sourceNodeId: string): string[] => {
+      const cableIds = new Set<string>();
+      const visited = new Set<string>();
+      const stack = [startNodeId];
+      
+      while (stack.length > 0) {
+        const currentNodeId = stack.pop()!;
+        if (visited.has(currentNodeId)) continue;
+        visited.add(currentNodeId);
+        
+        // Trouver tous les câbles connectés à ce nœud (sauf ceux qui remontent vers la source)
+        const connectedCablesFromNode = currentProject.cables.filter(cable => {
+          const isConnected = cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId;
+          const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+          
+          // Inclure le câble si il est connecté et ne remonte pas directement vers la source
+          // (sauf si c'est le câble principal du circuit)
+          return isConnected && (otherNodeId !== sourceNodeId || cableIds.size === 0);
+        });
+        
+        connectedCablesFromNode.forEach(cable => {
+          if (!cableIds.has(cable.id)) {
+            cableIds.add(cable.id);
+            
+            // Ajouter le nœud de l'autre côté à explorer
+            const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+            if (!visited.has(otherNodeId) && otherNodeId !== sourceNodeId) {
+              stack.push(otherNodeId);
+            }
+          }
+        });
+      }
+      
+      return Array.from(cableIds);
+    };
+    
     let totalLength = 0;
     const circuitStats: Array<{
       circuitId: string;
@@ -79,23 +116,45 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
       cables: any[];
     }> = [];
     
+    // Trouver la source
+    const sourceNode = currentProject.nodes.find(n => n.isSource);
+    if (!sourceNode) {
+      return { totalLength: 0, circuitStats: [], connectedCableCount: connectedCables.length };
+    }
+    
     // Grouper par circuit (trié par numéro de circuit)
     const sortedCircuits = currentResult.virtualBusbar.circuits
       .map(circuit => ({ ...circuit, circuitNumber: getCircuitNumber(circuit.circuitId) }))
       .sort((a, b) => a.circuitNumber - b.circuitNumber);
     
+    const allAssignedCableIds = new Set<string>();
+    
     sortedCircuits.forEach(circuit => {
+      // Trouver le câble principal du circuit
+      const mainCable = currentProject.cables.find(c => c.id === circuit.circuitId);
+      if (!mainCable) return;
+      
+      // Déterminer le nœud aval (celui qui n'est pas la source)
+      const downstreamNodeId = mainCable.nodeAId === sourceNode.id ? mainCable.nodeBId : mainCable.nodeAId;
+      
+      // Trouver tous les câbles dans le sous-arbre de ce circuit
+      const subtreeCableIds = getAllCablesInSubtree(downstreamNodeId, sourceNode.id);
+      
+      // S'assurer que le câble principal est inclus
+      if (!subtreeCableIds.includes(circuit.circuitId)) {
+        subtreeCableIds.unshift(circuit.circuitId);
+      }
+      
+      // Filtrer pour ne garder que les câbles connectés et pas déjà assignés
       const circuitCables = connectedCables.filter(cable => {
-        // Trouver tous les câbles qui appartiennent à ce circuit
-        const mainCable = currentProject.cables.find(c => c.id === circuit.circuitId);
-        if (!mainCable) return false;
+        const isInSubtree = subtreeCableIds.includes(cable.id);
+        const notAlreadyAssigned = !allAssignedCableIds.has(cable.id);
         
-        // Pour simplifier, on considère qu'un câble appartient au circuit si il est connecté au nœud aval du câble principal
-        const mainCableTargetNodeId = mainCable.nodeAId === currentProject.nodes.find(n => n.isSource)?.id 
-          ? mainCable.nodeBId 
-          : mainCable.nodeAId;
-        
-        return cable.nodeAId === mainCableTargetNodeId || cable.nodeBId === mainCableTargetNodeId || cable.id === circuit.circuitId;
+        if (isInSubtree && notAlreadyAssigned) {
+          allAssignedCableIds.add(cable.id);
+          return true;
+        }
+        return false;
       });
       
       const circuitLength = circuitCables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
