@@ -516,20 +516,30 @@ export const MapView = () => {
 
       // Obtenir le numéro de circuit
       const circuitNumber = getNodeCircuit(node.id);
+      
+      // Déterminer si on affiche du texte (charge/production uniquement si > 0)
+      const hasDisplayableLoad = !node.isSource && totalCharge > 0;
+      const hasDisplayableProduction = !node.isSource && totalPV > 0;
+      const hasDisplayableText = showVoltages && (hasDisplayableLoad || hasDisplayableProduction || !node.isSource);
+      
+      // Taille adaptative : plus grande si du texte est affiché
+      const iconSize: [number, number] = hasDisplayableText ? [70, 70] : [56, 56];
+      const anchorPoint: [number, number] = hasDisplayableText ? [35, 35] : [28, 28];
+      const iconSizeClass = hasDisplayableText ? 'w-[70px] h-[70px]' : 'w-14 h-14';
 
       const icon = L.divIcon({
         className: 'custom-node-marker',
-        html: `<div class="w-14 h-14 rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
+        html: `<div class="${iconSizeClass} rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
           <div class="text-sm">${iconContent}</div>
           ${circuitNumber ? `<div class="text-[8px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
           ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
             <div class="font-bold">${Math.round(nodeVoltage)}V</div>
-            ${!node.isSource ? `<div>C:${totalCharge}</div>` : ''}
-            ${!node.isSource ? `<div>PV:${totalPV}</div>` : ''}
+            ${hasDisplayableLoad ? `<div>C:${totalCharge}</div>` : ''}
+            ${hasDisplayableProduction ? `<div>PV:${totalPV}</div>` : ''}
           </div>` : ''}
         </div>`,
-        iconSize: [56, 56],
-        iconAnchor: [28, 28]
+        iconSize: iconSize,
+        iconAnchor: anchorPoint
       });
 
       const marker = L.marker([node.lat, node.lng], { 
