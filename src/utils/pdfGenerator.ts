@@ -48,6 +48,23 @@ export class PDFGenerator {
     this.currentY += 6;
   }
 
+  private addHighlightedBoldText(text: string, fontSize = 10, x = this.margin) {
+    this.pdf.setFontSize(fontSize);
+    this.pdf.setFont('helvetica', 'bold');
+    
+    // Calculer la largeur du texte pour le rectangle de surlignage
+    const textWidth = this.pdf.getTextWidth(text);
+    
+    // Ajouter un rectangle de surlignage jaune
+    this.pdf.setFillColor(255, 255, 0); // Jaune
+    this.pdf.rect(x - 1, this.currentY - 4, textWidth + 2, 6, 'F');
+    
+    // Ajouter le texte en gras
+    this.pdf.setTextColor(0, 0, 0); // Noir
+    this.pdf.text(text, x, this.currentY);
+    this.currentY += 6;
+  }
+
   private addLine() {
     this.pdf.line(this.margin, this.currentY, 200 - this.margin, this.currentY);
     this.currentY += 5;
@@ -239,8 +256,8 @@ export class PDFGenerator {
     // Charges, productions et pertes
     this.addBoldText('Bilan énergétique :', 10);
     this.addText(`Charge contractuelle: ${chargeContractuelle.toFixed(1)} kVA`);
-    this.addText(`Foisonnement charges: ${data.project.foisonnementCharges}%`);
-    this.addText(`Charge foisonnée: ${currentResult.totalLoads_kVA.toFixed(1)} kVA`);
+    this.addHighlightedBoldText(`Foisonnement charges: ${data.project.foisonnementCharges}%`);
+    this.addHighlightedBoldText(`Charge foisonnée: ${currentResult.totalLoads_kVA.toFixed(1)} kVA`);
     this.addText(`Productions totales: ${currentResult.totalProductions_kVA.toFixed(1)} kVA`);
     this.addText(`Pertes globales: ${currentResult.globalLosses_kW.toFixed(3)} kW`);
     this.addText(`Chute de tension max: ${currentResult.maxVoltageDropPercent.toFixed(2)}%${currentResult.maxVoltageDropCircuitNumber ? ` (Circuit ${currentResult.maxVoltageDropCircuitNumber})` : ''}`);
