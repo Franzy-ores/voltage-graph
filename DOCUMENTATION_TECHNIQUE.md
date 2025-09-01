@@ -109,65 +109,84 @@ interface Project {
 
 ## Moteur de calcul électrique
 
-### Classe `ElectricalCalculator` (`src/utils/electricalCalculations.ts`)
+### Principe général
 
-Cette classe implémente les calculs selon les normes électriques françaises :
+Le réseau est supposé radial (arborescent) avec une seule source. Les calculs sont réalisés en régime sinusoïdal établi par une méthode Backward–Forward Sweep phasorielle (nombres complexes), tenant compte du transformateur HT/BT, des impédances R+jX des tronçons et d’un facteur de puissance global cos φ.
 
-#### Méthodes principales
+- Convention de signe: Charges > 0 kVA (prélèvement), Productions < 0 kVA (injection).
+- Foisonnement: appliqué aux charges et productions selon le scénario (PRÉLÈVEMENT, PRODUCTION, MIXTE) et les pourcentages du projet.
+- Références de tension: par défaut 230 V mono / 400 V tétra (ligne). Une tension cible source (tensionCible) peut remplacer la référence.
 
-```typescript
-class ElectricalCalculator {
-  // Calcule un scénario complet
-  calculateScenario(
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
-    scenario: CalculationScenario,
-    foisonnementCharges: number = 100,
-    foisonnementProductions: number = 100
-  ): CalculationResult
+### Modélisation électrique
 
-  // Calcule la distance géodésique entre deux points
-  static calculateGeodeticDistance(
-    lat1: number, lon1: number, 
-    lat2: number, lon2: number
-  ): number
+1) Système de tension et conversions
+- Triphasé/ tétraphasé: U_ligne = √3 · U_phase
+- Monophasé: U_ligne = U_phase
 
-  // Calcule la longueur d'un câble à partir de ses coordonnées
-  static calculateCableLength(
-    coordinates: { lat: number; lng: number }[]
-  ): number
-}
-```
+2) Impédances de câble (par phase sur la longueur L_km)
+- Selon le type de connexion du nœud aval du tronçon:
+  - MONO_230V_PN: utiliser R0/X0 (phase-neutre)
+  - Autres (PP, TRI, TÉTRA): utiliser R12/X12 (phase-phase)
+- Z_ph = (R_(·) · L_km) + j (X_(·) · L_km)
 
-#### Algorithme de calcul
+3) Transformateur HT/BT (par phase)
+- Données: puissance nominale S_nom (kVA), Ucc (%), tension nominale BT U_nom_ligne (V), ratio X/R optionnel.
+- Base: Z_base = U_nom_ligne² / (S_nom · 1000)
+- |Z_tr| = (Ucc/100) · Z_base ; décomposition R/X via X/R si disponible, sinon R = 0,05 · |Z_tr|, X = √(|Z_tr|² − R²)
+- Tension bus source phasorielle: V_bus = V_slack − Z_tr · I_source
 
-1. **Construction de l'arbre** : Création d'un arbre enraciné depuis la source
-2. **Calcul des puissances équivalentes** : Application des scénarios et foisonnements
-3. **Calcul des puissances aval** : Somme des charges en aval de chaque câble
-4. **Calcul des courants** : `I = S / (U * cos φ * √3)` (triphasé) ou `I = S / (U * cos φ)` (monophasé)
-5. **Calcul des chutes de tension** : `ΔU = I * L * (R * cos φ + X * sin φ)`
-6. **Cumul des chutes** : Propagation depuis la source vers les extrémités
-7. **Vérification EN50160** : Contrôle des seuils ±8% et ±10%
+### Algorithme Backward–Forward Sweep
 
-### Formules utilisées
+Prétraitements
+- Construction de l’arbre depuis la source (BFS) → parent/children, ordre postfixé.
+- Puissance équivalente par nœud S_eq(n): charges foisonnées − productions foisonnées selon le scénario.
+- S_aval(n): somme de S_eq de n et de tous ses descendants.
+- Tension initiale: V(n) ← V_slack = U_ref_phase ∠ 0° (U_ref selon connexion/transformateur/tensionCible source).
 
-```typescript
-// Courant (triphasé)
-I_A = (S_kVA * 1000) / (√3 * U_base * cos_φ)
+Boucle itérative (max 100 itérations, tolérance 1e−4 sur |ΔV|/U_ref_phase)
+1) Courant d’injection nodal (par phase)
+   - S_total(n) = P + jQ avec P = S_kVA · cos φ · 1000, Q = |S_kVA| · sin φ · 1000 · sign(S_kVA)
+   - S_phase(n) = S_total(n) / (3 si triphasé, sinon 1)
+   - I_inj(n) = conj(S_phase(n) / V(n))
+2) Backward (courants de branches)
+   - I_branche(u→p) = I_inj(u) + Σ I_branche(descendants de u)
+   - I_source_net = I_inj(source) + Σ I_branche(départs)
+3) Forward (mises à jour des tensions)
+   - V_source_bus = V_slack − Z_tr · I_source_net
+   - Pour chaque enfant v de u: V(v) = V(u) − Z_câble · I_branche(u→v)
+4) Test de convergence sur la variation maximale de tension phasorielle.
 
-// Courant (monophasé)  
-I_A = (S_kVA * 1000) / (U_base * cos_φ)
+### Calculs par tronçon (résultats)
+- Courant RMS: I = |I_branche|
+- Chute par phase: ΔV_ph = Z_câble · I_ph ; en ligne: ΔU_ligne = |ΔV_ph| · (√3 si triphasé, sinon 1)
+- Pourcentage de chute: ΔU_% = (ΔU_ligne / U_ref) · 100, avec U_ref = tensionCible source si définie, sinon base de la connexion aval.
+- Puissance apparente traversante: S_phase = V_amont · conj(I_ph) ; S_kVA = |S_phase| · (3 si tri, sinon 1) / 1000
+- Pertes Joule: P_pertes_kW = I² · R_phase · (3 si tri, sinon 1) / 1000
 
-// Chute de tension
-ΔU_V = I_A * L_km * (R_ohm_per_km * cos_φ + X_ohm_per_km * sin_φ) * √3
+### Évaluation nodale et conformité
+- Tension nœud (ligne): U_node = |V(n)| · (√3 si tri, sinon 1)
+- Référence d’affichage: U_ref_aff = tensionCible source sinon base de la connexion du nœud
+- ΔU_cum_V = U_ref_aff − U_node ; ΔU_cum_% = ΔU_cum_V / U_ref_aff · 100
+- Conformité EN 50160 (nominale 230/400 V): normal ≤ 8 %, warning ≤ 10 %, critical > 10 %
+- Pire chute absolue (tous nœuds) → maxVoltageDropPercent et statut de conformité global.
 
-// Pourcentage de chute
-ΔU_percent = (ΔU_V / U_base) * 100
+### Jeu de barres virtuel et circuits (VirtualBusbar)
+- Calculé après convergence, à partir de I_source_net et Z_tr.
+- voltage_V = |V_bus| (ligne), current_A = |I_source_net|, netSkVA = charges − productions, deltaU_percent = ΔU_tr/U_ref · 100, losses_kW ≈ I² · R_tr · (3 si tri)/1000.
+- Départs (circuits) = enfants directs de la source:
+  - circuitId = tronçon source→enfant, subtreeSkVA, direction (prélèvement/injection), current_A (à partir de netSkVA et V_bus)
+  - Répartition de ΔU_tr proportionnelle à subtreeSkVA pour information
+  - min/max des tensions nœuds du sous-arbre à partir de V(n)
+- Numéro de circuit: index du tronçon depuis la source (trié par id) + 1.
 
-// Pertes Joule
-P_losses_kW = I_A² * R_total_ohm / 1000
-```
+### Scénarios et foisonnement
+- PRÉLÈVEMENT: S_eq = charges_foisonnées
+- PRODUCTION: S_eq = −productions_foisonnées
+- MIXTE: S_eq = charges_foisonnées − productions_foisonnées
+- Totaux (charges/productions) et statistiques ne considèrent que les nœuds connectés à la source.
+
+### Distances et longueurs
+- Longueur d’un câble: somme géodésique des segments (Haversine) sur ses coordonnées → length_m, L_km.
 
 ## Gestion d'état (Zustand)
 
