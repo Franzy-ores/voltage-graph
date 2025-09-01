@@ -618,6 +618,35 @@ export class ElectricalCalculator {
 
       const compliance = this.getComplianceStatus(worstAbsPct);
 
+      // Calcul du jeu de barres virtuel (préserver la notion de circuit en monophasé déséquilibré)
+      let virtualBusbar: VirtualBusbar | undefined;
+      if (transformerConfig) {
+        // Courant net à la source (phase A pivot global)
+        let I_source_net_A = C(0, 0);
+        for (const v of children.get(source.id) || []) {
+          const cab = parentCableOfChild.get(v);
+          if (!cab) continue;
+          I_source_net_A = add(I_source_net_A, phaseA.I_branch_phase.get(cab.id) || C(0, 0));
+        }
+        const V_source_A = phaseA.V_node_phase.get(source.id) || fromPolar(Vslack_phase, this.deg2rad(0));
+        const S_source_A = S_A_map.get(source.id) || C(0, 0);
+        const Iinj_A = conj(div(S_source_A, V_source_A));
+        I_source_net_A = add(I_source_net_A, Iinj_A);
+
+        virtualBusbar = this.calculateVirtualBusbar(
+          transformerConfig,
+          totalLoads,
+          totalProductions,
+          source,
+          children,
+          S_aval,
+          phaseA.V_node_phase,
+          I_source_net_A,
+          Ztr_phase,
+          cableIndexByPair
+        );
+      }
+
       const result: CalculationResult = {
         scenario,
         cables: calculatedCables,
@@ -632,7 +661,7 @@ export class ElectricalCalculator {
         nodePhasors: undefined,
         nodePhasorsPerPhase,
         cablePowerFlows: undefined,
-        virtualBusbar: undefined
+        virtualBusbar
       };
 
       return result;
