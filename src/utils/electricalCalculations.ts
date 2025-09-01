@@ -404,6 +404,9 @@ export class ElectricalCalculator {
 
     if (isUnbalanced) {
       // Répartition S_total -> S_A/S_B/S_C selon d (appliqué sur L1/A)
+      // Pivot global fixe : phase A pour 400V, paire L1-L2 pour 230V  
+      const globalAngle = 0; // Angle identique pour tous les circuits pour préserver la notion de circuit
+      
       const pA = (1 / 3) * (1 + d);
       const rem = Math.max(0, 1 - pA);
       const pB = rem / 2;
@@ -511,9 +514,10 @@ export class ElectricalCalculator {
         return { V_node_phase, I_branch_phase };
       };
 
-      const phaseA = runBFSForPhase(0, S_A_map);
-      const phaseB = runBFSForPhase(-120, S_B_map);
-      const phaseC = runBFSForPhase(120, S_C_map);
+      // Pivot global : même angle (0°) pour tous les circuits pour préserver la notion de circuit
+      const phaseA = runBFSForPhase(globalAngle, S_A_map);
+      const phaseB = runBFSForPhase(globalAngle, S_B_map);
+      const phaseC = runBFSForPhase(globalAngle, S_C_map);
 
       // Compose cable results (par phase)
       calculatedCables.length = 0;
@@ -581,9 +585,10 @@ export class ElectricalCalculator {
 
       const sourceNode = nodes.find(n => n.isSource);
       for (const n of nodes) {
-        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, 0);
-        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(-120));
-        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(120));
+        // Récupération des tensions nodales par phase avec même angle global (préservation des circuits)
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Va_mag = abs(Va);
         const Vb_mag = abs(Vb);
         const Vc_mag = abs(Vc);
