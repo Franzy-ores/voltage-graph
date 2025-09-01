@@ -20,7 +20,8 @@ export interface TransformerConfig {
   nominalPower_kVA: number;    // Puissance nominale en kVA
   nominalVoltage_V: number;    // Tension nominale BT en V (230 ou 400)
   shortCircuitVoltage_percent: number; // Tension de court-circuit en %
-  cosPhi: number;              // Facteur de puissance (typique 0.95 pour PV)
+  cosPhi: number;              // Facteur de puissance (peut être utilisé ailleurs, mais pas pour Ztr)
+  xOverR?: number;             // Ratio X/R du transformateur (optionnel)
 }
 
 // Interface pour le jeu de barres virtuel

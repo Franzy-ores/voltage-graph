@@ -72,16 +72,19 @@ export class ElectricalCalculator {
   }
 
   private calculateCurrentA(S_kVA: number, connectionType: ConnectionType, sourceVoltage?: number): number {
+    // S_kVA = puissance apparente (kVA)
+    // Retourne le courant par phase (A) en utilisant la tension de phase/ligne selon le cas
     let { U_base, isThreePhase } = this.getVoltage(connectionType);
-    
-    // Utiliser la tension source si fournie
+
+    // Utiliser la tension source si fournie (ex: tension bus mesurée)
     if (sourceVoltage) {
       U_base = sourceVoltage;
     }
-    
-    const denom = (isThreePhase ? Math.sqrt(3) * U_base : U_base) * this.cosPhi;
+
+    const Sabs_kVA = Math.abs(S_kVA);
+    const denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     if (denom === 0) return 0;
-    return (S_kVA * 1000) / denom;
+    return (Sabs_kVA * 1000) / denom;
   }
 
   private getComplianceStatus(voltageDropPercent: number): 'normal'|'warning'|'critical' {
@@ -142,52 +145,42 @@ export class ElectricalCalculator {
     return result;
   }
 
-  // Calcul du jeu de barres virtuel avec analyse par départ
+  // Calcul du jeu de barres virtuel (phasors) avec analyse par départ
   private calculateVirtualBusbar(
     transformerConfig: TransformerConfig,
     totalLoads_kVA: number,
     totalProductions_kVA: number,
     source: Node,
-    adj: Map<string, { cableId:string; neighborId:string }[]>,
-    S_aval: Map<string, number>,
     children: Map<string, string[]>,
-    deltaUcum_V: Map<string, number>
+    S_aval: Map<string, number>,
+    V_node: Map<string, Complex>,
+    I_source_net: Complex,
+    Ztr_phase: Complex | null,
+    cableIndexByPair: Map<string, Cable>
   ): VirtualBusbar {
-    console.log('🔧 calculateVirtualBusbar called with:', {
-      transformerRating: transformerConfig.rating,
-      totalLoads_kVA,
-      totalProductions_kVA,
-      sourceId: source.id,
-      sourceTensionCible: source.tensionCible,
-      nominalVoltage: transformerConfig.nominalVoltage_V
-    });
+    const { U_base: U_nom_source, isThreePhase: isSourceThree } = this.getVoltage(source.connectionType);
+    const U_ref_line = source.tensionCible ?? transformerConfig.nominalVoltage_V ?? U_nom_source;
 
-    // base tension = consigne source si fournie sinon tension nominale transformateur
-    const baseU = source.tensionCible ?? transformerConfig.nominalVoltage_V;
-    console.log('🔧 Base voltage:', baseU);
+    // Tension slack de référence (phasor)
+    const Vslack = C(U_ref_line / (isSourceThree ? Math.sqrt(3) : 1), 0);
 
-    // Calcul de la puissance nette (charges - productions)
-    const chargesMinusProductions_kVA = totalLoads_kVA - totalProductions_kVA;
-    console.log('🔧 Charges minus productions:', chargesMinusProductions_kVA);
+    // ΔV transfo (phasor) et tension bus source (phasor)
+    const dVtr = Ztr_phase ? mul(Ztr_phase, I_source_net) : C(0, 0);
+    const V_bus = sub(Vslack, dVtr);
 
-    // ΔU total du transformateur (signed)
-    const voltageShift_total = this.calculateTransformerVoltageShift(transformerConfig, chargesMinusProductions_kVA, baseU);
-    console.log('🔧 Voltage shift total:', voltageShift_total);
+    const busVoltage_V = abs(V_bus) * (isSourceThree ? Math.sqrt(3) : 1);
+    const netSkVA = totalLoads_kVA - totalProductions_kVA;
+    const busCurrent_A = abs(I_source_net);
 
-    // tension du jeu de barres
-    const busVoltage = baseU + voltageShift_total;
-    console.log('🔧 Bus voltage:', busVoltage);
+    // ΔU global appliqué au bus (en V, ligne)
+    const dVtr_line = abs(dVtr) * (isSourceThree ? Math.sqrt(3) : 1);
+    const sign = netSkVA > 0 ? -1 : (netSkVA < 0 ? 1 : 0);
+    const dVtr_line_signed = sign * dVtr_line;
 
-    // courant total au bus (calculé à partir de la puissance nette absolue)
-    const busCurrent = this.calculateCurrentA(Math.abs(chargesMinusProductions_kVA), source.connectionType, busVoltage);
-    console.log('🔧 Bus current:', busCurrent);
-
-    // calcul indépendant pour chaque départ (voisin direct de la source)
-    const sourceAdj = adj.get(source.id) || [];
-    console.log('🔧 Source adjacency:', sourceAdj.length, 'edges');
+    // Récupérer les départs (voisins directs de la source)
+    const sourceChildren = children.get(source.id) || [];
     const circuits: VirtualBusbar['circuits'] = [];
 
-    // fonction utilitaire pour récupérer les nœuds d'un sous-arbre (depuis root)
     const collectSubtreeNodes = (rootId: string): string[] => {
       const res: string[] = [];
       const stack2 = [rootId];
@@ -199,48 +192,49 @@ export class ElectricalCalculator {
       return res;
     };
 
-    for (const edge of sourceAdj) {
-      const departNeighbor = edge.neighborId;
-      // S_aval contient charges - productions pour le sous-arbre
-      const subtreeChargesMinusProductions = S_aval.get(departNeighbor) || 0;
-      
-      // Déterminer la direction
-      const direction: 'injection' | 'prélèvement' = subtreeChargesMinusProductions < 0 ? 'injection' : 'prélèvement';
+    for (const childId of sourceChildren) {
+      const subtreeSkVA = S_aval.get(childId) || 0;
+      const direction: 'injection' | 'prélèvement' = subtreeSkVA < 0 ? 'injection' : 'prélèvement';
 
-      // courant sur le départ (A) basé sur la puissance dudit départ et la tension du bus
-      const departCurrent_A = this.calculateCurrentA(subtreeChargesMinusProductions, source.connectionType, busVoltage);
+      const cableId = cableIndexByPair.get(`${source.id}|${childId}`)?.id
+        ?? cableIndexByPair.get(`${childId}|${source.id}`)?.id
+        ?? 'unknown';
 
-      // attribution proportionnelle de la ΔU transfo sur ce départ (si chargesMinusProductions_kVA != 0)
-      const voltageShare = (chargesMinusProductions_kVA !== 0) ? 
-        (voltageShift_total * (subtreeChargesMinusProductions / chargesMinusProductions_kVA)) : 0;
+      // Courant du départ (approx. à partir de S et tension bus)
+      const departCurrent_A = this.calculateCurrentA(subtreeSkVA, source.connectionType, busVoltage_V);
 
-      // analyser les nœuds du sous-arbre pour obtenir tension min/max
-      const subtreeNodes = collectSubtreeNodes(departNeighbor);
+      // Part de ΔU transfo allouée proportionnellement à la puissance du sous-arbre
+      const voltageShare = netSkVA !== 0 ? (dVtr_line_signed * (subtreeSkVA / netSkVA)) : 0;
+
+      // Min/Max des tensions dans le sous-arbre à partir des phasors calculés
+      const subtreeNodes = collectSubtreeNodes(childId);
       let minNodeVoltage = Number.POSITIVE_INFINITY;
       let maxNodeVoltage = Number.NEGATIVE_INFINITY;
-
       for (const nid of subtreeNodes) {
-        const cumV = deltaUcum_V.get(nid) || 0; // cumul depuis la source
-        const nodeVoltage = busVoltage - cumV; // appliquer le cumul (signe inclus)
-        if (nodeVoltage < minNodeVoltage) minNodeVoltage = nodeVoltage;
-        if (nodeVoltage > maxNodeVoltage) maxNodeVoltage = nodeVoltage;
+        const nV = V_node.get(nid);
+        if (!nV) continue;
+        // Conversion ligne/phase basée sur le type de connexion (fallback: type de la source)
+        const nodeConnType: ConnectionType = nid === source.id
+          ? source.connectionType
+          : source.connectionType;
+        const isThree = this.getVoltage(nodeConnType).isThreePhase;
+        const U_node_line = abs(nV) * (isThree ? Math.sqrt(3) : 1);
+        if (U_node_line < minNodeVoltage) minNodeVoltage = U_node_line;
+        if (U_node_line > maxNodeVoltage) maxNodeVoltage = U_node_line;
       }
-
-      if (subtreeNodes.length === 0 || minNodeVoltage === Number.POSITIVE_INFINITY) {
-        // sécurité: si pas de nœuds (rare), considérer le noeud voisin lui-même
-        const cumV = deltaUcum_V.get(departNeighbor) || 0;
-        const nodeVoltage = busVoltage - cumV;
-        minNodeVoltage = nodeVoltage;
-        maxNodeVoltage = nodeVoltage;
+      if (subtreeNodes.length === 0 || !isFinite(minNodeVoltage)) {
+        const U_node_line = abs(V_bus) * (isSourceThree ? Math.sqrt(3) : 1);
+        minNodeVoltage = U_node_line;
+        maxNodeVoltage = U_node_line;
       }
 
       circuits.push({
-        circuitId: edge.cableId,
-        subtreeSkVA: subtreeChargesMinusProductions,
+        circuitId: cableId,
+        subtreeSkVA,
         direction,
         current_A: departCurrent_A,
         deltaU_V: voltageShare,
-        voltageBus_V: busVoltage,
+        voltageBus_V: busVoltage_V,
         minNodeVoltage_V: minNodeVoltage,
         maxNodeVoltage_V: maxNodeVoltage,
         nodesCount: subtreeNodes.length
@@ -248,10 +242,10 @@ export class ElectricalCalculator {
     }
 
     return {
-      voltage_V: busVoltage,
-      current_A: busCurrent,
-      netSkVA: chargesMinusProductions_kVA,
-      deltaU_V: voltageShift_total,
+      voltage_V: busVoltage_V,
+      current_A: busCurrent_A,
+      netSkVA,
+      deltaU_V: dVtr_line_signed,
       circuits
     };
   }
@@ -404,13 +398,26 @@ export class ElectricalCalculator {
     // Transformer series impedance (per phase)
     let Ztr_phase: Complex | null = null;
     if (transformerConfig) {
+      // Ztr (Ω/phase) à partir de Ucc% (en p.u.) et du ratio X/R si fourni
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
+      // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
       const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
-      const Zmag = Zpu * Zbase;
-      const cosTr = transformerConfig.cosPhi ?? 0.3;
-      const sinTr = Math.sqrt(Math.max(0, 1 - cosTr * cosTr));
-      Ztr_phase = C(Zmag * cosTr, Zmag * sinTr);
+      const Zmag = Zpu * Zbase; // |Z|
+
+      const xOverR = transformerConfig.xOverR;
+      let R = 0;
+      let X = 0;
+      if (typeof xOverR === 'number' && isFinite(xOverR) && xOverR > 0) {
+        // R = Z / sqrt(1 + (X/R)^2), X = R * (X/R)
+        R = Zmag / Math.sqrt(1 + xOverR * xOverR);
+        X = R * xOverR;
+      } else {
+        // Fallback par défaut si X/R inconnu
+        R = 0.05 * Zmag;
+        X = Math.sqrt(Math.max(0, Zmag * Zmag - R * R));
+      }
+      Ztr_phase = C(R, X);
     }
 
     const V_node = new Map<string, Complex>();
@@ -566,67 +573,35 @@ export class ElectricalCalculator {
       });
     }
 
-    // ---- CUMUL ΔU par chemin ----
-    const deltaUcum_V = new Map<string, number>();
-    const deltaUcum_percent = new Map<string, number>();
-    const deltaUcum_percent_nominal = new Map<string, number>(); // Pourcentage basé sur tension nominale pour conformité
-    deltaUcum_V.set(source.id, 0);
-    deltaUcum_percent.set(source.id, 0);
-    deltaUcum_percent_nominal.set(source.id, 0);
-
-    const parentCableOf = (u: string): (typeof calculatedCables)[number] | null => {
-      const p = parent.get(u);
-      if (!p) return null;
-      return calculatedCables.find(c =>
-        (c.nodeAId === p && c.nodeBId === u) || (c.nodeAId === u && c.nodeBId === p)
-      ) || null;
-    };
-
-    const stack = [source.id];
-    while (stack.length) {
-      const u = stack.pop()!;
-      for (const v of children.get(u) || []) {
-        const cab = parentCableOf(v);
-        if (!cab) continue;
-
-        const parentCumV = deltaUcum_V.get(u) || 0;
-        const thisDeltaV = cab.voltageDrop_V || 0;
-        const cumV = parentCumV + thisDeltaV;
-        deltaUcum_V.set(v, cumV);
-
-        let { U_base } = this.getVoltage((nodeById.get(v)!).connectionType);
-        
-        // Utiliser la tension source si définie pour le calcul du pourcentage cumulé (affichage)
-        const sourceNode = nodes.find(n => n.isSource);
-        if (sourceNode?.tensionCible) {
-          U_base = sourceNode.tensionCible;
-        }
-        
-        const cumPct = (cumV / U_base) * 100;
-        deltaUcum_percent.set(v, cumPct);
-
-        // Calculer le pourcentage basé sur la tension nominale pour la conformité
-        const nominalVoltage = (nodeById.get(v)!).connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
-        const cumPctNominal = (cumV / nominalVoltage) * 100;
-        deltaUcum_percent_nominal.set(v, cumPctNominal);
-
-        stack.push(v);
-      }
-    }
-
+    // ---- Évaluation nodale basée sur les phasors V_node ----
+    // On n'additionne plus les |ΔV| câble par câble ; on compare |V_node| à une référence U_ref
     let worstAbsPct = 0;
     const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
+
+    const sourceNode = nodes.find(n => n.isSource);
     for (const n of nodes) {
-      const pct = deltaUcum_percent.get(n.id) ?? 0;
-      const pctNominal = deltaUcum_percent_nominal.get(n.id) ?? 0; // Pour la conformité
-      const absPctNominal = Math.abs(pctNominal);
+      const Vn = V_node.get(n.id) || Vslack;
+      const { isThreePhase } = this.getVoltage(n.connectionType);
+      const U_node_line = abs(Vn) * (isThreePhase ? Math.sqrt(3) : 1);
+
+      // Référence d'affichage: tension cible source si fournie, sinon base de ce type de connexion
+      let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
+      if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
+
+      const deltaU_V = U_ref_display - U_node_line;
+      const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
+
+      // Référence nominale (conformité): 400V pour tétra, sinon 230V (équivalent via getVoltage)
+      const { U_base: U_nom } = this.getVoltage(n.connectionType);
+      const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line) / U_nom) * 100 : 0;
+      const absPctNom = Math.abs(deltaU_pct_nominal);
+      if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
+
       nodeVoltageDrops.push({
         nodeId: n.id,
-        deltaU_cum_V: deltaUcum_V.get(n.id) ?? 0,
-        deltaU_cum_percent: pct // Affichage avec tension source
+        deltaU_cum_V: deltaU_V,
+        deltaU_cum_percent: deltaU_pct
       });
-      // Utiliser le pourcentage nominal pour déterminer la pire conformité
-      if (absPctNominal > worstAbsPct) worstAbsPct = absPctNominal;
     }
 
     const compliance = this.getComplianceStatus(worstAbsPct);
@@ -634,20 +609,29 @@ export class ElectricalCalculator {
     // ---- VIRTUAL BUSBAR : calcul détaillé PAR DÉPART ----
     let virtualBusbar: VirtualBusbar | undefined;
     if (transformerConfig) {
-      console.log('🔄 Calculating virtual busbar with transformer:', transformerConfig.rating);
+      // Recalcule du courant net source après convergence
+      let I_source_net_final = C(0, 0);
+      for (const v of children.get(source.id) || []) {
+        const cab = parentCableOfChild.get(v);
+        if (!cab) continue;
+        I_source_net_final = add(I_source_net_final, I_branch.get(cab.id) || C(0, 0));
+      }
+      I_source_net_final = add(I_source_net_final, I_inj_node.get(source.id) || C(0, 0));
 
       virtualBusbar = this.calculateVirtualBusbar(
-        transformerConfig, 
-        totalLoads, 
-        totalProductions, 
-        source, 
-        adj, 
-        S_aval, 
-        children, 
-        deltaUcum_V
+        transformerConfig,
+        totalLoads,
+        totalProductions,
+        source,
+        children,
+        S_aval,
+        V_node,
+        I_source_net_final,
+        Ztr_phase,
+        cableIndexByPair
       );
-      
-      console.log('✅ Virtual busbar calculated (per-depart):', virtualBusbar);
+
+      console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);
     }
 
     console.log('🔄 Creating result object...');
