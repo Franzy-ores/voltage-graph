@@ -225,7 +225,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                   <Label className="text-sm font-medium">
                     Déséquilibre {currentProject.desequilibrePourcent || 0}%
                   </Label>
-                  <div className="flex items-center gap-2 min-w-[150px]">
+                  <div className="flex items-center gap-2 min-w-[180px]">
                     <Progress 
                       value={currentProject.desequilibrePourcent || 0} 
                       max={10}
@@ -237,7 +237,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                       max={10}
                       min={0}
                       step={0.5}
-                      className="w-12"
+                      className="w-20"
                     />
                   </div>
                 </div>
@@ -255,7 +255,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                   max={100}
                   min={0}
                   step={1}
-                  className="w-20 slider-charges"
+                  className="w-30 slider-charges"
                 />
               </div>
 
@@ -268,7 +268,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                   max={100}
                   min={0}
                   step={1}
-                  className="w-20 slider-productions"
+                  className="w-30 slider-productions"
                 />
               </div>
             </div>
