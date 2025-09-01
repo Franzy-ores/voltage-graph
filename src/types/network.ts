@@ -12,6 +12,8 @@ export type CablePose = "AÉRIEN" | "SOUTERRAIN";
 
 export type CalculationScenario = "PRÉLÈVEMENT" | "MIXTE" | "PRODUCTION";
 
+export type LoadModel = 'monophase_reparti' | 'polyphase_equilibre';
+
 // Types pour le transformateur HT1/BT
 export type TransformerRating = "160kVA" | "250kVA" | "400kVA" | "630kVA";
 
@@ -89,12 +91,15 @@ export interface Cable {
   nodeBId: string;
   coordinates: { lat: number; lng: number; }[];
   length_m?: number; // calculée automatiquement
-  // Résultats de calcul
+  // Résultats de calcul (agrégés)
   current_A?: number;
   voltageDrop_V?: number;
   voltageDropPercent?: number;
   losses_kW?: number;
   apparentPower_kVA?: number;
+  // Résultats détaillés par phase (optionnels, si déséquilibré)
+  currentsPerPhase_A?: { A: number; B: number; C: number; N?: number };
+  voltageDropPerPhase_V?: { A: number; B: number; C: number };
 }
 
 export interface Project {
@@ -107,6 +112,9 @@ export interface Project {
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
   transformerConfig: TransformerConfig; // Configuration du transformateur HT1/BT
+  // Nouveau: modèle de charge et taux de déséquilibre
+  loadModel?: LoadModel; // 'polyphase_equilibre' par défaut (compatibilité)
+  desequilibrePourcent?: number; // 0 à 100, uniquement si loadModel = 'monophase_reparti'
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
     south: number;
@@ -132,6 +140,7 @@ export interface CalculationResult {
   nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
   nodeMetrics?: { nodeId: string; V_phase_V: number; V_pu: number; I_inj_A: number }[];
   nodePhasors?: { nodeId: string; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[];
+  nodePhasorsPerPhase?: { nodeId: string; phase: 'A' | 'B' | 'C'; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
 }

@@ -63,7 +63,7 @@ interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
   loadProject: (project: Project) => void;
-  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA'>>) => void;
+  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent'>>) => void;
   
   // Node actions
   addNode: (lat: number, lng: number, connectionType: ConnectionType) => void;
@@ -159,6 +159,8 @@ const createDefaultProject = (): Project => ({
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
   transformerConfig: createDefaultTransformerConfig("TÉTRAPHASÉ_400V"), // Configuration transformateur par défaut
+  loadModel: 'polyphase_equilibre',
+  desequilibrePourcent: 0,
   nodes: [
     {
       id: "source",
@@ -185,6 +187,8 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   defaultChargeKVA: 10,
   defaultProductionKVA: 5,
   transformerConfig: createDefaultTransformerConfig(voltageSystem), // Configuration transformateur adaptée au système
+  loadModel: 'polyphase_equilibre',
+  desequilibrePourcent: 0,
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
