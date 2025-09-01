@@ -1,5 +1,6 @@
 import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
+import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
 
 export class ElectricalCalculator {
   private cosPhi: number;
