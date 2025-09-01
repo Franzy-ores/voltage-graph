@@ -114,6 +114,41 @@ const createDefaultTransformerConfig = (voltageSystem: VoltageSystem): Transform
   };
 };
 
+// Mapping robuste des types de connexion lors d'un changement de système de tension
+const mapConnectionTypeForVoltageSystem = (
+  oldType: ConnectionType,
+  newVoltageSystem: VoltageSystem,
+  isSource = false
+): ConnectionType => {
+  if (newVoltageSystem === 'TRIPHASÉ_230V') {
+    // Passage 400V -> 230V
+    switch (oldType) {
+      case 'TÉTRA_3P+N_230_400V':
+        return 'TRI_230V_3F';
+      case 'MONO_230V_PN':
+        return 'MONO_230V_PP';
+      case 'MONO_230V_PP':
+      case 'TRI_230V_3F':
+        return oldType; // déjà compatibles
+      default:
+        return isSource ? 'TRI_230V_3F' : 'TRI_230V_3F';
+    }
+  } else {
+    // Passage 230V -> 400V
+    switch (oldType) {
+      case 'TRI_230V_3F':
+        return 'TÉTRA_3P+N_230_400V';
+      case 'MONO_230V_PP':
+        return 'MONO_230V_PN';
+      case 'MONO_230V_PN':
+      case 'TÉTRA_3P+N_230_400V':
+        return oldType; // déjà compatibles
+      default:
+        return isSource ? 'TÉTRA_3P+N_230_400V' : 'TÉTRA_3P+N_230_400V';
+    }
+  }
+};
+
 const createDefaultProject = (): Project => ({
   id: `project-${Date.now()}`,
   name: "Nouveau Projet",
@@ -246,13 +281,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Si le système de tension change, harmoniser tout le projet
     if (updates.voltageSystem && updates.voltageSystem !== currentProject.voltageSystem) {
       const newVS: VoltageSystem = updates.voltageSystem;
-      const newConnectionType: ConnectionType = newVS === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
       const newNominal = newVS === 'TRIPHASÉ_230V' ? 230 : 400;
 
-      // Mettre à jour tous les nœuds (et retirer la tensionCible de la source pour éviter les incohérences)
+      // Mettre à jour tous les nœuds avec un mapping précis (et retirer la tensionCible de la source)
       const updatedNodes = currentProject.nodes.map((n) => ({
         ...n,
-        connectionType: newConnectionType,
+        connectionType: mapConnectionTypeForVoltageSystem(n.connectionType, newVS, !!n.isSource),
         tensionCible: n.isSource ? undefined : n.tensionCible,
       }));
 
@@ -647,13 +681,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const newVoltageSystem: VoltageSystem = 
       currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 'TÉTRAPHASÉ_400V' : 'TRIPHASÉ_230V';
     
-    const newConnectionType: ConnectionType = 
-      newVoltageSystem === 'TÉTRAPHASÉ_400V' ? 'TÉTRA_3P+N_230_400V' : 'TRI_230V_3F';
     const newNominal = newVoltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
 
     const updatedNodes = currentProject.nodes.map(node => ({
       ...node,
-      connectionType: newConnectionType,
+      connectionType: mapConnectionTypeForVoltageSystem(node.connectionType, newVoltageSystem, !!node.isSource),
       tensionCible: node.isSource ? undefined : node.tensionCible,
     }));
 
