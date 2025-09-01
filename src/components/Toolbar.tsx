@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { MousePointer, Plus, Cable, Edit, Trash2, Calculator, Move } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { toast } from 'sonner';
 
@@ -30,37 +29,37 @@ export const Toolbar = () => {
   const tools = [
     {
       id: 'select' as const,
-      icon: MousePointer,
+      emoji: '↖️',
       label: 'Sélectionner',
       description: 'Mode sélection'
     },
     {
       id: 'addNode' as const,
-      icon: Plus,
+      emoji: '➕',
       label: 'Ajouter nœud',
       description: 'Cliquer pour ajouter un nœud'
     },
     {
       id: 'addCable' as const,
-      icon: Cable,
+      emoji: '🔌',
       label: 'Ajouter câble',
       description: 'Connecter deux nœuds'
     },
     {
       id: 'edit' as const,
-      icon: Edit,
+      emoji: '⚙️',
       label: 'Éditer',
       description: 'Modifier les propriétés'
     },
     {
       id: 'move' as const,
-      icon: Move,
+      emoji: '✋',
       label: 'Déplacer',
       description: 'Déplacer un nœud'
     },
     {
       id: 'delete' as const,
-      icon: Trash2,
+      emoji: '🗑️',
       label: 'Supprimer',
       description: 'Supprimer un élément'
     }
@@ -69,7 +68,6 @@ export const Toolbar = () => {
   return (
     <div className="w-16 bg-muted/30 border-r flex flex-col items-center py-4 gap-2">
       {tools.map((tool) => {
-        const Icon = tool.icon;
         return (
           <Button
             key={tool.id}
@@ -84,7 +82,7 @@ export const Toolbar = () => {
             title={tool.description}
             className="w-12 h-12"
           >
-            <Icon className="w-5 h-5" />
+            <span className="text-lg">{tool.emoji}</span>
           </Button>
         );
       })}
@@ -97,7 +95,7 @@ export const Toolbar = () => {
         className="w-12 h-12"
         disabled={!currentProject}
       >
-        <Calculator className="w-5 h-5" />
+        <span className="text-lg">📊</span>
       </Button>
     </div>
   );
