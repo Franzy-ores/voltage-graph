@@ -127,9 +127,12 @@ export interface CalculationResult {
   totalProductions_kVA: number;
   globalLosses_kW: number;
   maxVoltageDropPercent: number;
+  maxVoltageDropCircuitNumber?: number; // Numéro de circuit avec la chute maximale
   compliance: 'normal' | 'warning' | 'critical';
   nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
   nodeMetrics?: { nodeId: string; V_phase_V: number; V_pu: number; I_inj_A: number }[];
+  nodePhasors?: { nodeId: string; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[];
+  cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
 }
 

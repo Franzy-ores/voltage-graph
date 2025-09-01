@@ -626,6 +626,85 @@ export class ElectricalCalculator {
       return { nodeId: n.id, V_phase_V, V_pu, I_inj_A: abs(Iinj) };
     });
 
+    // ---- Export phasors nodaux pour debug/analyse ----
+    const nodePhasors = nodes.map(n => {
+      const Vn = V_node.get(n.id) || Vslack;
+      const V_angle_deg = (Math.atan2(Vn.im, Vn.re) * 180) / Math.PI;
+      return {
+        nodeId: n.id,
+        V_real: Vn.re,
+        V_imag: Vn.im,
+        V_phase_V: abs(Vn),
+        V_angle_deg
+      };
+    });
+
+    // ---- Export flux de puissance P/Q par tronçon ----
+    const cablePowerFlows = calculatedCables.map(cab => {
+      const childId = cableChildId.get(cab.id);
+      const parentId = cableParentId.get(cab.id);
+      const distalId = childId && parentId ? childId : (parent.get(cab.nodeBId) === cab.nodeAId ? cab.nodeBId : cab.nodeAId);
+      const distalNode = nodeById.get(distalId)!;
+      const { isThreePhase } = this.getVoltage(distalNode.connectionType);
+
+      // Courant et tension au départ du tronçon
+      const Iph = I_branch.get(cab.id) || C(0, 0);
+      const parentIdForCab = parentId ?? (parent.get(cab.nodeBId) === cab.nodeAId ? cab.nodeAId : cab.nodeBId);
+      const Vu = V_node.get(parentIdForCab || cab.nodeAId) || Vslack;
+      
+      // Puissance complexe par phase : S = V * I*
+      const S_phase = mul(Vu, conj(Iph));
+      const phaseFactor = isThreePhase ? 3 : 1;
+      
+      const P_kW = (S_phase.re * phaseFactor) / 1000;
+      const Q_kVAr = (S_phase.im * phaseFactor) / 1000;
+      const S_kVA = (abs(S_phase) * phaseFactor) / 1000;
+      const pf = S_kVA > 1e-6 ? Math.abs(P_kW / S_kVA) : 1; // facteur de puissance
+
+      return {
+        cableId: cab.id,
+        P_kW: Number(P_kW.toFixed(3)),
+        Q_kVAr: Number(Q_kVAr.toFixed(3)),
+        S_kVA: Number(S_kVA.toFixed(3)),
+        pf: Number(pf.toFixed(3))
+      };
+    });
+
+    // ---- Déterminer le circuit avec la chute maximale ----
+    let maxVoltageDropCircuitNumber: number | undefined;
+    if (virtualBusbar?.circuits) {
+      let worstDropPercent = 0;
+      for (const circuit of virtualBusbar.circuits) {
+        const circuitNodes = new Set<string>();
+        // Trouver tous les nœuds de ce circuit
+        const mainCircuitCables = cables.filter(c => c.id === circuit.circuitId);
+        for (const cable of mainCircuitCables) {
+          circuitNodes.add(cable.nodeAId);
+          circuitNodes.add(cable.nodeBId);
+        }
+        
+        // Trouver la pire chute dans ce circuit
+        for (const nodeId of circuitNodes) {
+          const nodeVoltageDrop = nodeVoltageDrops.find(nvd => nvd.nodeId === nodeId);
+          if (nodeVoltageDrop) {
+            const absPct = Math.abs(nodeVoltageDrop.deltaU_cum_percent);
+            if (absPct > worstDropPercent) {
+              worstDropPercent = absPct;
+              // Déterminer le numéro de circuit
+              const sourceNode = nodes.find(n => n.isSource);
+              if (sourceNode) {
+                const mainCircuitCables = cables
+                  .filter(cable => cable.nodeAId === sourceNode.id || cable.nodeBId === sourceNode.id)
+                  .sort((a, b) => a.id.localeCompare(b.id));
+                const circuitIndex = mainCircuitCables.findIndex(cable => cable.id === circuit.circuitId);
+                maxVoltageDropCircuitNumber = circuitIndex >= 0 ? circuitIndex + 1 : undefined;
+              }
+            }
+          }
+        }
+      }
+    }
+
     console.log('🔄 Creating result object...');
     const result: CalculationResult = {
       scenario,
@@ -634,9 +713,12 @@ export class ElectricalCalculator {
       totalProductions_kVA: totalProductions,
       globalLosses_kW: Number(globalLosses.toFixed(6)),
       maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
+      maxVoltageDropCircuitNumber,
       compliance,
       nodeVoltageDrops,
       nodeMetrics,
+      nodePhasors,
+      cablePowerFlows,
       virtualBusbar
     };
 

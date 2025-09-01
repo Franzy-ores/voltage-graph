@@ -289,10 +289,44 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
               </div>
               <div>
                 <p className="text-muted-foreground">Chute max.</p>
-                <p className="font-semibold">{currentResult.maxVoltageDropPercent.toFixed(2)}%</p>
+                <p className="font-semibold">
+                  {currentResult.maxVoltageDropPercent.toFixed(2)}%
+                  {currentResult.maxVoltageDropCircuitNumber && (
+                    <span className="text-muted-foreground text-xs ml-1">
+                      (Circuit {currentResult.maxVoltageDropCircuitNumber})
+                    </span>
+                  )}
+                </p>
               </div>
             </div>
             
+            {/* Infos Transformateur et Jeu de Barres */}
+            {currentResult.virtualBusbar && (
+              <div className="pt-3 border-t space-y-3">
+                <div>
+                  <p className="text-muted-foreground text-sm mb-2">Transformateur :</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span>
+                      {currentProject?.transformerConfig.rating} - 
+                      {currentProject?.transformerConfig.shortCircuitVoltage_percent}% Ucc
+                    </span>
+                    <span>
+                      Pertes: {currentResult.virtualBusbar.losses_kW?.toFixed(3) || 0} kW
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-sm mb-2">Jeu de barres :</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <span>Tension: {currentResult.virtualBusbar.voltage_V.toFixed(1)} V</span>
+                    <span>Courant: {currentResult.virtualBusbar.current_A.toFixed(1)} A</span>
+                    <span>Net S: {currentResult.virtualBusbar.netSkVA.toFixed(1)} kVA</span>
+                    <span>ΔU: {currentResult.virtualBusbar.deltaU_percent?.toFixed(2) || 0}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Statistiques par circuit */}
             <div className="pt-3 border-t">
               <div className="grid grid-cols-2 gap-4 text-sm mb-3">
@@ -347,17 +381,55 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-xs">
-                {circuitStats.circuitStats.map((circuit) => (
-                  <div key={circuit.circuitId} className="p-2 rounded border border-border">
-                    <p className="font-medium mb-1">{circuit.circuitName}</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <span>Puissance: {Math.abs(circuit.subtreeSkVA).toFixed(1)} kVA</span>
-                      <span>Longueur: {circuit.length.toFixed(0)} m</span>
-                      <span>Direction: {circuit.direction}</span>
-                      <span>Câbles: {circuit.cableCount}</span>
+                {circuitStats.circuitStats.map((circuit) => {
+                  // Trouver le circuit dans virtualBusbar pour la conformité
+                  const busbarCircuit = currentResult.virtualBusbar?.circuits.find(c => c.circuitId === circuit.circuitId);
+                  
+                  // Déterminer la conformité du circuit basée sur la tension min/max
+                  let circuitCompliance: 'normal' | 'warning' | 'critical' = 'normal';
+                  if (busbarCircuit) {
+                    const nominalVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+                    const minDropPercent = Math.abs((nominalVoltage - busbarCircuit.minNodeVoltage_V) / nominalVoltage * 100);
+                    const maxDropPercent = Math.abs((nominalVoltage - busbarCircuit.maxNodeVoltage_V) / nominalVoltage * 100);
+                    const worstDrop = Math.max(minDropPercent, maxDropPercent);
+                    
+                    if (worstDrop > 10) circuitCompliance = 'critical';
+                    else if (worstDrop > 8) circuitCompliance = 'warning';
+                  }
+                  
+                  // Indicateur coloré de conformité
+                  const getComplianceIcon = (compliance: 'normal' | 'warning' | 'critical') => {
+                    const colors = {
+                      normal: 'bg-blue-500',
+                      warning: 'bg-orange-500', 
+                      critical: 'bg-red-500'
+                    };
+                    return (
+                      <div className={`w-3 h-3 rounded-full ${colors[compliance]} flex-shrink-0`} />
+                    );
+                  };
+
+                  return (
+                    <div key={circuit.circuitId} className="p-2 rounded border border-border">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getComplianceIcon(circuitCompliance)}
+                        <p className="font-medium">{circuit.circuitName}</p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <span>Puissance: {Math.abs(circuit.subtreeSkVA).toFixed(1)} kVA</span>
+                        <span>Longueur: {circuit.length.toFixed(0)} m</span>
+                        <span>Direction: {circuit.direction}</span>
+                        <span>Câbles: {circuit.cableCount}</span>
+                        {busbarCircuit && (
+                          <>
+                            <span>U min: {busbarCircuit.minNodeVoltage_V.toFixed(1)} V</span>
+                            <span>U max: {busbarCircuit.maxNodeVoltage_V.toFixed(1)} V</span>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
