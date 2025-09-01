@@ -90,8 +90,6 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
     return { totalLength, circuitStats, connectedCableCount: connectedCables.length };
   };
   
-  const circuitStats = getCircuitStatistics();
-  
   // Add safety checks
   if (!results || !selectedScenario) {
     return (
@@ -158,6 +156,8 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
       </div>
     );
   }
+
+  const circuitStats = getCircuitStatistics();
 
   return (
     <div className="w-80 bg-card border-l border-border overflow-y-auto">
