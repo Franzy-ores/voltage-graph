@@ -509,7 +509,44 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   setSelectedTool: (tool) => set({ selectedTool: tool }),
-  setSelectedScenario: (scenario) => set({ selectedScenario: scenario }),
+  setSelectedScenario: (scenario) => {
+    const { currentProject, updateAllCalculations } = get();
+    
+    // Définir les valeurs de curseurs selon le scénario
+    let chargesValue: number;
+    let productionsValue: number;
+    
+    switch (scenario) {
+      case 'PRODUCTION':
+        chargesValue = 0;
+        productionsValue = 100;
+        break;
+      case 'MIXTE':
+        chargesValue = 30;
+        productionsValue = 100;
+        break;
+      case 'PRÉLÈVEMENT':
+      default:
+        chargesValue = 30;
+        productionsValue = 0;
+        break;
+    }
+    
+    // Mettre à jour le scénario et les curseurs
+    set({ 
+      selectedScenario: scenario,
+      currentProject: currentProject ? {
+        ...currentProject,
+        foisonnementCharges: chargesValue,
+        foisonnementProductions: productionsValue
+      } : currentProject
+    });
+    
+    // Recalculer si un projet est chargé
+    if (currentProject) {
+      updateAllCalculations();
+    }
+  },
   setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
   setSelectedCable: (cableId) => set({ selectedCableId: cableId }),
   setSelectedCableType: (cableTypeId) => set({ selectedCableType: cableTypeId }),
