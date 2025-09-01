@@ -3,6 +3,7 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Progress } from "@/components/ui/progress";
 import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 import { PDFGenerator } from "@/utils/pdfGenerator";
@@ -26,7 +27,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
     setSelectedScenario,
     changeVoltageSystem,
     calculationResults,
-    updateCableTypes
+    updateCableTypes,
+    updateProjectConfig
   } = useNetworkStore();
 
   const handleExportPDF = async () => {
@@ -127,6 +129,52 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
             >
               {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
             </Button>
+
+            {/* Load Model and Unbalance Controls */}
+            <div className="flex flex-col gap-2">
+              {/* Load Model Selector */}
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium whitespace-nowrap">Modèle:</Label>
+                <Select 
+                  value={currentProject.loadModel || 'polyphase_equilibre'} 
+                  onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => 
+                    updateProjectConfig({ loadModel: value })
+                  }
+                >
+                  <SelectTrigger className="w-[160px] bg-white/10 border-white/20 text-primary-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-[10000]">
+                    <SelectItem value="polyphase_equilibre">Polyphasé équilibré</SelectItem>
+                    <SelectItem value="monophase_reparti">Monophasé réparti</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Unbalance Progress Bar - Only for monophase_reparti */}
+              {currentProject.loadModel === 'monophase_reparti' && (
+                <div className="flex items-center gap-3 min-w-[200px]">
+                  <Label className="text-sm font-medium whitespace-nowrap">
+                    Déséquilibre {currentProject.desequilibrePourcent || 0}%
+                  </Label>
+                  <div className="flex-1 flex items-center gap-2">
+                    <Progress 
+                      value={currentProject.desequilibrePourcent || 0} 
+                      max={10}
+                      className="flex-1 h-2"
+                    />
+                    <Slider
+                      value={[currentProject.desequilibrePourcent || 0]}
+                      onValueChange={(value) => updateProjectConfig({ desequilibrePourcent: value[0] })}
+                      max={10}
+                      min={0}
+                      step={0.5}
+                      className="w-16"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Charges and Productions Sliders - Vertical Layout */}
             <div className="flex flex-col gap-2">

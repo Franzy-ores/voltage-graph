@@ -274,6 +274,18 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 <p className="font-semibold">{currentProject?.foisonnementCharges || 100}%</p>
               </div>
               <div>
+                <p className="text-muted-foreground">Modèle de charge</p>
+                <p className="font-semibold">
+                  {currentProject?.loadModel === 'monophase_reparti' ? 'Monophasé réparti' : 'Polyphasé équilibré'}
+                </p>
+              </div>
+              {currentProject?.loadModel === 'monophase_reparti' && (
+                <div>
+                  <p className="text-muted-foreground">Déséquilibre</p>
+                  <p className="font-semibold">{currentProject?.desequilibrePourcent || 0}%</p>
+                </div>
+              )}
+              <div>
                 <p className="text-muted-foreground">Charge foisonnée</p>
                 <p className="font-semibold">{currentResult.totalLoads_kVA.toFixed(1)} kVA</p>
               </div>
