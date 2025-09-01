@@ -255,7 +255,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                   max={100}
                   min={0}
                   step={1}
-                  className="w-30 slider-charges"
+                  className="w-32 slider-charges"
                 />
               </div>
 
@@ -268,7 +268,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
                   max={100}
                   min={0}
                   step={1}
-                  className="w-30 slider-productions"
+                  className="w-32 slider-productions"
                 />
               </div>
             </div>
