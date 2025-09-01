@@ -341,6 +341,26 @@ export const MapView = () => {
     const map = mapInstanceRef.current;
     if (!map || !currentProject) return;
 
+  // Fonction pour obtenir la numérotation séquentielle des circuits
+  const getCircuitNumber = (circuitId: string) => {
+    if (!calculationResults[selectedScenario]?.virtualBusbar?.circuits || !currentProject) {
+      return null;
+    }
+    
+    // Trouver la source
+    const sourceNode = currentProject.nodes.find(n => n.isSource);
+    if (!sourceNode) return null;
+    
+    // Obtenir tous les câbles directement connectés à la source (circuits principaux)
+    const mainCircuitCables = currentProject.cables
+      .filter(cable => cable.nodeAId === sourceNode.id || cable.nodeBId === sourceNode.id)
+      .sort((a, b) => a.id.localeCompare(b.id)); // Tri pour assurer la cohérence
+    
+    // Trouver l'index du circuit
+    const circuitIndex = mainCircuitCables.findIndex(cable => cable.id === circuitId);
+    return circuitIndex >= 0 ? circuitIndex + 1 : null;
+  };
+
   // Fonction pour obtenir le circuit d'un nœud
   const getNodeCircuit = (nodeId: string) => {
     if (!calculationResults[selectedScenario]?.virtualBusbar?.circuits || !currentProject) {
@@ -356,7 +376,7 @@ export const MapView = () => {
       if (cable) {
         // Vérifier si le nœud est directement connecté au câble principal du circuit
         if (cable.nodeAId === nodeId || cable.nodeBId === nodeId) {
-          return circuit.circuitId.replace('cable-', '');
+          return getCircuitNumber(circuit.circuitId);
         }
         
         // Vérifier si le nœud fait partie du sous-arbre de ce circuit
@@ -374,7 +394,7 @@ export const MapView = () => {
           visited.add(currentId);
           
           if (currentId === nodeId) {
-            return circuit.circuitId.replace('cable-', '');
+            return getCircuitNumber(circuit.circuitId);
           }
           
           // Ajouter les nœuds voisins (sauf la source)

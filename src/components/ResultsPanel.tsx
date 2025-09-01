@@ -17,8 +17,26 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   
   const currentResult = results[selectedScenario];
 
+  // Fonction pour obtenir la numérotation séquentielle des circuits
+  const getCircuitNumber = (circuitId: string): number => {
+    if (!currentResult?.virtualBusbar?.circuits || !currentProject) return 0;
+    
+    // Trouver la source
+    const sourceNode = currentProject.nodes.find(n => n.isSource);
+    if (!sourceNode) return 0;
+    
+    // Obtenir tous les câbles directement connectés à la source (circuits principaux)
+    const mainCircuitCables = currentProject.cables
+      .filter(cable => cable.nodeAId === sourceNode.id || cable.nodeBId === sourceNode.id)
+      .sort((a, b) => a.id.localeCompare(b.id)); // Tri pour assurer la cohérence
+    
+    // Trouver l'index du circuit
+    const circuitIndex = mainCircuitCables.findIndex(cable => cable.id === circuitId);
+    return circuitIndex >= 0 ? circuitIndex + 1 : 0;
+  };
+
   // Fonction pour identifier le circuit d'un nœud
-  const getNodeCircuit = (nodeId: string): { circuitId: string; circuitName: string } | null => {
+  const getNodeCircuit = (nodeId: string): { circuitId: string; circuitName: string; circuitNumber: number } | null => {
     if (!currentResult?.virtualBusbar?.circuits || !currentProject) return null;
     
     // Si c'est la source, pas de circuit
@@ -29,9 +47,11 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
     for (const circuit of currentResult.virtualBusbar.circuits) {
       const cable = currentProject.cables.find(c => c.id === circuit.circuitId);
       if (cable && (cable.nodeAId === nodeId || cable.nodeBId === nodeId)) {
+        const circuitNumber = getCircuitNumber(circuit.circuitId);
         return {
           circuitId: circuit.circuitId,
-          circuitName: `Circuit ${circuit.circuitId.replace('cable-', '')}`
+          circuitName: `Circuit ${circuitNumber}`,
+          circuitNumber
         };
       }
     }
@@ -51,6 +71,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
     const circuitStats: Array<{
       circuitId: string;
       circuitName: string;
+      circuitNumber: number;
       length: number;
       cableCount: number;
       subtreeSkVA: number;
@@ -58,8 +79,12 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
       cables: any[];
     }> = [];
     
-    // Grouper par circuit
-    currentResult.virtualBusbar.circuits.forEach(circuit => {
+    // Grouper par circuit (trié par numéro de circuit)
+    const sortedCircuits = currentResult.virtualBusbar.circuits
+      .map(circuit => ({ ...circuit, circuitNumber: getCircuitNumber(circuit.circuitId) }))
+      .sort((a, b) => a.circuitNumber - b.circuitNumber);
+    
+    sortedCircuits.forEach(circuit => {
       const circuitCables = connectedCables.filter(cable => {
         // Trouver tous les câbles qui appartiennent à ce circuit
         const mainCable = currentProject.cables.find(c => c.id === circuit.circuitId);
@@ -76,9 +101,12 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
       const circuitLength = circuitCables.reduce((sum, cable) => sum + (cable.length_m || 0), 0);
       totalLength += circuitLength;
       
+      const circuitNumber = getCircuitNumber(circuit.circuitId);
+      
       circuitStats.push({
         circuitId: circuit.circuitId,
-        circuitName: `Circuit ${circuit.circuitId.replace('cable-', '')}`,
+        circuitName: `Circuit ${circuitNumber}`,
+        circuitNumber,
         length: circuitLength,
         cableCount: circuitCables.length,
         subtreeSkVA: circuit.subtreeSkVA,
@@ -402,14 +430,14 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                       const distalNodeVoltage = sourceVoltage - distalCumulativeVoltageDrop;
                       
                             return (
-                              <TableRow key={cable.id}>
-                                <TableCell className="text-xs">
-                                  {cable.name}
-                                  <div className="text-muted-foreground text-xs">
-                                    Circuit {circuit.circuitId.replace('cable-', '')}
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-xs">{sourceNodeVoltage.toFixed(0)}</TableCell>
+                               <TableRow key={cable.id}>
+                                 <TableCell className="text-xs">
+                                   {cable.name}
+                                   <div className="text-muted-foreground text-xs">
+                                     Circuit {circuit.circuitNumber}
+                                   </div>
+                                 </TableCell>
+                                 <TableCell className="text-xs">{sourceNodeVoltage.toFixed(0)}</TableCell>
                                 <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
                                 <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
                                 <TableCell className="text-xs">
