@@ -1,6 +1,6 @@
 import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
-import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
+import { Complex, C, add, sub, mul, div, conj, scale, abs } from '@/utils/complex';
 
 export class ElectricalCalculator {
   private cosPhi: number;
@@ -349,53 +349,220 @@ export class ElectricalCalculator {
       totalProductions += (n.productions || []).reduce((s,p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
     }
 
-    for (const cable of cables) {
-      let distalNodeId: string | null = null;
-      if (parent.get(cable.nodeBId) === cable.nodeAId) distalNodeId = cable.nodeBId;
-      else if (parent.get(cable.nodeAId) === cable.nodeBId) distalNodeId = cable.nodeAId;
-      else distalNodeId = cable.nodeBId;
+    // ---- Power Flow using Backward-Forward Sweep (complex R+jX) ----
+    // Build helper indices
+    const cableIndexByPair = new Map<string, (typeof cables)[number]>();
+    for (const cab of cables) {
+      const key1 = `${cab.nodeAId}|${cab.nodeBId}`;
+      const key2 = `${cab.nodeBId}|${cab.nodeAId}`;
+      cableIndexByPair.set(key1, cab);
+      cableIndexByPair.set(key2, cab);
+    }
 
-      const distalS_kVA = S_aval.get(distalNodeId || cable.nodeBId) || 0;
-      const ct = cableTypeById.get(cable.typeId);
-      if (!ct) throw new Error(`Cable type ${cable.typeId} introuvable`);
+    const parentCableOfChild = new Map<string, (typeof cables)[number]>();
+    for (const [nodeId, p] of parent.entries()) {
+      if (!p) continue;
+      const cab = cableIndexByPair.get(`${p}|${nodeId}`);
+      if (cab) parentCableOfChild.set(nodeId, cab);
+    }
 
-      const length_m = this.calculateLengthMeters(cable.coordinates || []);
+    // Per-cable per-phase impedance (Ω)
+    const cableZ_phase = new Map<string, Complex>();
+    const cableChildId = new Map<string, string>();
+    const cableParentId = new Map<string, string>();
+
+    for (const [childId, cab] of parentCableOfChild.entries()) {
+      const parentId = parent.get(childId)!;
+      const distalNode = nodeById.get(childId)!;
+      const ct = cableTypeById.get(cab.typeId);
+      if (!ct) throw new Error(`Cable type ${cab.typeId} introuvable`);
+      const length_m = this.calculateLengthMeters(cab.coordinates || []);
       const L_km = length_m / 1000;
 
-      const distalNode = nodeById.get(distalNodeId || cable.nodeBId)!;
-      const connectionType = distalNode.connectionType;
+      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, distalNode.connectionType);
+      // Series impedance per phase for the full segment
+      const Z = C(R_ohm_per_km * L_km, X_ohm_per_km * L_km);
+      cableZ_phase.set(cab.id, Z);
+      cableChildId.set(cab.id, childId);
+      cableParentId.set(cab.id, parentId);
+    }
 
-      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, connectionType);
-      const sinPhi = Math.sqrt(1 - this.cosPhi * this.cosPhi);
+    // Node complex powers (per phase) and initial voltages
+    const S_node_total_kVA = new Map<string, number>(); // signed (charges>0, productions<0)
+    for (const n of nodes) {
+      S_node_total_kVA.set(n.id, S_eq.get(n.id) || 0);
+    }
 
-      // Trouver la source pour utiliser sa tension si définie
-      const sourceNode = nodes.find(n => n.isSource);
+    const VcfgSrc = this.getVoltage(source.connectionType);
+    let U_line_base = VcfgSrc.U_base;
+    if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
+    if (source.tensionCible) U_line_base = source.tensionCible;
+    const isSrcThree = VcfgSrc.isThreePhase;
+    const Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
+    const Vslack = C(Vslack_phase, 0);
 
-      const I_A = this.calculateCurrentA(distalS_kVA, connectionType, sourceNode?.tensionCible);
+    // Transformer series impedance (per phase)
+    let Ztr_phase: Complex | null = null;
+    if (transformerConfig) {
+      const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
+      const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
+      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
+      const Zmag = Zpu * Zbase;
+      const cosTr = transformerConfig.cosPhi ?? 0.3;
+      const sinTr = Math.sqrt(Math.max(0, 1 - cosTr * cosTr));
+      Ztr_phase = C(Zmag * cosTr, Zmag * sinTr);
+    }
 
-      let { U_base, isThreePhase } = this.getVoltage(connectionType);
-      
-      // Utiliser la tension source si définie
-      if (sourceNode?.tensionCible) {
-        U_base = sourceNode.tensionCible;
+    const V_node = new Map<string, Complex>();
+    for (const n of nodes) V_node.set(n.id, Vslack);
+
+    const sinPhi = Math.sqrt(Math.max(0, 1 - this.cosPhi * this.cosPhi));
+
+    // Helper: per-node per-phase complex power in VA (signed)
+    const S_node_phase_VA = new Map<string, Complex>();
+    const computeNodeS = () => {
+      S_node_phase_VA.clear();
+      for (const n of nodes) {
+        const S_kVA = S_node_total_kVA.get(n.id) || 0; // signed
+        const P_kW = S_kVA * this.cosPhi;
+        const Q_kVAr = S_kVA * sinPhi;
+        const S_VA_total = C(P_kW * 1000, Q_kVAr * 1000);
+        const { isThreePhase } = this.getVoltage(n.connectionType);
+        const divisor = isThreePhase ? 3 : 1;
+        S_node_phase_VA.set(n.id, scale(S_VA_total, 1 / divisor));
       }
-      
-      const reactTerm = (R_ohm_per_km * this.cosPhi + X_ohm_per_km * sinPhi);
-      const deltaU_V = (isThreePhase ? Math.sqrt(3) : 1) * I_A * reactTerm * L_km;
-      const deltaU_percent = (deltaU_V / U_base) * 100;
+    };
+    computeNodeS();
 
-      const R_total = R_ohm_per_km * L_km;
-      const losses_kW = (I_A * I_A * R_total) / 1000;
+    // Iterative BFS
+    const maxIter = 50;
+    const tol = 1e-4;
+    let iter = 0;
+    let converged = false;
+
+    // Storage
+    const I_branch = new Map<string, Complex>(); // by cable id (per phase)
+    const I_inj_node = new Map<string, Complex>();
+
+    while (iter < maxIter) {
+      iter++;
+      const V_prev = new Map(V_node);
+
+      // Backward: compute injection currents then branch currents bottom-up
+      I_branch.clear();
+      I_inj_node.clear();
+
+      for (const n of nodes) {
+        const Vn = V_node.get(n.id) || Vslack;
+        const Sph = S_node_phase_VA.get(n.id) || C(0, 0);
+        const Vsafe = abs(Vn) > 1e-6 ? Vn : Vslack;
+        // I = conj(S / V)
+        const Iinj = conj(div(Sph, Vsafe));
+        I_inj_node.set(n.id, Iinj);
+      }
+
+      for (const u of postOrder) {
+        if (u === source.id) continue;
+        const childrenIds = children.get(u) || [];
+        let I_sum = C(0, 0);
+        for (const v of childrenIds) {
+          const cabChild = parentCableOfChild.get(v);
+          if (!cabChild) continue;
+          const Ichild = I_branch.get(cabChild.id) || C(0, 0);
+          I_sum = add(I_sum, Ichild);
+        }
+        I_sum = add(I_sum, I_inj_node.get(u) || C(0, 0));
+        const cab = parentCableOfChild.get(u);
+        if (cab) I_branch.set(cab.id, I_sum);
+      }
+
+      // Current entering the source bus from network
+      let I_source_net = C(0, 0);
+      for (const v of children.get(source.id) || []) {
+        const cab = parentCableOfChild.get(v);
+        if (!cab) continue;
+        I_source_net = add(I_source_net, I_branch.get(cab.id) || C(0, 0));
+      }
+      I_source_net = add(I_source_net, I_inj_node.get(source.id) || C(0, 0));
+
+      // Forward: propagate voltages from slack through transformer and along feeders
+      const V_source_bus = Ztr_phase ? sub(Vslack, mul(Ztr_phase, I_source_net)) : Vslack;
+      V_node.set(source.id, V_source_bus);
+
+      const stack2 = [source.id];
+      while (stack2.length) {
+        const u = stack2.pop()!;
+        for (const v of children.get(u) || []) {
+          const cab = parentCableOfChild.get(v);
+          if (!cab) continue;
+          const Z = cableZ_phase.get(cab.id) || C(0, 0);
+          const Iuv = I_branch.get(cab.id) || C(0, 0);
+          const Vu = V_node.get(u) || Vslack;
+          const Vv = sub(Vu, mul(Z, Iuv));
+          V_node.set(v, Vv);
+          stack2.push(v);
+        }
+      }
+
+      // Convergence check
+      let maxDelta = 0;
+      for (const [nid, Vn] of V_node.entries()) {
+        const Vp = V_prev.get(nid) || Vslack;
+        const d = abs(sub(Vn, Vp));
+        if (d > maxDelta) maxDelta = d;
+      }
+      if (maxDelta / (Vslack_phase || 1) < tol) { converged = true; break; }
+    }
+
+    // Compose cable results from final branch currents and voltages
+    calculatedCables.length = 0;
+    globalLosses = 0;
+
+    for (const cab of cables) {
+      const childId = cableChildId.get(cab.id);
+      const parentId = cableParentId.get(cab.id);
+      const length_m = this.calculateLengthMeters(cab.coordinates || []);
+      const L_km = length_m / 1000;
+      const ct = cableTypeById.get(cab.typeId);
+      if (!ct) throw new Error(`Cable type ${cab.typeId} introuvable`);
+
+      // Determine distal node (child) for connection type
+      const distalId = childId && parentId ? childId : (parent.get(cab.nodeBId) === cab.nodeAId ? cab.nodeBId : cab.nodeAId);
+      const distalNode = nodeById.get(distalId)!;
+      const { isThreePhase } = this.getVoltage(distalNode.connectionType);
+
+      // Per-phase Z
+      let Z = cableZ_phase.get(cab.id);
+      if (!Z) {
+        // In case edge is not in the tree (shouldn't happen in radial), compute on the fly
+        const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, distalNode.connectionType);
+        Z = C(R_ohm_per_km * L_km, X_ohm_per_km * L_km);
+      }
+
+      const Iph = I_branch.get(cab.id) || C(0, 0);
+      const dVph = mul(Z!, Iph);
+      const current_A = abs(Iph);
+      const deltaU_line_V = abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
+
+      // Base voltage for percent: prefer source target voltage if provided
+      let { U_base } = this.getVoltage(distalNode.connectionType);
+      const srcTarget = nodes.find(n => n.isSource)?.tensionCible;
+      if (srcTarget) U_base = srcTarget;
+      const deltaU_percent = U_base ? (deltaU_line_V / U_base) * 100 : 0;
+
+      const R_total = Z!.re; // per phase
+      const phaseFactor = isThreePhase ? 3 : 1;
+      const losses_kW = (current_A * current_A * R_total * phaseFactor) / 1000;
 
       globalLosses += losses_kW;
 
       calculatedCables.push({
-        ...cable,
+        ...cab,
         length_m,
-        current_A: I_A,
-        voltageDrop_V: deltaU_V,
+        current_A,
+        voltageDrop_V: deltaU_line_V,
         voltageDropPercent: deltaU_percent,
-        losses_kW: losses_kW
+        losses_kW
       });
     }
 
