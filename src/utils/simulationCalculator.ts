@@ -21,6 +21,12 @@ import { Complex, C, add, sub, mul, div, abs } from '@/utils/complex';
 export class SimulationCalculator extends ElectricalCalculator {
   
   private convergenceTolerance = 0.1; // 0.1V pour tous les tests
+  private simCosPhi: number;
+  
+  constructor(cosPhi: number = 0.95) {
+    super(cosPhi);
+    this.simCosPhi = Math.min(1, Math.max(0, cosPhi));
+  }
   
   /**
    * Calcule un scénario avec équipements de simulation
@@ -206,22 +212,53 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       let equipmentChanged = false;
       
-      // 2. Traiter les régulateurs de tension (PV nodes)
+      // 2. Traiter les régulateurs de tension (PV nodes) avec recalcul aval après chaque ajustement
       for (const [nodeId, regulator] of regulators.entries()) {
-        if (!currentResult.nodeMetrics) continue;
-        
-        const nodeMetric = currentResult.nodeMetrics.find(m => m.nodeId === nodeId);
-        if (!nodeMetric) continue;
-        
-        const currentState = regulatorStates.get(nodeId)!;
-        const changed = this.processVoltageRegulator(
-          nodeId, regulator, nodeMetric, currentState, nodeById, treeStructure
-        );
-        
-        if (changed) {
+        const targetV = regulator.targetVoltage_V;
+        const state = regulatorStates.get(nodeId)!;
+        const node = nodeById.get(nodeId);
+        if (!node) continue;
+
+        let localIter = 0;
+        let localConverged = false;
+
+        while (localIter < 20) {
+          localIter++;
+          // Tension actuelle du nœud (ligne) à partir du résultat courant
+          const currentV_line = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
+          const errorV = targetV - currentV_line; // >0 => il faut monter la tension -> Q(+)
+          const absError = Math.abs(errorV);
+          if (absError < this.convergenceTolerance) { localConverged = true; break; }
+
+          const Kp = 2.0; // correcteur proportionnel simple
+          const maxQ = regulator.maxPower_kVA;
+          let requiredQ = Math.sign(errorV) * Math.min(absError * Kp, maxQ);
+
+          // Anti-windup et indication de limite
+          if (Math.abs(requiredQ) >= maxQ) {
+            requiredQ = Math.sign(requiredQ) * maxQ;
+            state.isLimited = true;
+          } else {
+            state.isLimited = false;
+          }
+
+          if (Math.abs(requiredQ - state.Q_kVAr) < 0.05) { // peu de changement
+            break;
+          }
+
+          // Appliquer le nouveau Q et recalculer le réseau (propagation aval via BFS)
+          state.Q_kVAr = requiredQ;
           equipmentChanged = true;
-          console.log(`📊 Régulateur ${nodeId}: Q=${currentState.Q_kVAr.toFixed(2)} kVAr, limited=${currentState.isLimited}`);
+
+          const nodesWithEquip = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+          currentResult = this.calculateScenario(
+            nodesWithEquip, cables, cableTypes, scenario,
+            foisonnementCharges, foisonnementProductions,
+            transformerConfig, loadModel, desequilibrePourcent
+          );
         }
+
+        console.log(`📊 Régulateur ${nodeId}: Q=${state.Q_kVAr.toFixed(2)} kVAr, limited=${state.isLimited}`);
       }
       
       // 3. Traiter les compensateurs de neutre
@@ -471,22 +508,26 @@ export class SimulationCalculator extends ElectricalCalculator {
     return originalNodes.map(node => {
       let modifiedNode = { ...node };
       
-      // Appliquer régulateur (injection/absorption Q via production fictive)
+      // Appliquer régulateur (Q positif = injection, Q négatif = absorption)
       const regulatorState = regulatorStates.get(node.id);
-      if (regulatorState && Math.abs(regulatorState.Q_kVAr) > 0.01) {
-        const qPower_kVA = Math.abs(regulatorState.Q_kVAr);
-        const regulatorProd = {
-          id: `regulator-${node.id}`,
-          label: 'Régulateur',
-          S_kVA: qPower_kVA
-        };
-        
-        // Remplacer ou ajouter la production du régulateur
-        const existingIdx = modifiedNode.productions.findIndex(p => p.id.startsWith('regulator-'));
-        if (existingIdx >= 0) {
-          modifiedNode.productions[existingIdx] = regulatorProd;
-        } else {
-          modifiedNode.productions = [...modifiedNode.productions, regulatorProd];
+      if (regulatorState) {
+        const Q = regulatorState.Q_kVAr || 0;
+        // Nettoyer les anciennes entrées virtuelles
+        modifiedNode.productions = (modifiedNode.productions || []).filter(p => !p.id.startsWith('regulator-'));
+        modifiedNode.clients = (modifiedNode.clients || []).filter(c => !c.id.startsWith('regulator-'));
+
+        if (Math.abs(Q) > 0.01) {
+          const sinPhi = Math.sqrt(Math.max(0, 1 - this.simCosPhi * this.simCosPhi)) || 1e-6;
+          const neededS_kVA = Math.abs(Q) / Math.max(sinPhi, 1e-6);
+          if (Q > 0) {
+            // Injection de Q (+) -> production équivalente
+            const virt = { id: `regulator-${node.id}`, label: 'Régulateur (Q+)', S_kVA: neededS_kVA };
+            modifiedNode.productions = [...(modifiedNode.productions || []), virt];
+          } else {
+            // Absorption de Q (-) -> charge équivalente
+            const virt = { id: `regulator-${node.id}`, label: 'Régulateur (Q−)', S_kVA: neededS_kVA } as any;
+            modifiedNode.clients = [...(modifiedNode.clients || []), virt];
+          }
         }
       }
       
