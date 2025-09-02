@@ -7,6 +7,7 @@ import { AddressSearch } from './AddressSearch';
 import { Button } from './ui/button';
 import { Globe, Map as MapIcon } from 'lucide-react';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
+import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 
 // Configuration des icônes Leaflet
 const configureLeafletIcons = () => {

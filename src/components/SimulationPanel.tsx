@@ -10,6 +10,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNetworkStore } from "@/store/networkStore";
 import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
+import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { 
   Zap, 
   Settings, 
