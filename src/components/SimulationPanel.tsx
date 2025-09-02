@@ -39,7 +39,9 @@ export const SimulationPanel = () => {
     updateNeutralCompensator,
     proposeCableUpgrades,
     runSimulation,
-    closeEditPanel
+    closeEditPanel,
+    updateProjectConfig,
+    updateNode
   } = useNetworkStore();
 
   if (!currentProject) return null;
@@ -171,9 +173,33 @@ export const SimulationPanel = () => {
         </CardHeader>
         <CardContent className="space-y-3">
           {!eligible && (
-            <div className="bg-muted/50 p-2 rounded text-xs flex items-center gap-2">
-              <AlertTriangle className="h-3 w-3 text-yellow-500" />
-              Disponible uniquement sur réseau 400V, monophasé (PN) et en mode déséquilibré.
+            <div className="bg-muted/50 p-2 rounded text-xs space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                <span>Disponible uniquement sur réseau 400V, monophasé (PN) et en mode déséquilibré.</span>
+              </div>
+              <div className="grid grid-cols-1 gap-1">
+                <div>• Réseau 400V: {is400V ? 'OK' : 'Non'}</div>
+                <div>• Nœud en MONO 230V (PN): {isMonoPN ? 'OK' : (node?.connectionType || 'Non')}</div>
+                <div>• Mode déséquilibré: {(currentProject.loadModel === 'monophase_reparti') ? `OK (${currentProject.desequilibrePourcent || 0}%)` : 'Non'}</div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                {!isMonoPN && node && (
+                  <Button size="sm" variant="outline" onClick={() => updateNode(node.id, { connectionType: 'MONO_230V_PN' })}>
+                    Passer ce nœud en MONO 230V (PN)
+                  </Button>
+                )}
+                {currentProject.loadModel !== 'monophase_reparti' && (
+                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ loadModel: 'monophase_reparti' })}>
+                    Activer le mode déséquilibré
+                  </Button>
+                )}
+                {currentProject.loadModel === 'monophase_reparti' && ((currentProject.desequilibrePourcent || 0) === 0) && (
+                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ desequilibrePourcent: 10 })}>
+                    Déséquilibre 10%
+                  </Button>
+                )}
+              </div>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
