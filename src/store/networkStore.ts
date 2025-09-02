@@ -19,6 +19,7 @@ import {
 } from '@/types/network';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
+import { SimulationCalculator } from '@/utils/simulationCalculator';
 import { toast } from 'sonner';
 
 // Fonction pour calculer les bounds géographiques d'un projet
@@ -969,6 +970,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     });
     
     toast.success(`Armoire de régulation ${type} ajoutée`);
+    
+    // Recalculer automatiquement la simulation
+    get().runSimulation();
   },
 
   removeVoltageRegulator: (regulatorId: string) => {
@@ -1021,6 +1025,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     });
     
     toast.success('Compensateur de neutre ajouté');
+    
+    // Recalculer automatiquement la simulation
+    get().runSimulation();
   },
 
   removeNeutralCompensator: (compensatorId: string) => {
@@ -1110,11 +1117,44 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   runSimulation: () => {
-    const { currentProject, selectedScenario } = get();
+    const { currentProject, selectedScenario, simulationEquipment } = get();
     if (!currentProject) return;
 
-    // Pour l'instant, effectuer un calcul standard
-    get().updateAllCalculations();
-    toast.success('Simulation terminée (version simplifiée)');
+    try {
+      const calculator = new SimulationCalculator(currentProject.cosPhi);
+      
+      // Calculer pour chaque scénario avec équipements de simulation
+      const newSimulationResults: { [key in CalculationScenario]: any } = {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null
+      };
+      
+      const scenarios: CalculationScenario[] = ['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'];
+      
+      for (const scenario of scenarios) {
+        try {
+          const result = calculator.calculateWithSimulation(
+            currentProject,
+            scenario,
+            simulationEquipment
+          );
+          newSimulationResults[scenario] = result;
+        } catch (error) {
+          console.error(`Erreur calcul simulation ${scenario}:`, error);
+        }
+      }
+      
+      // Mettre à jour l'état avec les résultats de simulation
+      set({ simulationResults: newSimulationResults });
+      
+      const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+                                  simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+      
+      toast.success(`Simulation recalculée avec ${activeEquipmentCount} équipement(s) actif(s)`);
+    } catch (error) {
+      console.error('Erreur lors de la simulation:', error);
+      toast.error('Erreur lors du calcul de simulation');
+    }
   }
 }));

@@ -11,6 +11,8 @@ const Index = () => {
     currentProject, 
     selectedScenario, 
     calculationResults,
+    simulationResults,
+    simulationEquipment,
     selectedTool,
     editTarget,
     createNewProject,
@@ -18,6 +20,12 @@ const Index = () => {
     openEditPanel,
     calculateAll
   } = useNetworkStore();
+
+  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+                              simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  
+  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
 
   const handleNewNetwork = () => {
     createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");
@@ -124,7 +132,7 @@ const Index = () => {
         <Toolbar />
         <MapView />
         <ResultsPanel
-          results={calculationResults}
+          results={resultsToUse}
           selectedScenario={selectedScenario}
         />
       </div>
