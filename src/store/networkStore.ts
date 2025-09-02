@@ -96,7 +96,7 @@ interface NetworkActions {
   
   // Simulation actions
   toggleSimulationMode: () => void;
-  addVoltageRegulator: (nodeId: string, type: '230V' | '400V') => void;
+  addVoltageRegulator: (nodeId: string) => void;
   removeVoltageRegulator: (regulatorId: string) => void;
   updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => void;
   addNeutralCompensator: (nodeId: string) => void;
@@ -932,7 +932,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     });
   },
 
-  addVoltageRegulator: (nodeId: string, type: '230V' | '400V') => {
+  addVoltageRegulator: (nodeId: string) => {
     const { simulationEquipment, currentProject } = get();
     if (!currentProject) return;
     
@@ -943,6 +943,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       return;
     }
 
+    // Déterminer automatiquement le type selon la tension de la source
+    const sourceNode = currentProject.nodes.find(n => n.isSource);
+    const sourceVoltage = sourceNode?.tensionCible || (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
+    const type = sourceVoltage > 300 ? '400V' : '230V';
+    
     const regulatorType: RegulatorType = type === '230V' ? '230V_77kVA' : '400V_44kVA';
     const maxPower = type === '230V' ? 77 : 44;
     const targetVoltage = type === '230V' ? 230 : 400;

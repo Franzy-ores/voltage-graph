@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNetworkStore } from "@/store/networkStore";
 import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
+import { NodeSelector } from "@/components/NodeSelector";
 import { 
   Zap, 
   Settings, 
@@ -46,6 +47,11 @@ export const SimulationPanel = () => {
   const nodes = currentProject.nodes.filter(n => !n.isSource);
   const currentResult = simulationResults[selectedScenario];
   const baseline = currentResult?.baselineResult;
+
+  // Fonction pour déterminer le type de régulateur selon la tension de source
+  const getRegulatorTypeForSource = (sourceVoltage: number) => {
+    return sourceVoltage > 300 ? 'Armoire 400V - 44kVA' : 'Armoire 230V - 77kVA';
+  };
 
   const RegulatorCard = ({ regulator }: { regulator: VoltageRegulator }) => {
     const node = currentProject.nodes.find(n => n.id === regulator.nodeId);
@@ -312,26 +318,19 @@ export const SimulationPanel = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">Armoires de régulation</h3>
-                  <div className="flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => addVoltageRegulator(nodes[0]?.id || '', '230V')}
-                      disabled={!nodes.length}
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      230V
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => addVoltageRegulator(nodes[0]?.id || '', '400V')}
-                      disabled={!nodes.length}
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      400V
-                    </Button>
-                  </div>
+                  <NodeSelector
+                    nodes={currentProject.nodes}
+                    onNodeSelected={(nodeId) => addVoltageRegulator(nodeId)}
+                    title="Ajouter une armoire de régulation"
+                    description="L'armoire sera automatiquement adaptée à la tension du réseau"
+                    getRegulatorTypeForSource={getRegulatorTypeForSource}
+                    trigger={
+                      <Button size="sm" variant="outline" disabled={!nodes.length}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Ajouter
+                      </Button>
+                    }
+                  />
                 </div>
 
                 {simulationEquipment.regulators.length === 0 ? (
@@ -354,15 +353,12 @@ export const SimulationPanel = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">Compensateurs de neutre</h3>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => addNeutralCompensator(nodes[0]?.id || '')}
-                    disabled={!nodes.length}
-                  >
-                    <Plus className="h-3 w-3 mr-1" />
-                    Ajouter
-                  </Button>
+                  <NodeSelector
+                    nodes={currentProject.nodes}
+                    onNodeSelected={(nodeId) => addNeutralCompensator(nodeId)}
+                    title="Ajouter un compensateur de neutre"
+                    description="Sélectionnez le nœud où installer le compensateur"
+                  />
                 </div>
 
                 {simulationEquipment.neutralCompensators.length === 0 ? (
