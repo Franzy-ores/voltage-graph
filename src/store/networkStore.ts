@@ -167,6 +167,24 @@ const mapConnectionTypeForVoltageSystem = (
   }
 };
 
+// Mapping pour adapter les types de connexion selon le modèle de charge
+const mapConnectionTypeForLoadModel = (
+  voltageSystem: VoltageSystem,
+  loadModel: 'monophase_reparti' | 'polyphase_equilibre',
+  isSource = false
+): ConnectionType => {
+  // Les sources gardent toujours leur type par défaut selon le système de tension
+  if (isSource) {
+    return voltageSystem === 'TRIPHASÉ_230V' ? 'TRI_230V_3F' : 'TÉTRA_3P+N_230_400V';
+  }
+
+  if (voltageSystem === 'TRIPHASÉ_230V') {
+    return loadModel === 'monophase_reparti' ? 'MONO_230V_PP' : 'TRI_230V_3F';
+  } else { // 'TÉTRAPHASÉ_400V'
+    return loadModel === 'monophase_reparti' ? 'MONO_230V_PN' : 'TÉTRA_3P+N_230_400V';
+  }
+};
+
 const createDefaultProject = (): Project => ({
   id: `project-${Date.now()}`,
   name: "Nouveau Projet",
@@ -334,6 +352,22 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         voltageSystem: newVS,
         nodes: updatedNodes,
         transformerConfig: updatedTransformer,
+      } as Project;
+    }
+
+    // Si le modèle de charge change, adapter tous les types de connexion des nœuds
+    if (updates.loadModel && updates.loadModel !== currentProject.loadModel) {
+      const newLoadModel = updates.loadModel;
+      
+      // Mettre à jour tous les nœuds avec le type de connexion approprié
+      const updatedNodes = updatedProject.nodes.map((n) => ({
+        ...n,
+        connectionType: mapConnectionTypeForLoadModel(updatedProject.voltageSystem, newLoadModel, !!n.isSource)
+      }));
+
+      updatedProject = {
+        ...updatedProject,
+        nodes: updatedNodes,
       } as Project;
     }
 
