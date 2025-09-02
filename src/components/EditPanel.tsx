@@ -147,7 +147,7 @@ export const EditPanel = () => {
   };
 
   return (
-    <Sheet open={editPanelOpen} onOpenChange={closeEditPanel}>
+    <Sheet open={editPanelOpen && editTarget !== 'simulation'} onOpenChange={closeEditPanel}>
       <SheetContent className="w-96 overflow-y-auto" side="right">
         <SheetHeader>
           <SheetTitle>
