@@ -548,31 +548,36 @@ export const MapView = () => {
           ${circuitNumber ? `<div class="text-[8px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
           ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
             ${(() => {
-              // Afficher les 3 phases en mode monophasé
+              // Afficher les 3 phases en mode monophasé réparti
               if (currentProject.loadModel === 'monophase_reparti') {
                 const results = resultsToUse[selectedScenario];
-                const nodeData = results?.nodeVoltageDrops?.find(n => n.nodeId === node.id);
-                if (nodeData) {
-                  // Calculer les tensions de phase comme dans ResultsPanel
-                  const mainSourceNode = currentProject.nodes.find(n => n.isSource);
-                  const sourceVoltage = mainSourceNode?.tensionCible || (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
-                  const nodeVoltageCalc = sourceVoltage - nodeData.deltaU_cum_V;
-                  
-                  return `
-                    <div class="font-bold text-[7px]">
-                      A:${Math.round(nodeVoltageCalc)}V<br/>
-                      B:${Math.round(nodeVoltageCalc)}V<br/>
-                      C:${Math.round(nodeVoltageCalc)}V
-                    </div>
-                  `;
+                const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+                if (phaseMetrics) {
+                  const vA = phaseMetrics.voltagesPerPhase.A.toFixed(0);
+                  const vB = phaseMetrics.voltagesPerPhase.B.toFixed(0);
+                  const vC = phaseMetrics.voltagesPerPhase.C.toFixed(0);
+                  return `<span class="text-blue-600">A:${vA}V</span><br><span class="text-green-600">B:${vB}V</span><br><span class="text-red-600">C:${vC}V</span>`;
+                } else {
+                  return `A:${nodeVoltage.toFixed(0)}V<br>B:${nodeVoltage.toFixed(0)}V<br>C:${nodeVoltage.toFixed(0)}V`;
                 }
-                return `<div class="font-bold text-[7px]">A:230V<br/>B:230V<br/>C:230V</div>`;
               } else {
-                return `<div class="font-bold">${Math.round(nodeVoltage)}V</div>`;
+                // Mode normal : afficher une seule tension
+                let displayText = `${nodeVoltage.toFixed(0)}V`;
+                if (hasDisplayableLoad) {
+                  displayText += `<br>${(totalCharge * (currentProject.foisonnementCharges / 100)).toFixed(1)}kW`;
+                }
+                if (hasDisplayableProduction) {
+                  displayText += `<br>PV: ${(totalPV * (currentProject.foisonnementProductions / 100)).toFixed(1)}kW`;
+                }
+                // Ajouter l'indicateur de conformité (± % signé)
+                if (!node.isSource && nominalDropPercent !== 0) {
+                  const sign = nominalDropPercent >= 0 ? '+' : '';
+                  const colorClass = isOutOfCompliance ? 'text-red-500' : (Math.abs(nominalDropPercent) > 5 ? 'text-yellow-500' : 'text-green-500');
+                  displayText += `<br><span class="${colorClass}">${sign}${nominalDropPercent.toFixed(1)}%</span>`;
+                }
+                return displayText;
               }
             })()}
-            ${hasDisplayableLoad ? `<div>C:${totalCharge}</div>` : ''}
-            ${hasDisplayableProduction ? `<div>PV:${totalPV}</div>` : ''}
           </div>` : ''}
         </div>`,
         iconSize: iconSize,

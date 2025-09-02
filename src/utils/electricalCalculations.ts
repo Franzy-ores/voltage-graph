@@ -757,6 +757,36 @@ export class ElectricalCalculator {
         );
       }
 
+      // Métriques nodales par phase pour monophasé déséquilibré
+      const nodeMetricsPerPhase = nodes.map(n => {
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        
+        const scaleLine = this.getDisplayLineScale(n.connectionType);
+        const Va_display = abs(Va) * scaleLine;
+        const Vb_display = abs(Vb) * scaleLine;
+        const Vc_display = abs(Vc) * scaleLine;
+        
+        let { U_base: U_ref } = this.getVoltage(n.connectionType);
+        const sourceNode = nodes.find(s => s.isSource);
+        if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+        
+        return {
+          nodeId: n.id,
+          voltagesPerPhase: {
+            A: Va_display,
+            B: Vb_display,
+            C: Vc_display
+          },
+          voltageDropsPerPhase: {
+            A: U_ref - Va_display,
+            B: U_ref - Vb_display,
+            C: U_ref - Vc_display
+          }
+        };
+      });
+
       const result: CalculationResult = {
         scenario,
         cables: calculatedCables,
@@ -770,6 +800,7 @@ export class ElectricalCalculator {
         nodeMetrics: undefined,
         nodePhasors: undefined,
         nodePhasorsPerPhase,
+        nodeMetricsPerPhase, // Nouvelles métriques par phase
         cablePowerFlows: undefined,
         virtualBusbar
       };

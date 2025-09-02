@@ -218,6 +218,11 @@ export interface CalculationResult {
   nodeMetrics?: { nodeId: string; V_phase_V: number; V_pu: number; I_inj_A: number }[];
   nodePhasors?: { nodeId: string; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[];
   nodePhasorsPerPhase?: { nodeId: string; phase: 'A' | 'B' | 'C'; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[];
+  nodeMetricsPerPhase?: { 
+    nodeId: string; 
+    voltagesPerPhase: { A: number; B: number; C: number };
+    voltageDropsPerPhase: { A: number; B: number; C: number };
+  }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
 }
