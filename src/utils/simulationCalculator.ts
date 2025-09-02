@@ -603,8 +603,30 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
   }
 
+  // Récupère la tension ligne du nœud à partir du résultat (gère équilibré/déséquilibré)
+  private getNodeLineVoltageFromResult(result: CalculationResult, node: Node, _allNodes: Node[]): number {
+    const { isThreePhase, U_base } = this.getNodeVoltageConfig(node.connectionType);
+
+    // Mode équilibré: nodeMetrics présent avec V_phase_V
+    const metric = result.nodeMetrics?.find(m => m.nodeId === node.id);
+    if (metric) {
+      const V_phase = metric.V_phase_V;
+      return isThreePhase ? V_phase * Math.sqrt(3) : V_phase;
+    }
+
+    // Mode déséquilibré: utiliser nodePhasorsPerPhase et prendre la pire phase
+    const phases = result.nodePhasorsPerPhase?.filter(p => p.nodeId === node.id) || [];
+    if (phases.length > 0) {
+      const minPhaseMag = Math.min(...phases.map(p => p.V_phase_V));
+      return isThreePhase ? minPhaseMag * Math.sqrt(3) : minPhaseMag;
+    }
+
+    // Fallback: tension nominale
+    return U_base;
+  }
+  
   /**
-   * Propose automatiquement des améliorations de câbles basées sur l'ampacité réelle
+    * Propose automatiquement des améliorations de câbles basées sur l'ampacité réelle
    */
   proposeCableUpgrades(
     project: Project,
