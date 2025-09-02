@@ -6,11 +6,26 @@ import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 export class ElectricalCalculator {
   private cosPhi: number;
 
+  // Constantes pour la robustesse et maintenabilité
+  private static readonly CONVERGENCE_TOLERANCE = 1e-4;
+  private static readonly MAX_ITERATIONS = 100;
+  private static readonly VOLTAGE_400V_THRESHOLD = 350;
+  private static readonly MIN_VOLTAGE_SAFETY = 1e-6;
+  private static readonly SMALL_IMPEDANCE_SAFETY = 1e-12;
+
   constructor(cosPhi: number = 0.95) {
+    this.validateCosPhi(cosPhi);
     this.cosPhi = cosPhi;
   }
 
+  private validateCosPhi(cosPhi: number): void {
+    if (!isFinite(cosPhi) || cosPhi < 0 || cosPhi > 1) {
+      throw new Error(`cosPhi doit être entre 0 et 1, reçu: ${cosPhi}`);
+    }
+  }
+
   setCosPhi(value: number) {
+    this.validateCosPhi(value);
     this.cosPhi = value;
   }
 
@@ -48,7 +63,7 @@ export class ElectricalCalculator {
   private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
       case 'MONO_230V_PN':
-        return { U: 400, isThreePhase: false, useR0: true }; // 400V pour monophasé en réseau 400V
+        return { U: 230, isThreePhase: false, useR0: true }; // Phase-neutre = 230V
       case 'MONO_230V_PP':
         return { U: 230, isThreePhase: false, useR0: false };
       case 'TRI_230V_3F':
@@ -66,17 +81,20 @@ export class ElectricalCalculator {
   }
 
   // Conversion phase -> "tension affichée" selon le type de connexion
-  // - TRI et TÉTRA: V_ligne = √3 · V_phase (conversion phase-ligne)
+  // - TRI_230V_3F : tensions composées déjà à 230V (pas de facteur supplémentaire)
+  // - TÉTRA_3P+N_230_400V : tensions composées à 400V, simples à 230V
   // - MONO_230V_PP: tension entre phases (mesure directe, pas de facteur)
   // - MONO_230V_PN: tension phase-neutre (mesure directe, pas de facteur)
   private getDisplayLineScale(connectionType: ConnectionType): number {
     switch (connectionType) {
       case 'TRI_230V_3F':
+        return 1; // Tensions composées déjà à 230V
       case 'TÉTRA_3P+N_230_400V':
-        return Math.sqrt(3); // Conversion phase → ligne pour triphasé
+        return Math.sqrt(3); // Conversion phase → ligne pour 400V
       case 'MONO_230V_PP':
+        return 1; // Tension entre phases (230V direct)
       case 'MONO_230V_PN':
-        return 1; // Mesure directe entre phases ou phase-neutre
+        return 1; // Tension phase-neutre (230V direct)
       default:
         return 1;
     }
@@ -105,8 +123,21 @@ export class ElectricalCalculator {
     }
 
     const Sabs_kVA = Math.abs(S_kVA);
-    const denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
-    if (!isFinite(denom) || denom <= 0) return 0;
+    
+    // Correction pour le calcul du courant monophasé
+    let denom: number;
+    if (connectionType === 'MONO_230V_PN') {
+      denom = U_base; // I = S / 230V pour monophasé phase-neutre
+    } else if (connectionType === 'MONO_230V_PP') {
+      denom = U_base; // I = S / tension_entre_phases
+    } else {
+      denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
+    }
+    
+    if (!isFinite(denom) || denom <= 0) {
+      console.warn(`⚠️ Dénominateur invalide pour le calcul du courant: ${denom}, connectionType: ${connectionType}`);
+      return 0;
+    }
     return (Sabs_kVA * 1000) / denom;
   }
 
@@ -259,6 +290,9 @@ export class ElectricalCalculator {
     loadModel: LoadModel = 'polyphase_equilibre',
     desequilibrePourcent: number = 0
   ): CalculationResult {
+    // Validation robuste des entrées
+    this.validateInputs(nodes, cables, cableTypes, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
+    
     console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
@@ -448,14 +482,20 @@ export class ElectricalCalculator {
     const isUnbalanced = loadModel === 'monophase_reparti' && d > 0;
 
     if (isUnbalanced) {
-      // Répartition S_total -> S_A/S_B/S_C selon d (appliqué sur L1/A)
+      // Répartition S_total -> S_A/S_B/S_C selon d avec distribution statistique plus réaliste
       // Pivot global fixe : phase A pour 400V, paire L1-L2 pour 230V  
       const globalAngle = 0; // Angle identique pour tous les circuits pour préserver la notion de circuit
       
-      const pA = (1 / 3) * (1 + d);
-      const rem = Math.max(0, 1 - pA);
-      const pB = rem / 2;
-      const pC = rem / 2;
+      // Distribution plus réaliste du déséquilibre
+      const pA = (1/3) + (d * 0.5);  // Phase la plus chargée
+      const pB = (1/3) - (d * 0.25); // Phases moins chargées
+      const pC = (1/3) - (d * 0.25);
+      
+      // Vérification de cohérence
+      const totalP = pA + pB + pC;
+      if (Math.abs(totalP - 1) > 1e-6) {
+        console.warn(`⚠️ Répartition des phases incohérente: pA=${pA}, pB=${pB}, pC=${pC}, total=${totalP}`);
+      }
 
       const S_A_map = new Map<string, Complex>();
       const S_B_map = new Map<string, Complex>();
@@ -488,7 +528,7 @@ export class ElectricalCalculator {
 
         let iter2 = 0;
         let converged2 = false;
-        while (iter2 < 100) {
+        while (iter2 < ElectricalCalculator.MAX_ITERATIONS) {
           iter2++;
           const V_prev2 = new Map(V_node_phase);
 
@@ -498,7 +538,7 @@ export class ElectricalCalculator {
           for (const n of nodes) {
             const Vn = V_node_phase.get(n.id) || Vslack_phase_ph;
             const Sph = S_map.get(n.id) || C(0, 0);
-            const Vsafe = abs(Vn) > 1e-6 ? Vn : Vslack_phase_ph;
+            const Vsafe = abs(Vn) > ElectricalCalculator.MIN_VOLTAGE_SAFETY ? Vn : Vslack_phase_ph;
             const Iinj = conj(div(Sph, Vsafe));
             I_inj_node_phase.set(n.id, Iinj);
           }
@@ -551,7 +591,7 @@ export class ElectricalCalculator {
             const d = abs(sub(Vn, Vp));
             if (d > maxDelta) maxDelta = d;
           }
-          if (maxDelta / (Vslack_phase || 1) < 1e-4) { converged2 = true; break; }
+          if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { converged2 = true; break; }
         }
         if (!converged2) {
           console.warn(`⚠️ BFS phase ${angleDeg}° non convergé`);
@@ -567,7 +607,7 @@ export class ElectricalCalculator {
       // Compose cable results (par phase)
       calculatedCables.length = 0;
       globalLosses = 0;
-      const is400V = U_line_base >= 350; // heuristique
+      const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
 
       for (const cab of cables) {
         const childId = cableChildId.get(cab.id);
@@ -745,8 +785,8 @@ export class ElectricalCalculator {
     computeNodeS();
 
     // Iterative BFS
-    const maxIter = 100;
-    const tol = 1e-4;
+    const maxIter = ElectricalCalculator.MAX_ITERATIONS;
+    const tol = ElectricalCalculator.CONVERGENCE_TOLERANCE;
     let iter = 0;
     let converged = false;
 
@@ -765,7 +805,7 @@ export class ElectricalCalculator {
       for (const n of nodes) {
         const Vn = V_node.get(n.id) || Vslack;
         const Sph = S_node_phase_VA.get(n.id) || C(0, 0);
-        const Vsafe = abs(Vn) > 1e-6 ? Vn : Vslack;
+        const Vsafe = abs(Vn) > ElectricalCalculator.MIN_VOLTAGE_SAFETY ? Vn : Vslack;
         // I = conj(S / V)
         const Iinj = conj(div(Sph, Vsafe));
         I_inj_node.set(n.id, Iinj);
@@ -824,7 +864,7 @@ export class ElectricalCalculator {
       if (maxDelta / (Vslack_phase || 1) < tol) { converged = true; break; }
     }
     if (!converged) {
-      console.warn('⚠️ Backward–Forward Sweep non convergé (tol=1e-4, maxIter=100). Les résultats peuvent être approximatifs.');
+      console.warn(`⚠️ Backward–Forward Sweep non convergé (tol=${tol}, maxIter=${maxIter}). Les résultats peuvent être approximatifs.`);
     }
 
     // Compose cable results from final branch currents and voltages
@@ -1056,5 +1096,68 @@ export class ElectricalCalculator {
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
     return result;
+  }
+
+  // Méthodes utilitaires pour validation et gestion d'erreurs
+  private validateInputs(
+    nodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[],
+    foisonnementCharges: number,
+    foisonnementProductions: number,
+    desequilibrePourcent: number
+  ): void {
+    if (!nodes || nodes.length === 0) {
+      throw new Error('Aucun nœud fourni pour le calcul');
+    }
+    
+    if (!cables || cables.length === 0) {
+      throw new Error('Aucun câble fourni pour le calcul');
+    }
+    
+    if (!cableTypes || cableTypes.length === 0) {
+      throw new Error('Aucun type de câble fourni pour le calcul');
+    }
+    
+    if (!isFinite(foisonnementCharges) || foisonnementCharges < 0 || foisonnementCharges > 200) {
+      throw new Error(`Facteur de foisonnement charges invalide: ${foisonnementCharges}% (doit être entre 0 et 200)`);
+    }
+    
+    if (!isFinite(foisonnementProductions) || foisonnementProductions < 0 || foisonnementProductions > 200) {
+      throw new Error(`Facteur de foisonnement productions invalide: ${foisonnementProductions}% (doit être entre 0 et 200)`);
+    }
+    
+    if (!isFinite(desequilibrePourcent) || desequilibrePourcent < 0 || desequilibrePourcent > 100) {
+      throw new Error(`Pourcentage de déséquilibre invalide: ${desequilibrePourcent}% (doit être entre 0 et 100)`);
+    }
+
+    // Vérifier qu'il y a exactement une source
+    const sources = nodes.filter(n => n.isSource);
+    if (sources.length !== 1) {
+      throw new Error(`Le réseau doit avoir exactement une source, trouvé: ${sources.length}`);
+    }
+
+    // Vérifier que tous les types de câbles référencés existent
+    const cableTypeIds = new Set(cableTypes.map(ct => ct.id));
+    const missingTypes = cables
+      .map(c => c.typeId)
+      .filter(typeId => !cableTypeIds.has(typeId));
+    
+    if (missingTypes.length > 0) {
+      throw new Error(`Types de câbles manquants: ${missingTypes.join(', ')}`);
+    }
+
+    // Vérifier que tous les nœuds référencés dans les câbles existent
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const missingNodes: string[] = [];
+    
+    for (const cable of cables) {
+      if (!nodeIds.has(cable.nodeAId)) missingNodes.push(cable.nodeAId);
+      if (!nodeIds.has(cable.nodeBId)) missingNodes.push(cable.nodeBId);
+    }
+    
+    if (missingNodes.length > 0) {
+      throw new Error(`Nœuds manquants référencés dans les câbles: ${[...new Set(missingNodes)].join(', ')}`);
+    }
   }
 }
