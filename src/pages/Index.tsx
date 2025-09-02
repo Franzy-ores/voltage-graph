@@ -106,6 +106,7 @@ const Index = () => {
   };
 
   const handleSimulation = () => {
+    console.log('🐛 handleSimulation called');
     openEditPanel('simulation');
   };
 
@@ -130,7 +131,12 @@ const Index = () => {
       
       <EditPanel />
 
-      {editTarget === 'simulation' && <SimulationPanel />}
+      {editTarget === 'simulation' && (
+        <>
+          {console.log('🐛 Rendering SimulationPanel with editTarget:', editTarget)}
+          <SimulationPanel />
+        </>
+      )}
     </div>
   );
 };

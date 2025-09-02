@@ -584,8 +584,10 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   setSelectedCableType: (cableTypeId) => set({ selectedCableType: cableTypeId }),
 
   openEditPanel: (target) => {
+    console.log('🐛 openEditPanel called with target:', target);
     // Si on ouvre le panneau de simulation, activer le mode simulation
     if (target === 'simulation') {
+      console.log('🐛 Opening simulation panel');
       set({ 
         editPanelOpen: true, 
         editTarget: target,
@@ -593,11 +595,13 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         selectedTool: 'simulation'
       });
     } else {
+      console.log('🐛 Opening other panel:', target);
       set({ 
         editPanelOpen: true, 
         editTarget: target 
       });
     }
+    console.log('🐛 Panel state after set:', get().editTarget, get().editPanelOpen);
   },
 
   closeEditPanel: () => set({ 
