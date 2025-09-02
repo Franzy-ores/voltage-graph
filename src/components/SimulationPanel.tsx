@@ -266,7 +266,7 @@ export const SimulationPanel = () => {
   };
 
   return (
-    <div className="w-96 bg-background border-l shadow-lg overflow-hidden flex flex-col">
+    <div className="fixed right-0 top-0 w-96 h-screen bg-background border-l shadow-lg overflow-hidden flex flex-col z-50">
       <div className="p-4 border-b bg-muted/50">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold">Module Simulation</h2>
