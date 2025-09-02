@@ -124,12 +124,15 @@ export class ElectricalCalculator {
 
     const Sabs_kVA = Math.abs(S_kVA);
     
-    // Correction pour le calcul du courant monophasé
+    // Correction pour le calcul du courant selon le type de connexion
     let denom: number;
     if (connectionType === 'MONO_230V_PN') {
       denom = U_base; // I = S / 230V pour monophasé phase-neutre
     } else if (connectionType === 'MONO_230V_PP') {
       denom = U_base; // I = S / tension_entre_phases
+    } else if (connectionType === 'TRI_230V_3F') {
+      // Pour TRI_230V_3F : 230V est déjà la tension composée, pas de division par √3
+      denom = Math.sqrt(3) * U_base; // I = S / (√3 × U_composée)
     } else {
       denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     }
@@ -436,8 +439,11 @@ export class ElectricalCalculator {
     if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
       // Pour les connexions monophasées, utiliser directement 230V comme tension de phase/service
       Vslack_phase = 230;
+    } else if (source.connectionType === 'TRI_230V_3F') {
+      // Pour TRI_230V_3F : 230V est la tension composée, calcul direct en mode phase
+      Vslack_phase = U_line_base / Math.sqrt(3); // 230V composée → 133V phase
     } else {
-      // Pour les systèmes triphasés, conversion ligne -> phase
+      // Pour les autres systèmes triphasés, conversion ligne -> phase
       Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
     }
     const Vslack = C(Vslack_phase, 0);
@@ -634,7 +640,10 @@ export class ElectricalCalculator {
         const dVC = abs(mul(Z, IC));
 
         const current_A = Math.max(IA_mag, IB_mag, IC_mag);
-        const deltaU_line_V = Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
+        // Pour TRI_230V_3F, la chute de tension phase doit être convertie en tension composée
+        const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
+          ? Math.max(dVA, dVB, dVC) * Math.sqrt(3)
+          : Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
 
         // Base voltage for percent
         let { U_base } = this.getVoltage(distalNode.connectionType);
@@ -895,7 +904,10 @@ export class ElectricalCalculator {
       const Iph = I_branch.get(cab.id) || C(0, 0);
       const dVph = mul(Z!, Iph);
       const current_A = abs(Iph);
-      const deltaU_line_V = abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
+      // Pour TRI_230V_3F, conversion correcte phase → ligne
+      const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
+        ? abs(dVph) * Math.sqrt(3)
+        : abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
 
       // Base voltage for percent: prefer source target voltage if provided
       let { U_base } = this.getVoltage(distalNode.connectionType);
