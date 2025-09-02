@@ -606,7 +606,8 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                   <span className={`font-medium ${
                                     (() => {
                                        const nominalVoltage = currentProject && actualDistalNode 
-                                         ? (getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' ? 400 : 230)
+                                         ? ((getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' || 
+                                            getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'MONO_230V_PN') ? 400 : 230)
                                          : 230;
                                       const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
                                       return nominalDropPercent > 10 
@@ -729,7 +730,8 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                   <span className={`font-medium ${
                                     (() => {
                                        const nominalVoltage = currentProject && actualDistalNode 
-                                         ? (getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' ? 400 : 230)
+                                         ? ((getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' || 
+                                            getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'MONO_230V_PN') ? 400 : 230)
                                          : 230;
                                       const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
                                       return nominalDropPercent > 10 

@@ -446,7 +446,9 @@ export const MapView = () => {
         case 'TÉTRA_3P+N_230_400V':
           baseVoltage = 400;
           break;
-        case 'MONO_230V_PN':
+        case 'MONO_230V_PN': // Monophasé en réseau 400V → tension de consigne 400V
+          baseVoltage = 400;
+          break;
         case 'MONO_230V_PP':
         case 'TRI_230V_3F':
           baseVoltage = 230;
@@ -469,7 +471,7 @@ export const MapView = () => {
           
           // Calculer l'écart par rapport à la tension nominale de référence (230V ou 400V)
           const connectionType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource);
-          const nominalVoltage = connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
+          const nominalVoltage = (connectionType === 'TÉTRA_3P+N_230_400V' || connectionType === 'MONO_230V_PN') ? 400 : 230;
           const voltageDeviation = nodeVoltage - nominalVoltage; // Écart réel par rapport au nominal
           nominalDropPercent = (voltageDeviation / nominalVoltage) * 100; // Pourcentage signé
           

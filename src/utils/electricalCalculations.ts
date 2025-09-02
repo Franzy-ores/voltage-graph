@@ -48,7 +48,7 @@ export class ElectricalCalculator {
   private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
       case 'MONO_230V_PN':
-        return { U: 230, isThreePhase: false, useR0: true };
+        return { U: 400, isThreePhase: false, useR0: true }; // 400V pour monophasé en réseau 400V
       case 'MONO_230V_PP':
         return { U: 230, isThreePhase: false, useR0: false };
       case 'TRI_230V_3F':
