@@ -88,7 +88,7 @@ export class ElectricalCalculator {
   private getDisplayLineScale(connectionType: ConnectionType): number {
     switch (connectionType) {
       case 'TRI_230V_3F':
-        return Math.sqrt(3); // Conversion phase → composée pour affichage 230V
+        return 1; // Pas de conversion, 230V direct entre phases
       case 'TÉTRA_3P+N_230_400V':
         return Math.sqrt(3); // Conversion phase → ligne pour 400V
       case 'MONO_230V_PP':
@@ -131,8 +131,8 @@ export class ElectricalCalculator {
     } else if (connectionType === 'MONO_230V_PP') {
       denom = U_base; // I = S / tension_entre_phases
     } else if (connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : calcul normal triphasé I = S / (√3 × U_composée)
-      denom = Math.sqrt(3) * U_base; // I = S / (√3 × 230V)
+      // Pour TRI_230V_3F : pas de √3, calcul direct en tension composée
+      denom = U_base; // I = S / 230V directement (pas de √3)
     } else {
       denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     }
@@ -440,8 +440,8 @@ export class ElectricalCalculator {
       // Pour les connexions monophasées, utiliser directement 230V comme tension de phase/service
       Vslack_phase = 230;
     } else if (source.connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : calculs internes en tension de phase (133V)
-      Vslack_phase = U_line_base / Math.sqrt(3); // 230V composée → 133V phase pour calculs
+      // Pour TRI_230V_3F : pas de conversion, travail direct en 230V composé
+      Vslack_phase = U_line_base; // 230V composée directement
     } else {
       // Pour les autres systèmes triphasés, conversion ligne -> phase
       Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
@@ -640,9 +640,9 @@ export class ElectricalCalculator {
         const dVC = abs(mul(Z, IC));
 
         const current_A = Math.max(IA_mag, IB_mag, IC_mag);
-        // Pour TRI_230V_3F, conversion phase → composée pour affichage
+        // Pour TRI_230V_3F, pas de conversion car travail direct en composé
         const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
-          ? Math.max(dVA, dVB, dVC) * Math.sqrt(3) // Conversion phase → composée
+          ? Math.max(dVA, dVB, dVC) // Direct en 230V composé
           : Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
 
         // Base voltage for percent
@@ -904,9 +904,9 @@ export class ElectricalCalculator {
       const Iph = I_branch.get(cab.id) || C(0, 0);
       const dVph = mul(Z!, Iph);
       const current_A = abs(Iph);
-      // Pour TRI_230V_3F, conversion phase → composée pour affichage
+      // Pour TRI_230V_3F, pas de conversion car travail direct en composé
       const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
-        ? abs(dVph) * Math.sqrt(3) // Conversion phase → composée
+        ? abs(dVph) // Direct en 230V composé
         : abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
 
       // Base voltage for percent: prefer source target voltage if provided
@@ -1004,9 +1004,9 @@ export class ElectricalCalculator {
       const Vn = V_node.get(n.id) || Vslack;
       const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
       const V_phase_V = abs(Vn);
-      // Pour TRI_230V_3F, conversion phase → composée pour tensions nodales  
+      // Pour TRI_230V_3F, pas de conversion car travail direct en composé
       const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
-        ? U_nom_line / Math.sqrt(3) // Tension de phase pour calculs internes
+        ? U_nom_line // 230V composée directement
         : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
       const V_pu = V_nom_phase ? V_phase_V / V_nom_phase : 0;
       const Iinj = I_inj_node.get(n.id) || C(0, 0);
