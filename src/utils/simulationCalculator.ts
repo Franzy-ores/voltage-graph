@@ -261,9 +261,30 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`📊 Régulateur ${nodeId}: Q=${state.Q_kVAr.toFixed(2)} kVAr, limited=${state.isLimited}`);
       }
       
-      // 3. Traiter les compensateurs de neutre
+      // 3. Traiter les compensateurs de neutre (400V + monophasé PN + déséquilibre uniquement)
       for (const [nodeId, compensator] of compensators.entries()) {
         const currentState = compensatorStates.get(nodeId)!;
+        const node = nodeById.get(nodeId);
+        const is400V = (transformerConfig?.nominalVoltage_V ?? 400) >= 350;
+        const isMonoPN = node?.connectionType === 'MONO_230V_PN';
+        const hasDeseq = loadModel === 'monophase_reparti' && desequilibrePourcent > 0;
+
+        if (!(is400V && isMonoPN && hasDeseq)) {
+          // Inéligible: remettre l'état à zéro et publier résultats neutres
+          const prevIN = currentState.IN_A;
+          currentState.IN_A = 0;
+          currentState.reductionPercent = 0;
+          currentState.Q_phases = { A: 0, B: 0, C: 0 };
+          currentState.isLimited = false;
+          compensator.currentIN_A = 0;
+          compensator.reductionPercent = 0;
+          compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
+          // Ne pas signaler de changement si déjà à zéro
+          const changed = Math.abs(prevIN) > 0.01;
+          if (changed) equipmentChanged = true;
+          continue;
+        }
+
         const changed = this.processNeutralCompensator(
           nodeId, compensator, currentResult, currentState, loadModel, desequilibrePourcent
         );

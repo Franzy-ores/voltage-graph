@@ -134,6 +134,10 @@ export const SimulationPanel = () => {
 
   const CompensatorCard = ({ compensator }: { compensator: NeutralCompensator }) => {
     const node = currentProject.nodes.find(n => n.id === compensator.nodeId);
+    const is400V = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
+    const isMonoPN = node?.connectionType === 'MONO_230V_PN';
+    const hasDeseq = (currentProject.loadModel ?? 'polyphase_equilibre') === 'monophase_reparti' && (currentProject.desequilibrePourcent ?? 0) > 0;
+    const eligible = is400V && isMonoPN && hasDeseq;
     
     return (
       <Card className="mb-4">
@@ -146,9 +150,11 @@ export const SimulationPanel = () => {
             <div className="flex items-center gap-2">
               <Switch
                 checked={compensator.enabled}
-                onCheckedChange={(enabled) => 
-                  updateNeutralCompensator(compensator.id, { enabled })
-                }
+                onCheckedChange={(enabled) => {
+                  if (!eligible) return;
+                  updateNeutralCompensator(compensator.id, { enabled });
+                }}
+                disabled={!eligible}
               />
               <Button
                 variant="ghost"
@@ -164,6 +170,12 @@ export const SimulationPanel = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {!eligible && (
+            <div className="bg-muted/50 p-2 rounded text-xs flex items-center gap-2">
+              <AlertTriangle className="h-3 w-3 text-yellow-500" />
+              Disponible uniquement sur réseau 400V, monophasé (PN) et en mode déséquilibré.
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Puissance max (kVA)</Label>
@@ -174,6 +186,7 @@ export const SimulationPanel = () => {
                   maxPower_kVA: Number(e.target.value)
                 })}
                 className="h-8"
+                disabled={!eligible}
               />
             </div>
             <div>
