@@ -65,6 +65,22 @@ export class ElectricalCalculator {
     return { U_base: U, isThreePhase };
   }
 
+  // Conversion phase -> "tension affichée" (ligne) selon le type de connexion
+  // - TRI et TÉTRA: V_ligne = √3 · V_phase
+  // - MONO_230V_PP (deux phases): on affiche la tension entre phases → √3 · V_phase
+  // - MONO_230V_PN: on affiche la tension phase-neutre → V_phase
+  private getDisplayLineScale(connectionType: ConnectionType): number {
+    switch (connectionType) {
+      case 'TRI_230V_3F':
+      case 'TÉTRA_3P+N_230_400V':
+      case 'MONO_230V_PP':
+        return Math.sqrt(3);
+      case 'MONO_230V_PN':
+      default:
+        return 1;
+    }
+  }
+
   private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
     const { useR0 } = this.getVoltageConfig(connectionType);
     return useR0
@@ -193,7 +209,8 @@ export class ElectricalCalculator {
           ? source.connectionType
           : source.connectionType;
         const isThree = this.getVoltage(nodeConnType).isThreePhase;
-        const U_node_line = abs(nV) * (isThree ? Math.sqrt(3) : 1);
+        const scaleLine = this.getDisplayLineScale(nodeConnType);
+        const U_node_line = abs(nV) * scaleLine;
         if (U_node_line < minNodeVoltage) minNodeVoltage = U_node_line;
         if (U_node_line > maxNodeVoltage) maxNodeVoltage = U_node_line;
       }
@@ -618,8 +635,8 @@ export class ElectricalCalculator {
           { nodeId: n.id, phase: 'C', V_real: Vc.re, V_imag: Vc.im, V_phase_V: Vc_mag, V_angle_deg: (Math.atan2(Vc.im, Vc.re)*180)/Math.PI },
         );
 
-        const { isThreePhase } = this.getVoltage(n.connectionType);
-        const U_node_line_worst = Math.min(Va_mag, Vb_mag, Vc_mag) * (isThreePhase ? Math.sqrt(3) : 1);
+        const scaleLine = this.getDisplayLineScale(n.connectionType);
+        const U_node_line_worst = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
 
         let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
         if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
@@ -868,8 +885,8 @@ export class ElectricalCalculator {
     const sourceNode = nodes.find(n => n.isSource);
     for (const n of nodes) {
       const Vn = V_node.get(n.id) || Vslack;
-      const { isThreePhase } = this.getVoltage(n.connectionType);
-      const U_node_line = abs(Vn) * (isThreePhase ? Math.sqrt(3) : 1);
+      const scaleLine = this.getDisplayLineScale(n.connectionType);
+      const U_node_line = abs(Vn) * scaleLine;
 
       // Référence d'affichage: tension cible source si fournie, sinon base de ce type de connexion
       let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
