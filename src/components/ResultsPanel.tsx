@@ -179,6 +179,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   
   // Add safety checks
   if (!results || !selectedScenario) {
+    console.log('🐛 ResultsPanel - Missing data:', { results: !!results, selectedScenario });
     return (
       <div className="w-80 bg-card border-l border-border p-4">
         <Card>
@@ -227,6 +228,8 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   };
 
   if (!currentResult) {
+    console.log('🐛 ResultsPanel - No current result for scenario:', selectedScenario);
+    console.log('🐛 Available results:', Object.keys(results));
     return (
       <div className="w-80 bg-card border-l border-border p-4">
         <Card>
