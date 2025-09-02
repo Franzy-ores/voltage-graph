@@ -155,13 +155,14 @@ All colors MUST be HSL.
 
   /* Cable tooltip styles */
   .cable-custom-tooltip {
-    background: white !important;
-    border: 1px solid #ccc !important;
+    background: hsl(var(--popover)) !important;
+    border: 1px solid hsl(var(--border)) !important;
     border-radius: 6px !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: var(--shadow-md) !important;
     font-size: 12px !important;
     padding: 8px !important;
     min-width: 150px !important;
+    color: hsl(var(--popover-foreground)) !important;
   }
   
   .cable-custom-tooltip .leaflet-tooltip-content {
