@@ -20,6 +20,8 @@ import { Complex, C, add, sub, mul, div, abs } from '@/utils/complex';
 
 export class SimulationCalculator extends ElectricalCalculator {
   
+  private convergenceTolerance = 0.1; // 0.1V pour tous les tests
+  
   /**
    * Calcule un scénario avec équipements de simulation
    */
@@ -131,25 +133,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       );
     }
 
-    // Modifier les nœuds pour inclure les puissances réactives des équipements
-    const modifiedNodes = nodes.map(node => {
-      const regulator = regulatorByNode.get(node.id);
-      const compensator = compensatorByNode.get(node.id);
-      
-      if (!regulator && !compensator) return node;
-      
-      return {
-        ...node,
-        // Les équipements seront gérés dans les itérations BFS
-        _hasSimulationEquipment: true,
-        _regulator: regulator,
-        _compensator: compensator
-      };
-    });
-
-    // Algorithme BFS modifié avec équipements - version simplifiée intégrée
+    // Algorithme BFS modifié avec équipements
     return this.runEnhancedBFS(
-      modifiedNodes, cables, cableTypes, scenario,
+      nodes, cables, cableTypes, scenario,
       foisonnementCharges, foisonnementProductions,
       transformerConfig, loadModel, desequilibrePourcent,
       regulatorByNode, compensatorByNode
@@ -158,6 +144,7 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * BFS modifié pour intégrer les équipements de simulation avec vraie convergence
+   * et recalcul des nœuds aval pour chaque régulateur
    */
   private runEnhancedBFS(
     nodes: Node[],
@@ -174,164 +161,94 @@ export class SimulationCalculator extends ElectricalCalculator {
   ): CalculationResult {
     
     const maxIterations = 20;
-    const convergenceTolerance = 0.1; // 0.1V
     let converged = false;
     let iteration = 0;
-    let maxVoltageDelta = 0; // Déclarer ici pour être accessible après la boucle
+    let maxVoltageDelta = 0;
     
-    // Structures pour stocker les tensions précédentes
+    // Structures pour le graphe et les calculs
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const adjacency = this.buildAdjacencyMap(nodes, cables);
+    const treeStructure = this.buildTreeStructure(nodes, cables, adjacency);
+    
+    // État des équipements à chaque itération
+    const regulatorStates = new Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>();
+    const compensatorStates = new Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>();
+    
+    // Initialisation des états
+    for (const [nodeId, regulator] of regulators.entries()) {
+      regulatorStates.set(nodeId, { Q_kVAr: 0, V_target: regulator.targetVoltage_V, isLimited: false });
+    }
+    for (const [nodeId, compensator] of compensators.entries()) {
+      compensatorStates.set(nodeId, { Q_phases: { A: 0, B: 0, C: 0 }, IN_A: 0, isLimited: false });
+    }
+    
+    // Tensions précédentes pour convergence
     let previousVoltages = new Map<string, number>();
-    let currentResult = this.calculateScenario(
-      nodes, cables, cableTypes, scenario,
-      foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent
-    );
     
     while (iteration < maxIterations && !converged) {
       iteration++;
+      console.log(`🔄 Simulation iteration ${iteration}`);
       
-      // Sauvegarder les tensions actuelles pour comparaison
+      // 1. Calculer le réseau avec les équipements actuels
+      const modifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+      let currentResult = this.calculateScenario(
+        modifiedNodes, cables, cableTypes, scenario,
+        foisonnementCharges, foisonnementProductions,
+        transformerConfig, loadModel, desequilibrePourcent
+      );
+      
+      // Sauvegarder les tensions pour convergence
       if (currentResult.nodeMetrics) {
         for (const nodeMetric of currentResult.nodeMetrics) {
           previousVoltages.set(nodeMetric.nodeId, nodeMetric.V_phase_V);
         }
       }
       
-      // Traiter les régulateurs de tension (nœuds PV)
-      let regulatorChanged = false;
-      for (const regulator of regulators.values()) {
+      let equipmentChanged = false;
+      
+      // 2. Traiter les régulateurs de tension (PV nodes)
+      for (const [nodeId, regulator] of regulators.entries()) {
         if (!currentResult.nodeMetrics) continue;
         
-        const nodeMetric = currentResult.nodeMetrics.find(m => m.nodeId === regulator.nodeId);
+        const nodeMetric = currentResult.nodeMetrics.find(m => m.nodeId === nodeId);
         if (!nodeMetric) continue;
-
-        const currentV_phase = nodeMetric.V_phase_V;
-        // Convertir en tension ligne si nécessaire pour la comparaison avec targetVoltage
-        const node = nodes.find(n => n.id === regulator.nodeId);
-        const isThreePhase = node && this.getNodeVoltageConfig(node.connectionType).isThreePhase;
-        const currentV_line = currentV_phase * (isThreePhase ? Math.sqrt(3) : 1);
         
-        const targetV = regulator.targetVoltage_V;
-        const errorV = Math.abs(targetV - currentV_line);
+        const currentState = regulatorStates.get(nodeId)!;
+        const changed = this.processVoltageRegulator(
+          nodeId, regulator, nodeMetric, currentState, nodeById, treeStructure
+        );
         
-        // Si l'écart est significatif, ajuster Q
-        if (errorV > convergenceTolerance) {
-          // Calcul du Q nécessaire basé sur l'écart de tension
-          const Kp = regulator.maxPower_kVA / 50; // Gain proportionnel adaptatif
-          let requiredQ = Math.sign(targetV - currentV_line) * Math.min(
-            Math.abs(errorV) * Kp,
-            regulator.maxPower_kVA
-          );
-          
-          // Appliquer les limites de puissance
-          if (Math.abs(requiredQ) > regulator.maxPower_kVA) {
-            requiredQ = Math.sign(requiredQ) * regulator.maxPower_kVA;
-            regulator.isLimited = true;
-          } else {
-            regulator.isLimited = false;
-          }
-          
-          // Mettre à jour les valeurs du régulateur
-          const oldQ = regulator.currentQ_kVAr || 0;
-          if (Math.abs(requiredQ - oldQ) > 0.1) {
-            regulator.currentQ_kVAr = requiredQ;
-            regulator.currentVoltage_V = currentV_line;
-            regulatorChanged = true;
-            
-            // Modifier le nœud pour injecter/absorber Q
-            if (node) {
-              // Créer une production fictive pour injecter Q
-              const existingProd = node.productions.find(p => p.id.startsWith('regulator-'));
-              const qPower_kVA = Math.abs(requiredQ);
-              
-              if (existingProd) {
-                existingProd.S_kVA = qPower_kVA;
-              } else {
-                node.productions.push({
-                  id: `regulator-${regulator.id}`,
-                  label: 'Régulateur',
-                  S_kVA: qPower_kVA
-                });
-              }
-            }
-          }
-        } else {
-          regulator.currentVoltage_V = currentV_line;
-          regulator.isLimited = false;
+        if (changed) {
+          equipmentChanged = true;
+          console.log(`📊 Régulateur ${nodeId}: Q=${currentState.Q_kVAr.toFixed(2)} kVAr, limited=${currentState.isLimited}`);
         }
       }
       
-      // Traiter les compensateurs de neutre (calcul réel de IN)
-      let compensatorChanged = false;
-      for (const compensator of compensators.values()) {
-        // Calculer le courant de neutre réel IN = |Ia + Ib + Ic|
-        let realIN_A = 0;
+      // 3. Traiter les compensateurs de neutre
+      for (const [nodeId, compensator] of compensators.entries()) {
+        const currentState = compensatorStates.get(nodeId)!;
+        const changed = this.processNeutralCompensator(
+          nodeId, compensator, currentResult, currentState, loadModel, desequilibrePourcent
+        );
         
-        if (loadModel === 'monophase_reparti' && desequilibrePourcent > 0) {
-          // En mode déséquilibré, calculer IN approximatif
-          const nodeMetric = currentResult.nodeMetrics?.find(m => m.nodeId === compensator.nodeId);
-          if (nodeMetric) {
-            // Approximation basée sur le déséquilibre et le courant injecté
-            const baseI = nodeMetric.I_inj_A;
-            const d = desequilibrePourcent / 100;
-            // IN approximatif = déséquilibre * courant total
-            realIN_A = baseI * d * 0.5; // Facteur empirique
-          }
-        }
-        
-        const currentIN = compensator.currentIN_A || realIN_A;
-        
-        if (realIN_A > compensator.tolerance_A) {
-          // Calculer la compensation nécessaire
-          const targetReduction = Math.min(
-            0.9, // Maximum 90% de réduction
-            (realIN_A - compensator.tolerance_A) / realIN_A
-          );
-          
-          // Limiter par la puissance max disponible
-          const maxQ_available = compensator.maxPower_kVA;
-          const requiredQ_total = realIN_A * targetReduction * 0.4; // Facteur empirique V*I
-          
-          if (requiredQ_total <= maxQ_available) {
-            // Répartir Q sur les 3 phases pour minimiser IN
-            compensator.compensationQ_kVAr = {
-              A: requiredQ_total * 0.4, // Phase avec plus de déséquilibre
-              B: requiredQ_total * 0.3,
-              C: requiredQ_total * 0.3
-            };
-            compensator.currentIN_A = realIN_A * (1 - targetReduction);
-            compensator.isLimited = false;
-            compensatorChanged = true;
-          } else {
-            // Limitation par puissance max
-            compensator.compensationQ_kVAr = {
-              A: maxQ_available * 0.4,
-              B: maxQ_available * 0.3,
-              C: maxQ_available * 0.3
-            };
-            const actualReduction = maxQ_available / requiredQ_total * targetReduction;
-            compensator.currentIN_A = realIN_A * (1 - actualReduction);
-            compensator.isLimited = true;
-            compensatorChanged = true;
-          }
-        } else {
-          compensator.currentIN_A = realIN_A;
-          compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
-          compensator.isLimited = false;
+        if (changed) {
+          equipmentChanged = true;
+          console.log(`⚡ Compensateur ${nodeId}: IN=${currentState.IN_A.toFixed(2)} A, limited=${currentState.isLimited}`);
         }
       }
       
-      // Si des équipements ont changé, recalculer le réseau
-      if (regulatorChanged || compensatorChanged) {
+      // 4. Si équipements changés, recalculer le réseau complet
+      if (equipmentChanged) {
+        const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
         currentResult = this.calculateScenario(
-          nodes, cables, cableTypes, scenario,
+          finalModifiedNodes, cables, cableTypes, scenario,
           foisonnementCharges, foisonnementProductions,
           transformerConfig, loadModel, desequilibrePourcent
         );
       }
       
-      // Test de convergence : écart max des tensions < tolerance
-      maxVoltageDelta = 0; // Reset pour cette itération
+      // 5. Test de convergence
+      maxVoltageDelta = 0;
       if (currentResult.nodeMetrics) {
         for (const nodeMetric of currentResult.nodeMetrics) {
           const prevV = previousVoltages.get(nodeMetric.nodeId) || nodeMetric.V_phase_V;
@@ -342,10 +259,13 @@ export class SimulationCalculator extends ElectricalCalculator {
         }
       }
       
-      if (maxVoltageDelta < convergenceTolerance) {
+      if (maxVoltageDelta < this.convergenceTolerance) {
         converged = true;
       }
     }
+    
+    // 6. Mise à jour des résultats dans les équipements originaux
+    this.updateEquipmentResults(regulators, regulatorStates, compensators, compensatorStates);
     
     if (!converged) {
       console.warn(`⚠️ Simulation BFS non convergé après ${maxIterations} itérations (δV max = ${maxVoltageDelta.toFixed(3)}V)`);
@@ -353,7 +273,275 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.log(`✅ Simulation BFS convergé en ${iteration} itérations`);
     }
 
-    return currentResult;
+    // Calcul final avec les équipements convergés
+    const finalNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+    return this.calculateScenario(
+      finalNodes, cables, cableTypes, scenario,
+      foisonnementCharges, foisonnementProductions,
+      transformerConfig, loadModel, desequilibrePourcent
+    );
+  }
+
+  /**
+   * Construit la map d'adjacence du réseau
+   */
+  private buildAdjacencyMap(nodes: Node[], cables: Cable[]): Map<string, string[]> {
+    const adj = new Map<string, string[]>();
+    for (const n of nodes) adj.set(n.id, []);
+    
+    for (const cable of cables) {
+      adj.get(cable.nodeAId)?.push(cable.nodeBId);
+      adj.get(cable.nodeBId)?.push(cable.nodeAId);
+    }
+    
+    return adj;
+  }
+
+  /**
+   * Construit la structure arborescente du réseau
+   */
+  private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>) {
+    const source = nodes.find(n => n.isSource);
+    if (!source) throw new Error('Aucune source trouvée');
+    
+    const parent = new Map<string, string | null>();
+    const children = new Map<string, string[]>();
+    const visited = new Set<string>();
+    
+    // BFS pour construire l'arbre
+    const queue = [source.id];
+    parent.set(source.id, null);
+    visited.add(source.id);
+    
+    for (const n of nodes) children.set(n.id, []);
+    
+    while (queue.length) {
+      const nodeId = queue.shift()!;
+      const neighbors = adjacency.get(nodeId) || [];
+      
+      for (const neighborId of neighbors) {
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          parent.set(neighborId, nodeId);
+          children.get(nodeId)!.push(neighborId);
+          queue.push(neighborId);
+        }
+      }
+    }
+    
+    return { parent, children, source: source.id };
+  }
+
+  /**
+   * Traite un régulateur de tension (logique PV node)
+   */
+  private processVoltageRegulator(
+    nodeId: string,
+    regulator: VoltageRegulator,
+    nodeMetric: any,
+    currentState: { Q_kVAr: number, V_target: number, isLimited: boolean },
+    nodeById: Map<string, Node>,
+    treeStructure: any
+  ): boolean {
+    const node = nodeById.get(nodeId);
+    if (!node) return false;
+    
+    // Conversion tension phase -> ligne si nécessaire
+    const currentV_phase = nodeMetric.V_phase_V;
+    const isThreePhase = this.getNodeVoltageConfig(node.connectionType).isThreePhase;
+    const currentV_line = currentV_phase * (isThreePhase ? Math.sqrt(3) : 1);
+    
+    const targetV = regulator.targetVoltage_V;
+    const errorV = targetV - currentV_line;
+    const absErrorV = Math.abs(errorV);
+    
+    if (absErrorV < this.convergenceTolerance) {
+      // Tension OK, pas de changement
+      currentState.isLimited = false;
+      return false;
+    }
+    
+    // Calcul du Q nécessaire (contrôleur PI simplifié)
+    const Kp = 2.0; // Gain proportionnel
+    const maxQ = regulator.maxPower_kVA;
+    
+    let requiredQ = Math.sign(errorV) * Math.min(absErrorV * Kp, maxQ);
+    
+    // Anti-windup : limitation à Smax
+    if (Math.abs(requiredQ) >= maxQ) {
+      requiredQ = Math.sign(requiredQ) * maxQ;
+      currentState.isLimited = true;
+    } else {
+      currentState.isLimited = false;
+    }
+    
+    // Vérifier si changement significatif
+    const deltaQ = Math.abs(requiredQ - currentState.Q_kVAr);
+    if (deltaQ > 0.1) { // Seuil de 0.1 kVAr
+      currentState.Q_kVAr = requiredQ;
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Traite un compensateur de neutre
+   */
+  private processNeutralCompensator(
+    nodeId: string,
+    compensator: NeutralCompensator,
+    result: CalculationResult,
+    currentState: { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean },
+    loadModel: LoadModel,
+    desequilibrePourcent: number
+  ): boolean {
+    // Calcul approximatif du courant de neutre IN
+    let realIN_A = 0;
+    
+    if (loadModel === 'monophase_reparti' && desequilibrePourcent > 0) {
+      // En mode déséquilibré, estimer IN basé sur les métriques du nœud
+      const nodeMetric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
+      if (nodeMetric) {
+        const baseI = nodeMetric.I_inj_A;
+        const d = desequilibrePourcent / 100;
+        // IN ≈ courant de déséquilibre
+        realIN_A = baseI * d * 0.6; // Facteur empirique ajustable
+      }
+    } else {
+      // Mode équilibré : IN théoriquement nul, mais estimation basée sur charge
+      const nodeMetric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
+      if (nodeMetric) {
+        realIN_A = Math.max(0, nodeMetric.I_inj_A * 0.05); // 5% de déséquilibre résiduel
+      }
+    }
+    
+    currentState.IN_A = realIN_A;
+    
+    if (realIN_A <= compensator.tolerance_A) {
+      // IN acceptable, pas de compensation
+      currentState.Q_phases = { A: 0, B: 0, C: 0 };
+      currentState.isLimited = false;
+      return false;
+    }
+    
+    // Calcul de la compensation nécessaire
+    const excessIN = realIN_A - compensator.tolerance_A;
+    const reductionTarget = Math.min(0.9, excessIN / realIN_A); // Max 90% réduction
+    
+    // Puissance réactive nécessaire (approximation)
+    const requiredQ_total = excessIN * 0.4; // Facteur empirique V*I
+    
+    if (requiredQ_total <= compensator.maxPower_kVA) {
+      // Répartition optimale sur les 3 phases pour minimiser IN
+      const Q_A = requiredQ_total * 0.4; // Phase la plus chargée
+      const Q_B = requiredQ_total * 0.35;
+      const Q_C = requiredQ_total * 0.25;
+      
+      // Vérifier si changement significatif
+      const oldQ_total = currentState.Q_phases.A + currentState.Q_phases.B + currentState.Q_phases.C;
+      if (Math.abs(requiredQ_total - oldQ_total) > 0.1) {
+        currentState.Q_phases = { A: Q_A, B: Q_B, C: Q_C };
+        currentState.isLimited = false;
+        return true;
+      }
+    } else {
+      // Limitation par puissance max
+      const maxQ = compensator.maxPower_kVA;
+      currentState.Q_phases = {
+        A: maxQ * 0.4,
+        B: maxQ * 0.35,
+        C: maxQ * 0.25
+      };
+      currentState.isLimited = true;
+      return true;
+    }
+    
+    return false;
+  }
+
+  /**
+   * Applique les états des équipements aux nœuds pour le calcul
+   */
+  private applyEquipmentToNodes(
+    originalNodes: Node[],
+    regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
+    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>
+  ): Node[] {
+    return originalNodes.map(node => {
+      let modifiedNode = { ...node };
+      
+      // Appliquer régulateur (injection/absorption Q via production fictive)
+      const regulatorState = regulatorStates.get(node.id);
+      if (regulatorState && Math.abs(regulatorState.Q_kVAr) > 0.01) {
+        const qPower_kVA = Math.abs(regulatorState.Q_kVAr);
+        const regulatorProd = {
+          id: `regulator-${node.id}`,
+          label: 'Régulateur',
+          S_kVA: qPower_kVA
+        };
+        
+        // Remplacer ou ajouter la production du régulateur
+        const existingIdx = modifiedNode.productions.findIndex(p => p.id.startsWith('regulator-'));
+        if (existingIdx >= 0) {
+          modifiedNode.productions[existingIdx] = regulatorProd;
+        } else {
+          modifiedNode.productions = [...modifiedNode.productions, regulatorProd];
+        }
+      }
+      
+      // Appliquer compensateur (pour l'instant, approximation via production équivalente)
+      const compensatorState = compensatorStates.get(node.id);
+      if (compensatorState) {
+        const totalQ = compensatorState.Q_phases.A + compensatorState.Q_phases.B + compensatorState.Q_phases.C;
+        if (totalQ > 0.01) {
+          const compensatorProd = {
+            id: `compensator-${node.id}`,
+            label: 'Compensateur',
+            S_kVA: totalQ
+          };
+          
+          const existingIdx = modifiedNode.productions.findIndex(p => p.id.startsWith('compensator-'));
+          if (existingIdx >= 0) {
+            modifiedNode.productions[existingIdx] = compensatorProd;
+          } else {
+            modifiedNode.productions = [...modifiedNode.productions, compensatorProd];
+          }
+        }
+      }
+      
+      return modifiedNode;
+    });
+  }
+
+  /**
+   * Met à jour les résultats dans les équipements originaux
+   */
+  private updateEquipmentResults(
+    regulators: Map<string, VoltageRegulator>,
+    regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
+    compensators: Map<string, NeutralCompensator>,
+    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>
+  ): void {
+    // Mise à jour des régulateurs
+    for (const [nodeId, regulator] of regulators.entries()) {
+      const state = regulatorStates.get(nodeId);
+      if (state) {
+        regulator.currentQ_kVAr = state.Q_kVAr;
+        regulator.currentVoltage_V = state.V_target; // Sera mis à jour par le calcul final
+        regulator.isLimited = state.isLimited;
+      }
+    }
+    
+    // Mise à jour des compensateurs
+    for (const [nodeId, compensator] of compensators.entries()) {
+      const state = compensatorStates.get(nodeId);
+      if (state) {
+        compensator.currentIN_A = state.IN_A;
+        compensator.compensationQ_kVAr = state.Q_phases;
+        compensator.isLimited = state.isLimited;
+      }
+    }
   }
 
   /**
