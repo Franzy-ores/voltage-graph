@@ -52,13 +52,14 @@ export const MapView = () => {
     deleteCable,
     showVoltages,
     moveNode,
+    simulationMode,
   } = useNetworkStore();
 
-  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
   const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
+  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
 
   // Fonction pour zoomer sur le projet chargé
   const zoomToProject = (event?: CustomEvent) => {

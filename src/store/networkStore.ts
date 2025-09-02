@@ -926,7 +926,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
   // Actions de simulation
   toggleSimulationMode: () => {
-    const { simulationMode } = get();
+    const { simulationMode, simulationEquipment } = get();
     const newSimulationMode = !simulationMode;
     
     set({ 
@@ -937,6 +937,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         PRÉLÈVEMENT: null,
         MIXTE: null,
         PRODUCTION: null
+      },
+      // Désactiver tous les équipements de simulation quand on quitte le mode simulation
+      simulationEquipment: newSimulationMode ? simulationEquipment : {
+        regulators: simulationEquipment.regulators.map(r => ({ ...r, enabled: false })),
+        neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
+        cableUpgrades: simulationEquipment.cableUpgrades.map(u => ({ ...u, enabled: false }))
       }
     });
   },
