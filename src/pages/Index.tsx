@@ -131,12 +131,12 @@ const Index = () => {
       
       <EditPanel />
 
-      {editTarget === 'simulation' && (
-        <>
-          {console.log('🐛 Rendering SimulationPanel with editTarget:', editTarget)}
-          <SimulationPanel />
-        </>
-      )}
+      {(() => {
+        console.log('🐛 Current editTarget:', editTarget);
+        console.log('🐛 editTarget === simulation:', editTarget === 'simulation');
+        console.log('🐛 Should render SimulationPanel:', editTarget === 'simulation');
+        return editTarget === 'simulation' ? <SimulationPanel /> : null;
+      })()}
     </div>
   );
 };
