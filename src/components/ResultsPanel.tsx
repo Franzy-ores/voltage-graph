@@ -393,55 +393,58 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             </CardHeader>
             <CardContent>
               <div className="space-y-2 text-xs">
-                {circuitStats.circuitStats.map((circuit) => {
-                  // Trouver le circuit dans virtualBusbar pour la conformité
-                  const busbarCircuit = currentResult.virtualBusbar?.circuits.find(c => c.circuitId === circuit.circuitId);
-                  
-                  // Déterminer la conformité du circuit basée sur la tension min/max
-                  let circuitCompliance: 'normal' | 'warning' | 'critical' = 'normal';
-                  if (busbarCircuit) {
-                    const nominalVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
-                    const minDropPercent = Math.abs((nominalVoltage - busbarCircuit.minNodeVoltage_V) / nominalVoltage * 100);
-                    const maxDropPercent = Math.abs((nominalVoltage - busbarCircuit.maxNodeVoltage_V) / nominalVoltage * 100);
-                    const worstDrop = Math.max(minDropPercent, maxDropPercent);
-                    
-                    if (worstDrop > 10) circuitCompliance = 'critical';
-                    else if (worstDrop > 8) circuitCompliance = 'warning';
-                  }
-                  
-                  // Indicateur coloré de conformité
-                  const getComplianceIcon = (compliance: 'normal' | 'warning' | 'critical') => {
-                    const colors = {
-                      normal: 'bg-blue-500',
-                      warning: 'bg-orange-500', 
-                      critical: 'bg-red-500'
-                    };
-                    return (
-                      <div className={`w-3 h-3 rounded-full ${colors[compliance]} flex-shrink-0`} />
-                    );
-                  };
+                    {circuitStats.circuitStats.map((circuit) => {
+                      // Trouver le circuit dans virtualBusbar pour la conformité
+                      const busbarCircuit = currentResult.virtualBusbar?.circuits.find(c => c.circuitId === circuit.circuitId);
+                      
+                      // Déterminer la conformité du circuit basée sur la tension min/max
+                      let circuitCompliance: 'normal' | 'warning' | 'critical' = 'normal';
+                      if (busbarCircuit) {
+                        const nominalVoltage = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230;
+                        const minDropPercent = Math.abs((nominalVoltage - busbarCircuit.minNodeVoltage_V) / nominalVoltage * 100);
+                        const maxDropPercent = Math.abs((nominalVoltage - busbarCircuit.maxNodeVoltage_V) / nominalVoltage * 100);
+                        const worstDrop = Math.max(minDropPercent, maxDropPercent);
+                        
+                        if (worstDrop > 10) circuitCompliance = 'critical';
+                        else if (worstDrop > 8) circuitCompliance = 'warning';
+                      }
+                      
+                      // Indicateur coloré de conformité
+                      const getComplianceIcon = (compliance: 'normal' | 'warning' | 'critical') => {
+                        const colors = {
+                          normal: 'bg-blue-500',
+                          warning: 'bg-orange-500', 
+                          critical: 'bg-red-500'
+                        };
+                        return (
+                          <div className={`w-3 h-3 rounded-full ${colors[compliance]} flex-shrink-0`} />
+                        );
+                      };
 
-                  return (
-                    <div key={circuit.circuitId} className="p-2 rounded border border-border">
-                      <div className="flex items-center gap-2 mb-1">
-                        {getComplianceIcon(circuitCompliance)}
-                        <p className="font-medium">{circuit.circuitName}</p>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <span>Puissance: {Math.abs(circuit.subtreeSkVA).toFixed(1)} kVA</span>
-                        <span>Longueur: {circuit.length.toFixed(0)} m</span>
-                        <span>Direction: {circuit.direction}</span>
-                        <span>Câbles: {circuit.cableCount}</span>
-                        {busbarCircuit && (
-                          <>
-                            <span>U min: {busbarCircuit.minNodeVoltage_V.toFixed(1)} V</span>
-                            <span>U max: {busbarCircuit.maxNodeVoltage_V.toFixed(1)} V</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                      return (
+                        <div key={circuit.circuitId} className="p-2 rounded border border-border">
+                          <div className="flex items-center gap-2 mb-1">
+                            {getComplianceIcon(circuitCompliance)}
+                            <p className="font-medium">{circuit.circuitName}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <span>Puissance: {Math.abs(circuit.subtreeSkVA).toFixed(1)} kVA</span>
+                            <span>Longueur: {circuit.length.toFixed(0)} m</span>
+                            <span>Direction: {circuit.direction}</span>
+                            <span>Câbles: {circuit.cableCount}</span>
+                            {busbarCircuit?.subtreeQkVAr !== undefined && (
+                              <span>Q: {Math.abs(busbarCircuit.subtreeQkVAr).toFixed(1)} kVAr</span>
+                            )}
+                            {busbarCircuit && (
+                              <>
+                                <span>U min: {busbarCircuit.minNodeVoltage_V.toFixed(1)} V</span>
+                                <span>U max: {busbarCircuit.maxNodeVoltage_V.toFixed(1)} V</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
               </div>
             </CardContent>
           </Card>
@@ -509,6 +512,9 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                           <TableHead className="text-xs">Type</TableHead>
                           <TableHead className="text-xs">L (m)</TableHead>
                           <TableHead className="text-xs">I (A)</TableHead>
+                          {currentProject?.loadModel === 'monophase_reparti' && currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' && (
+                            <TableHead className="text-xs">I_N (A)</TableHead>
+                          )}
                           <TableHead className="text-xs">ΔU (%)</TableHead>
                           <TableHead className="text-xs">Pertes (kW)</TableHead>
                           <TableHead className="text-xs">U arr.(V)</TableHead>
@@ -583,9 +589,14 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                  <TableCell className="text-xs">{sourceNodeVoltage.toFixed(0)}</TableCell>
                                 <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
                                 <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
-                                <TableCell className="text-xs">
-                                  {cable.current_A?.toFixed(1) || '-'}
-                                </TableCell>
+                               <TableCell className="text-xs">
+                                 {cable.current_A?.toFixed(1) || '-'}
+                               </TableCell>
+                               {currentProject?.loadModel === 'monophase_reparti' && currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' && (
+                                 <TableCell className="text-xs">
+                                   {cable.currentsPerPhase_A?.N?.toFixed(1) || '-'}
+                                 </TableCell>
+                               )}
                                 <TableCell className="text-xs">
                                   <span className={`font-medium ${
                                     (() => {
@@ -631,6 +642,9 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                           <TableHead className="text-xs">Type</TableHead>
                           <TableHead className="text-xs">L (m)</TableHead>
                           <TableHead className="text-xs">I (A)</TableHead>
+                          {currentProject?.loadModel === 'monophase_reparti' && currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' && (
+                            <TableHead className="text-xs">I_N (A)</TableHead>
+                          )}
                           <TableHead className="text-xs">ΔU (%)</TableHead>
                           <TableHead className="text-xs">Pertes (kW)</TableHead>
                           <TableHead className="text-xs">U arr.(V)</TableHead>
@@ -696,9 +710,14 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                 <TableCell className="text-xs">{sourceNodeVoltage.toFixed(0)}</TableCell>
                                 <TableCell className="text-xs">{cableType?.label || '-'}</TableCell>
                                 <TableCell className="text-xs">{cable.length_m?.toFixed(0) || '-'}</TableCell>
-                                <TableCell className="text-xs">
-                                  {cable.current_A?.toFixed(1) || '-'}
-                                </TableCell>
+                                 <TableCell className="text-xs">
+                                   {cable.current_A?.toFixed(1) || '-'}
+                                 </TableCell>
+                                 {currentProject?.loadModel === 'monophase_reparti' && currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V' && (
+                                   <TableCell className="text-xs">
+                                     {cable.currentsPerPhase_A?.N?.toFixed(1) || '-'}
+                                   </TableCell>
+                                 )}
                                 <TableCell className="text-xs">
                                   <span className={`font-medium ${
                                     (() => {

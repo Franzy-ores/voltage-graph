@@ -30,6 +30,7 @@ export interface TransformerConfig {
 export interface VirtualBusbar {
   voltage_V: number;          // tension au jeu de barres après ΔU global (ligne)
   current_A: number;          // courant net (RMS)
+  current_N?: number;         // courant neutre (A RMS) en mode déséquilibré 400V
   netSkVA: number;            // total charges - productions (kVA)
   deltaU_V: number;           // ΔU global appliqué au bus (V, ligne)
   deltaU_percent?: number;    // ΔU global en %/U_line
@@ -37,6 +38,7 @@ export interface VirtualBusbar {
   circuits: Array<{
     circuitId: string;
     subtreeSkVA: number;      // charges - productions du sous-arbre (kVA)
+    subtreeQkVAr?: number;    // puissance réactive du sous-arbre (kVAr)
     direction: 'injection' | 'prélèvement';
     current_A: number;        // courant du départ (A RMS)
     deltaU_V: number;         // ΔU proportionnel au départ (V)

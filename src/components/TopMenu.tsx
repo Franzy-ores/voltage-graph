@@ -189,7 +189,10 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
           {calculationResults[selectedScenario]?.virtualBusbar && (
             <div className="text-xs text-primary-foreground/90 font-medium bg-white/5 px-3 py-1 rounded">
               Jeu de barres: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltage_V === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1) : '0.0'}V - 
-              {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A - 
+              {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A
+              {calculationResults[selectedScenario]!.virtualBusbar!.current_N !== undefined && (
+                <> - I_N: {calculationResults[selectedScenario]!.virtualBusbar!.current_N.toFixed(1)}A</>
+              )} - 
               ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V === 'number' ? 
                 (calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V.toFixed(2) : 
                 '0.00'}V

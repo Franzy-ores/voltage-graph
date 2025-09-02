@@ -114,7 +114,8 @@ export class ElectricalCalculator {
     V_node: Map<string, Complex>,
     I_source_net: Complex,
     Ztr_phase: Complex | null,
-    cableIndexByPair: Map<string, Cable>
+    cableIndexByPair: Map<string, Cable>,
+    I_source_net_phases?: { A: Complex; B: Complex; C: Complex } // Pour I_N en mode déséquilibré
   ): VirtualBusbar {
     const { U_base: U_nom_source, isThreePhase: isSourceThree } = this.getVoltage(source.connectionType);
     const U_ref_line = source.tensionCible ?? transformerConfig.nominalVoltage_V ?? U_nom_source;
@@ -129,6 +130,14 @@ export class ElectricalCalculator {
     const busVoltage_V = abs(V_bus) * (isSourceThree ? Math.sqrt(3) : 1);
     const netSkVA = totalLoads_kVA - totalProductions_kVA;
     const busCurrent_A = abs(I_source_net);
+
+    // Courant neutre du jeu de barres (si 400V et mode déséquilibré)
+    const is400V = U_ref_line >= 350;
+    let current_N: number | undefined;
+    if (is400V && I_source_net_phases) {
+      const I_N = add(add(I_source_net_phases.A, I_source_net_phases.B), I_source_net_phases.C);
+      current_N = abs(I_N);
+    }
 
     // ΔU global appliqué au bus (en V, ligne)
     const dVtr_line = abs(dVtr) * (isSourceThree ? Math.sqrt(3) : 1);
@@ -150,9 +159,16 @@ export class ElectricalCalculator {
       return res;
     };
 
+    // Calculer cosφ effectif pour Q
+    const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
+    const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
+
     for (const childId of sourceChildren) {
       const subtreeSkVA = S_aval.get(childId) || 0;
       const direction: 'injection' | 'prélèvement' = subtreeSkVA < 0 ? 'injection' : 'prélèvement';
+
+      // Calcul de Q du circuit (kVAr)
+      const subtreeQkVAr = Math.abs(subtreeSkVA) * sinPhi * Math.sign(subtreeSkVA);
 
       const cableId = cableIndexByPair.get(`${source.id}|${childId}`)?.id
         ?? cableIndexByPair.get(`${childId}|${source.id}`)?.id
@@ -189,6 +205,7 @@ export class ElectricalCalculator {
       circuits.push({
         circuitId: cableId,
         subtreeSkVA,
+        subtreeQkVAr,
         direction,
         current_A: departCurrent_A,
         deltaU_V: voltageShare,
@@ -202,6 +219,7 @@ export class ElectricalCalculator {
     return {
       voltage_V: busVoltage_V,
       current_A: busCurrent_A,
+      current_N,
       netSkVA,
       deltaU_V: dVtr_line_signed,
       deltaU_percent: U_ref_line ? (dVtr_line_signed / U_ref_line) * 100 : 0,
@@ -621,17 +639,31 @@ export class ElectricalCalculator {
       // Calcul du jeu de barres virtuel (préserver la notion de circuit en monophasé déséquilibré)
       let virtualBusbar: VirtualBusbar | undefined;
       if (transformerConfig) {
-        // Courant net à la source (phase A pivot global)
+        // Courant net à la source par phase pour I_N
         let I_source_net_A = C(0, 0);
+        let I_source_net_B = C(0, 0);
+        let I_source_net_C = C(0, 0);
+        
         for (const v of children.get(source.id) || []) {
           const cab = parentCableOfChild.get(v);
           if (!cab) continue;
           I_source_net_A = add(I_source_net_A, phaseA.I_branch_phase.get(cab.id) || C(0, 0));
+          I_source_net_B = add(I_source_net_B, phaseB.I_branch_phase.get(cab.id) || C(0, 0));
+          I_source_net_C = add(I_source_net_C, phaseC.I_branch_phase.get(cab.id) || C(0, 0));
         }
+        
         const V_source_A = phaseA.V_node_phase.get(source.id) || fromPolar(Vslack_phase, this.deg2rad(0));
         const S_source_A = S_A_map.get(source.id) || C(0, 0);
+        const S_source_B = S_B_map.get(source.id) || C(0, 0);
+        const S_source_C = S_C_map.get(source.id) || C(0, 0);
+        
         const Iinj_A = conj(div(S_source_A, V_source_A));
+        const Iinj_B = conj(div(S_source_B, V_source_A)); // Même tension ref
+        const Iinj_C = conj(div(S_source_C, V_source_A)); // Même tension ref
+        
         I_source_net_A = add(I_source_net_A, Iinj_A);
+        I_source_net_B = add(I_source_net_B, Iinj_B);
+        I_source_net_C = add(I_source_net_C, Iinj_C);
 
         virtualBusbar = this.calculateVirtualBusbar(
           transformerConfig,
@@ -643,7 +675,8 @@ export class ElectricalCalculator {
           phaseA.V_node_phase,
           I_source_net_A,
           Ztr_phase,
-          cableIndexByPair
+          cableIndexByPair,
+          { A: I_source_net_A, B: I_source_net_B, C: I_source_net_C }
         );
       }
 
