@@ -3,6 +3,7 @@ import { MapView } from "@/components/MapView";
 import { Toolbar } from "@/components/Toolbar";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { EditPanel } from "@/components/EditPanel";
+import { SimulationPanel } from "@/components/SimulationPanel";
 import { useNetworkStore } from "@/store/networkStore";
 
 const Index = () => {
@@ -11,6 +12,7 @@ const Index = () => {
     selectedScenario, 
     calculationResults,
     selectedTool,
+    editTarget,
     createNewProject,
     loadProject,
     openEditPanel,
@@ -103,6 +105,10 @@ const Index = () => {
     openEditPanel('project');
   };
 
+  const handleSimulation = () => {
+    openEditPanel('simulation');
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopMenu 
@@ -110,6 +116,7 @@ const Index = () => {
         onSave={handleSave}
         onLoad={handleLoad}
         onSettings={handleSettings}
+        onSimulation={handleSimulation}
       />
       
       <div className="flex-1 flex relative">
@@ -122,6 +129,8 @@ const Index = () => {
       </div>
       
       <EditPanel />
+
+      {editTarget === 'simulation' && <SimulationPanel />}
     </div>
   );
 };

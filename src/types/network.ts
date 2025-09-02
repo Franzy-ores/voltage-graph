@@ -130,6 +130,69 @@ export interface Project {
   cableTypes: CableType[];
 }
 
+// Types pour les équipements de simulation
+export type RegulatorType = "230V_77kVA" | "400V_44kVA";
+
+export interface VoltageRegulator {
+  id: string;
+  nodeId: string; // Nœud où l'armoire est installée
+  type: RegulatorType;
+  targetVoltage_V: number; // Tension de consigne
+  maxPower_kVA: number; // Puissance apparente maximale (77 ou 44 kVA)
+  enabled: boolean; // Actif dans la simulation
+  // Résultats de simulation
+  currentQ_kVAr?: number; // Q injecté/absorbé
+  currentVoltage_V?: number; // Tension mesurée au nœud
+  isLimited?: boolean; // True si limite de puissance atteinte
+}
+
+export interface NeutralCompensator {
+  id: string;
+  nodeId: string; // Nœud où le compensateur est installé
+  maxPower_kVA: number; // Puissance totale disponible pour compensation
+  tolerance_A: number; // Seuil de courant de neutre pour déclencher la compensation
+  enabled: boolean; // Actif dans la simulation
+  // Résultats de simulation
+  currentIN_A?: number; // Courant de neutre mesuré
+  compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase pour compensation
+  reductionPercent?: number; // Pourcentage de réduction du courant de neutre
+}
+
+export interface CableUpgrade {
+  originalCableId: string;
+  newCableTypeId: string;
+  reason: 'voltage_drop' | 'overload' | 'both';
+  // Comparaison avant/après
+  before: {
+    voltageDropPercent: number;
+    current_A: number;
+    losses_kW: number;
+  };
+  after: {
+    voltageDropPercent: number;
+    current_A: number;
+    losses_kW: number;
+    estimatedCost?: number;
+  };
+  improvement: {
+    voltageDropReduction: number; // En %
+    lossReduction_kW: number;
+    lossReductionPercent: number;
+  };
+}
+
+export interface SimulationEquipment {
+  regulators: VoltageRegulator[];
+  neutralCompensators: NeutralCompensator[];
+  cableUpgrades: CableUpgrade[];
+}
+
+export interface SimulationResult extends CalculationResult {
+  isSimulation: boolean;
+  equipment?: SimulationEquipment;
+  baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
+}
+
 export interface CalculationResult {
   scenario: CalculationScenario;
   cables: Cable[];
@@ -153,10 +216,15 @@ export interface NetworkState {
   calculationResults: {
     [key in CalculationScenario]: CalculationResult | null;
   };
-  selectedTool: 'select' | 'addNode' | 'addCable' | 'edit' | 'delete' | 'move';
+  simulationResults: {
+    [key in CalculationScenario]: SimulationResult | null;
+  };
+  selectedTool: 'select' | 'addNode' | 'addCable' | 'edit' | 'delete' | 'move' | 'simulation';
   selectedNodeId: string | null;
   selectedCableId: string | null;
   editPanelOpen: boolean;
-  editTarget: 'node' | 'cable' | 'project' | null;
+  editTarget: 'node' | 'cable' | 'project' | 'simulation' | null;
   showVoltages: boolean;
+  simulationMode: boolean;
+  simulationEquipment: SimulationEquipment;
 }

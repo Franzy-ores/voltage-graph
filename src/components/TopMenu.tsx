@@ -14,9 +14,10 @@ interface TopMenuProps {
   onSave: () => void;
   onLoad: () => void;
   onSettings: () => void;
+  onSimulation: () => void;
 }
 
-export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuProps) => {
+export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation }: TopMenuProps) => {
   const { 
     currentProject, 
     setFoisonnementCharges, 
@@ -119,6 +120,16 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings }: TopMenuPro
           >
             <Settings className="h-4 w-4 mr-1" />
             Câbles
+          </Button>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onSimulation}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <Zap className="h-4 w-4 mr-1" />
+            Simulation
           </Button>
           
           <Button
