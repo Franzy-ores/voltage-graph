@@ -397,7 +397,15 @@ export class ElectricalCalculator {
       U_line_base = isSrcThree ? 400 : 230;
     }
 
-    const Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
+    // Tension de phase pour l'initialisation selon le type de connexion
+    let Vslack_phase: number;
+    if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
+      // Pour les connexions monophasées, utiliser directement 230V comme tension de phase/service
+      Vslack_phase = 230;
+    } else {
+      // Pour les systèmes triphasés, conversion ligne -> phase
+      Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
+    }
     const Vslack = C(Vslack_phase, 0);
 
     // Transformer series impedance (per phase)

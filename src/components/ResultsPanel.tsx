@@ -759,6 +759,94 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             )}
           </CardContent>
         </Card>
+
+        {/* Node Voltage Details for Mono-phase networks */}
+        {currentProject?.loadModel === 'monophase_reparti' && currentResult?.nodePhasorsPerPhase && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Tensions Nodales par Phase</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {(() => {
+                  // Grouper les tensions par nœud
+                  const nodeGroups = new Map<string, typeof currentResult.nodePhasorsPerPhase>();
+                  currentResult.nodePhasorsPerPhase.forEach(phasor => {
+                    if (!nodeGroups.has(phasor.nodeId)) {
+                      nodeGroups.set(phasor.nodeId, []);
+                    }
+                    nodeGroups.get(phasor.nodeId)!.push(phasor);
+                  });
+
+                  return Array.from(nodeGroups.entries()).map(([nodeId, phasors]) => {
+                    const node = currentProject?.nodes.find(n => n.id === nodeId);
+                    if (!node) return null;
+
+                    const phaseA = phasors.find(p => p.phase === 'A');
+                    const phaseB = phasors.find(p => p.phase === 'B');
+                    const phaseC = phasors.find(p => p.phase === 'C');
+
+                    return (
+                      <div key={nodeId} className="border rounded-lg p-3">
+                        <div className="font-medium text-sm mb-2">
+                          {node.name || `Nœud ${nodeId.slice(0, 8)}`}
+                          {node.isSource && <span className="text-xs text-muted-foreground ml-2">(Source)</span>}
+                        </div>
+                        <div className="grid grid-cols-3 gap-3 text-xs">
+                          <div className="text-center">
+                            <div className="font-medium text-blue-600">Phase A</div>
+                            <div className="mt-1">
+                              <div>{phaseA?.V_phase_V.toFixed(1) || '-'} V</div>
+                              <div className="text-muted-foreground">{phaseA?.V_angle_deg.toFixed(1) || '-'}°</div>
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <div className="font-medium text-green-600">Phase B</div>
+                            <div className="mt-1">
+                              <div>{phaseB?.V_phase_V.toFixed(1) || '-'} V</div>
+                              <div className="text-muted-foreground">{phaseB?.V_angle_deg.toFixed(1) || '-'}°</div>
+                            </div>
+                          </div>
+                          <div className="text-center">
+                            <div className="font-medium text-red-600">Phase C</div>
+                            <div className="mt-1">
+                              <div>{phaseC?.V_phase_V.toFixed(1) || '-'} V</div>
+                              <div className="text-muted-foreground">{phaseC?.V_angle_deg.toFixed(1) || '-'}°</div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* Tensions composées */}
+                        <div className="mt-3 pt-2 border-t">
+                          <div className="text-xs font-medium mb-2">Tensions composées</div>
+                          <div className="grid grid-cols-3 gap-3 text-xs">
+                            {phaseA && phaseB && (
+                              <div className="text-center">
+                                <div className="font-medium">U_AB</div>
+                                <div>{(Math.sqrt(3) * Math.min(phaseA.V_phase_V, phaseB.V_phase_V)).toFixed(1)} V</div>
+                              </div>
+                            )}
+                            {phaseB && phaseC && (
+                              <div className="text-center">
+                                <div className="font-medium">U_BC</div>
+                                <div>{(Math.sqrt(3) * Math.min(phaseB.V_phase_V, phaseC.V_phase_V)).toFixed(1)} V</div>
+                              </div>
+                            )}
+                            {phaseC && phaseA && (
+                              <div className="text-center">
+                                <div className="font-medium">U_CA</div>
+                                <div>{(Math.sqrt(3) * Math.min(phaseC.V_phase_V, phaseA.V_phase_V)).toFixed(1)} V</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }).filter(Boolean);
+                })()}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
