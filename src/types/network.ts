@@ -153,11 +153,21 @@ export interface NeutralCompensator {
   maxPower_kVA: number; // Puissance totale disponible pour compensation
   tolerance_A: number; // Seuil de courant de neutre pour déclencher la compensation
   enabled: boolean; // Actif dans la simulation
+  // Paramètres EQUI8
+  zPhase_Ohm?: number;   // Impédance phase-neutre équivalente (Ω)
+  zNeutral_Ohm?: number; // Impédance du neutre équivalente (Ω)
+  fraction?: number;     // Fraction F (0-1)
   // Résultats de simulation
-  currentIN_A?: number; // Courant de neutre mesuré
-  compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase pour compensation
+  currentIN_A?: number; // Courant de neutre après compensation (A)
+  compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase (si modélisé)
   reductionPercent?: number; // Pourcentage de réduction du courant de neutre
   isLimited?: boolean; // True si limitation par puissance atteinte
+  // Sorties additionnelles EQUI8
+  iN_initial_A?: number;    // Courant de neutre initial (A)
+  iN_absorbed_A?: number;   // Courant de neutre absorbé (A)
+  u1p_V?: number;           // Tension corrigée phase A (V)
+  u2p_V?: number;           // Tension corrigée phase B (V)
+  u3p_V?: number;           // Tension corrigée phase C (V)
 }
 
 export interface CableUpgrade {

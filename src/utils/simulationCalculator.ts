@@ -16,7 +16,7 @@ import {
   ConnectionType
 } from '@/types/network';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
-import { Complex, C, add, sub, mul, div, abs } from '@/utils/complex';
+import { Complex, C, add, sub, mul, div, abs, fromPolar } from '@/utils/complex';
 
 export class SimulationCalculator extends ElectricalCalculator {
   
@@ -178,14 +178,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // État des équipements à chaque itération
     const regulatorStates = new Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>();
-    const compensatorStates = new Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>();
+    const compensatorStates = new Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>();
     
     // Initialisation des états
     for (const [nodeId, regulator] of regulators.entries()) {
       regulatorStates.set(nodeId, { Q_kVAr: 0, V_target: regulator.targetVoltage_V, isLimited: false });
     }
     for (const [nodeId, compensator] of compensators.entries()) {
-      compensatorStates.set(nodeId, { Q_phases: { A: 0, B: 0, C: 0 }, IN_A: 0, isLimited: false });
+      compensatorStates.set(nodeId, { Q_phases: { A: 0, B: 0, C: 0 }, IN_A: 0, reductionPercent: 0, isLimited: false });
     }
     
     // Tensions précédentes pour convergence
@@ -429,72 +429,115 @@ export class SimulationCalculator extends ElectricalCalculator {
     nodeId: string,
     compensator: NeutralCompensator,
     result: CalculationResult,
-    currentState: { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean },
-    loadModel: LoadModel,
-    desequilibrePourcent: number
+    currentState: { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean },
+    _loadModel: LoadModel,
+    _desequilibrePourcent: number
   ): boolean {
-    // Calcul approximatif du courant de neutre IN
-    let realIN_A = 0;
-    
-    if (loadModel === 'monophase_reparti' && desequilibrePourcent > 0) {
-      // En mode déséquilibré, estimer IN basé sur les métriques du nœud
-      const nodeMetric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
-      if (nodeMetric) {
-        const baseI = nodeMetric.I_inj_A;
-        const d = desequilibrePourcent / 100;
-        // IN ≈ courant de déséquilibre
-        realIN_A = baseI * d * 0.6; // Facteur empirique ajustable
+    // Paramètres EQUI8
+    const F = Math.max(0, Math.min(1, compensator.fraction ?? 0.6));
+    const Zp = compensator.zPhase_Ohm ?? 0.5;      // Ω
+    const Zn = compensator.zNeutral_Ohm ?? 0.2;    // Ω
+
+    // Récupération des tensions phase-neutre initiales (U1,U2,U3)
+    let U1 = 230, U2 = 230, U3 = 230;
+    const perPhase = result.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
+    const metric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
+    if (perPhase && perPhase.length >= 3) {
+      // Prendre magnitudes par phase si disponibles
+      const magA = perPhase.find(p => p.phase === 'A')?.V_phase_V;
+      const magB = perPhase.find(p => p.phase === 'B')?.V_phase_V;
+      const magC = perPhase.find(p => p.phase === 'C')?.V_phase_V;
+      if (magA && magB && magC) {
+        U1 = magA; U2 = magB; U3 = magC;
       }
-    } else {
-      // Mode équilibré : IN théoriquement nul, mais estimation basée sur charge
-      const nodeMetric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
-      if (nodeMetric) {
-        realIN_A = Math.max(0, nodeMetric.I_inj_A * 0.05); // 5% de déséquilibre résiduel
-      }
+    } else if (metric) {
+      U1 = U2 = U3 = metric.V_phase_V;
     }
-    
-    currentState.IN_A = realIN_A;
-    
-    if (realIN_A <= compensator.tolerance_A) {
-      // IN acceptable, pas de compensation
+
+    // Construire les vecteurs de tension (angles 0, -120°, +120°)
+    const deg2rad = (d: number) => (Math.PI * d) / 180;
+    const E1 = fromPolar(U1, deg2rad(0));
+    const E2 = fromPolar(U2, deg2rad(-120));
+    const E3 = fromPolar(U3, deg2rad(120));
+
+    // Impédances (réelles)
+    const Z_phase = C(Zp, 0);
+    const Z_neutral = C(Zn, 0);
+
+    // Courants initiaux par phase et courant de neutre
+    const Ia0 = div(E1, Z_phase);
+    const Ib0 = div(E2, Z_phase);
+    const Ic0 = div(E3, Z_phase);
+    const In0 = add(add(Ia0, Ib0), Ic0);
+    const IN_initial = abs(In0);
+
+    // Si I_N en dessous du seuil, pas d'action
+    if (IN_initial <= (compensator.tolerance_A ?? 0)) {
+      const changed = Math.abs(currentState.IN_A - IN_initial) > 0.01;
+      currentState.IN_A = IN_initial;
+      currentState.reductionPercent = 0;
       currentState.Q_phases = { A: 0, B: 0, C: 0 };
       currentState.isLimited = false;
-      return false;
+      // Mettre à jour quelques résultats sur l'objet (affichage)
+      compensator.iN_initial_A = IN_initial;
+      compensator.iN_absorbed_A = 0;
+      compensator.u1p_V = U1;
+      compensator.u2p_V = U2;
+      compensator.u3p_V = U3;
+      return changed;
     }
-    
-    // Calcul de la compensation nécessaire
-    const excessIN = realIN_A - compensator.tolerance_A;
-    const reductionTarget = Math.min(0.9, excessIN / realIN_A); // Max 90% réduction
-    
-    // Puissance réactive nécessaire (approximation)
-    const requiredQ_total = excessIN * 0.4; // Facteur empirique V*I
-    
-    if (requiredQ_total <= compensator.maxPower_kVA) {
-      // Répartition optimale sur les 3 phases pour minimiser IN
-      const Q_A = requiredQ_total * 0.4; // Phase la plus chargée
-      const Q_B = requiredQ_total * 0.35;
-      const Q_C = requiredQ_total * 0.25;
-      
-      // Vérifier si changement significatif
-      const oldQ_total = currentState.Q_phases.A + currentState.Q_phases.B + currentState.Q_phases.C;
-      if (Math.abs(requiredQ_total - oldQ_total) > 0.1) {
-        currentState.Q_phases = { A: Q_A, B: Q_B, C: Q_C };
-        currentState.isLimited = false;
-        return true;
-      }
-    } else {
-      // Limitation par puissance max
-      const maxQ = compensator.maxPower_kVA;
-      currentState.Q_phases = {
-        A: maxQ * 0.4,
-        B: maxQ * 0.35,
-        C: maxQ * 0.25
-      };
-      currentState.isLimited = true;
-      return true;
-    }
-    
-    return false;
+
+    // Redistribution des courants selon la règle EQUI8
+    const mags = [abs(Ia0), abs(Ib0), abs(Ic0)];
+    const maxIdx = mags.indexOf(Math.max(...mags));
+    const scaleMax = 1 - F / 3;
+    const scaleOther = 1 + F / 3;
+
+    const scales = [scaleOther, scaleOther, scaleOther];
+    scales[maxIdx] = scaleMax;
+
+    let Ia1 = mul(Ia0, C(scales[0], 0));
+    let Ib1 = mul(Ib0, C(scales[1], 0));
+    let Ic1 = mul(Ic0, C(scales[2], 0));
+
+    // Ajuster pour que |I_N'| = (1 - F) * |I_N_initial|
+    const In_temp = add(add(Ia1, Ib1), Ic1);
+    const IN_target = IN_initial * (1 - F);
+    const IN_temp = Math.max(abs(In_temp), 1e-9);
+    const k = IN_target / IN_temp;
+
+    const Ia2 = mul(Ia1, C(k, 0));
+    const Ib2 = mul(Ib1, C(k, 0));
+    const Ic2 = mul(Ic1, C(k, 0));
+
+    const In2 = add(add(Ia2, Ib2), Ic2);
+    const IN_after = abs(In2);
+
+    // Décalage de neutre et tensions corrigées
+    const Vn = mul(In2, Z_neutral);
+    const U1p = abs(sub(E1, Vn));
+    const U2p = abs(sub(E2, Vn));
+    const U3p = abs(sub(E3, Vn));
+
+    // Sorties et état
+    const absorbed = IN_initial - IN_after; // I_N absorbé par l'EQUI8
+    const reductionPercent = IN_initial > 1e-9 ? (absorbed / IN_initial) * 100 : 0;
+
+    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 || Math.abs(currentState.reductionPercent - reductionPercent) > 0.1;
+
+    currentState.IN_A = IN_after;
+    currentState.reductionPercent = reductionPercent;
+    currentState.Q_phases = { A: 0, B: 0, C: 0 }; // Modèle passif: pas d'injection Q directe
+    currentState.isLimited = false; // Pas de limite S appliquée dans ce modèle
+
+    // Publier sur l'objet pour l'UI
+    compensator.iN_initial_A = IN_initial;
+    compensator.iN_absorbed_A = absorbed;
+    compensator.u1p_V = U1p;
+    compensator.u2p_V = U2p;
+    compensator.u3p_V = U3p;
+
+    return changed;
   }
 
   /**
@@ -503,7 +546,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   private applyEquipmentToNodes(
     originalNodes: Node[],
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
-    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>
+    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>
   ): Node[] {
     return originalNodes.map(node => {
       let modifiedNode = { ...node };
@@ -562,7 +605,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     regulators: Map<string, VoltageRegulator>,
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
     compensators: Map<string, NeutralCompensator>,
-    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, isLimited: boolean }>
+    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>
   ): void {
     // Mise à jour des régulateurs
     for (const [nodeId, regulator] of regulators.entries()) {
@@ -579,6 +622,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       const state = compensatorStates.get(nodeId);
       if (state) {
         compensator.currentIN_A = state.IN_A;
+        compensator.reductionPercent = state.reductionPercent;
         compensator.compensationQ_kVAr = state.Q_phases;
         compensator.isLimited = state.isLimited;
       }

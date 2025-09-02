@@ -189,12 +189,62 @@ export const SimulationPanel = () => {
             </div>
           </div>
 
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs">Z_phase (Ω)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={compensator.zPhase_Ohm ?? 0.5}
+                onChange={(e) => updateNeutralCompensator(compensator.id, {
+                  zPhase_Ohm: Number(e.target.value)
+                })}
+                className="h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Z_neutre (Ω)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={compensator.zNeutral_Ohm ?? 0.2}
+                onChange={(e) => updateNeutralCompensator(compensator.id, {
+                  zNeutral_Ohm: Number(e.target.value)
+                })}
+                className="h-8"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">F (0-1)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                max={1}
+                value={compensator.fraction ?? 0.6}
+                onChange={(e) => updateNeutralCompensator(compensator.id, {
+                  fraction: Math.max(0, Math.min(1, Number(e.target.value)))
+                })}
+                className="h-8"
+              />
+            </div>
+          </div>
+
           {compensator.currentIN_A !== undefined && (
             <div className="bg-muted/50 p-2 rounded">
               <div className="text-xs font-medium mb-1">Résultats simulation:</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>I_N: {compensator.currentIN_A.toFixed(1)} A</div>
+                <div>I_N après: {compensator.currentIN_A.toFixed(1)} A</div>
                 <div>Réduction: {compensator.reductionPercent?.toFixed(1)}%</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs mt-2">
+                <div>U1': {compensator.u1p_V?.toFixed(1)} V</div>
+                <div>U2': {compensator.u2p_V?.toFixed(1)} V</div>
+                <div>U3': {compensator.u3p_V?.toFixed(1)} V</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+                <div>I_N initial: {compensator.iN_initial_A?.toFixed(1)} A</div>
+                <div>I_N absorbé: {compensator.iN_absorbed_A?.toFixed(1)} A</div>
               </div>
               {compensator.compensationQ_kVAr && (
                 <div className="mt-2 text-xs">

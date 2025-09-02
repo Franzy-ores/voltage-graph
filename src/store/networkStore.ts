@@ -942,7 +942,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       simulationEquipment: newSimulationMode ? simulationEquipment : {
         regulators: simulationEquipment.regulators.map(r => ({ ...r, enabled: false })),
         neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
-        cableUpgrades: simulationEquipment.cableUpgrades.map(u => ({ ...u, enabled: false }))
+        cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
   },
@@ -1028,7 +1028,10 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       nodeId,
       maxPower_kVA: 30,
       tolerance_A: 5,
-      enabled: true
+      enabled: true,
+      zPhase_Ohm: 0.5,
+      zNeutral_Ohm: 0.2,
+      fraction: 0.6
     };
 
     set({
