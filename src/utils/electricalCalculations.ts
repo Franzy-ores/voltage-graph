@@ -65,19 +65,20 @@ export class ElectricalCalculator {
     return { U_base: U, isThreePhase };
   }
 
-  // Conversion phase -> "tension affichée" (ligne) selon le type de connexion
-  // - TRI et TÉTRA: V_ligne = √3 · V_phase
-  // - MONO_230V_PP (deux phases): on affiche la tension entre phases → √3 · V_phase  
-  // - MONO_230V_PN (mono en réseau 400V): on affiche l'équivalent ligne → √3 · V_phase
+  // Conversion phase -> "tension affichée" selon le type de connexion
+  // - TRI et TÉTRA: V_ligne = √3 · V_phase (conversion phase-ligne)
+  // - MONO_230V_PP: tension entre phases (mesure directe, pas de facteur)
+  // - MONO_230V_PN: tension phase-neutre (mesure directe, pas de facteur)
   private getDisplayLineScale(connectionType: ConnectionType): number {
     switch (connectionType) {
       case 'TRI_230V_3F':
       case 'TÉTRA_3P+N_230_400V':
+        return Math.sqrt(3); // Conversion phase → ligne pour triphasé
       case 'MONO_230V_PP':
-      case 'MONO_230V_PN': // Mono en réseau 400V → afficher équivalent ligne
-        return Math.sqrt(3);
+      case 'MONO_230V_PN':
+        return 1; // Mesure directe entre phases ou phase-neutre
       default:
-        return 1; // Pour les autres types, pas de conversion
+        return 1;
     }
   }
 
