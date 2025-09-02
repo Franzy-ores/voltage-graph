@@ -45,12 +45,20 @@ export const MapView = () => {
     selectedCableType,
     openEditPanel,
     calculationResults,
+    simulationResults,
+    simulationEquipment,
     selectedScenario,
     deleteNode,
     deleteCable,
     showVoltages,
     moveNode,
   } = useNetworkStore();
+
+  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+                              simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  
+  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
 
   // Fonction pour zoomer sur le projet chargé
   const zoomToProject = (event?: CustomEvent) => {
@@ -450,8 +458,8 @@ export const MapView = () => {
       let nominalDropPercent = 0; // Déclarer la variable pour la conformité (signée)
       
       if (calculationResults[selectedScenario] && !node.isSource) {
-        const results = calculationResults[selectedScenario];
-        const nodeData = results.nodeVoltageDrops?.find(n => n.nodeId === node.id);
+        const results = resultsToUse[selectedScenario];
+        const nodeData = results?.nodeVoltageDrops?.find(n => n.nodeId === node.id);
         if (nodeData) {
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
@@ -664,7 +672,7 @@ export const MapView = () => {
 
       markersRef.current.set(node.id, marker);
     });
-  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, showVoltages, calculationResults, selectedScenario, moveNode, routingActive, routingFromNode, routingToNode]);
+  }, [currentProject?.nodes, selectedTool, selectedNodeId, selectedCableType, addCable, setSelectedNode, openEditPanel, deleteNode, showVoltages, resultsToUse, selectedScenario, moveNode, routingActive, routingFromNode, routingToNode]);
 
   // Update cables
   useEffect(() => {
@@ -686,7 +694,7 @@ export const MapView = () => {
       
       // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
       if (nodeAConnected && nodeBConnected) {
-        const results = calculationResults[selectedScenario];
+        const results = resultsToUse[selectedScenario];
         if (results && results.nodeVoltageDrops) {
           const calculatedCable = results.cables.find(c => c.id === cable.id);
           if (calculatedCable) {

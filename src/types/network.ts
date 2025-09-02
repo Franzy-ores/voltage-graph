@@ -157,6 +157,7 @@ export interface NeutralCompensator {
   currentIN_A?: number; // Courant de neutre mesuré
   compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase pour compensation
   reductionPercent?: number; // Pourcentage de réduction du courant de neutre
+  isLimited?: boolean; // True si limitation par puissance atteinte
 }
 
 export interface CableUpgrade {

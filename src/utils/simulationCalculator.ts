@@ -12,7 +12,8 @@ import {
   SimulationEquipment,
   RegulatorType,
   TransformerConfig,
-  LoadModel
+  LoadModel,
+  ConnectionType
 } from '@/types/network';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { Complex, C, add, sub, mul, div, abs } from '@/utils/complex';
@@ -156,7 +157,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * BFS modifié pour intégrer les équipements de simulation
+   * BFS modifié pour intégrer les équipements de simulation avec vraie convergence
    */
   private runEnhancedBFS(
     nodes: Node[],
@@ -172,111 +173,221 @@ export class SimulationCalculator extends ElectricalCalculator {
     compensators: Map<string, NeutralCompensator>
   ): CalculationResult {
     
-    // Calculer d'abord avec l'algorithme standard pour avoir une base
-    let baseResult = this.calculateScenario(
+    const maxIterations = 20;
+    const convergenceTolerance = 0.1; // 0.1V
+    let converged = false;
+    let iteration = 0;
+    let maxVoltageDelta = 0; // Déclarer ici pour être accessible après la boucle
+    
+    // Structures pour stocker les tensions précédentes
+    let previousVoltages = new Map<string, number>();
+    let currentResult = this.calculateScenario(
       nodes, cables, cableTypes, scenario,
       foisonnementCharges, foisonnementProductions,
       transformerConfig, loadModel, desequilibrePourcent
     );
-
-    // Algorithme itératif pour intégrer les équipements
-    const maxIterations = 20;
-    let converged = false;
     
-    for (let iter = 0; iter < maxIterations && !converged; iter++) {
-      let hasChanged = false;
+    while (iteration < maxIterations && !converged) {
+      iteration++;
       
-      // Appliquer les régulateurs de tension (PV nodes)
-      for (const regulator of regulators.values()) {
-        if (!baseResult.nodeMetrics) continue;
-        
-        const nodeMetric = baseResult.nodeMetrics.find(m => m.nodeId === regulator.nodeId);
-        if (!nodeMetric) continue;
-
-        const currentV = nodeMetric.V_phase_V;
-        const targetV = regulator.targetVoltage_V;
-        const errorV = targetV - currentV;
-        
-        // Contrôle proportionnel pour calculer Q nécessaire
-        const Kp = 0.5; // Gain proportionnel à ajuster
-        let requiredQ = Kp * errorV * regulator.maxPower_kVA / 50; // Normalisation
-        
-        // Limiter par la puissance maximale
-        const maxQ = regulator.maxPower_kVA;
-        if (Math.abs(requiredQ) > maxQ) {
-          requiredQ = Math.sign(requiredQ) * maxQ;
-          regulator.isLimited = true;
-        } else {
-          regulator.isLimited = false;
-        }
-        
-        // Vérifier si le changement est significatif
-        if (Math.abs(requiredQ - (regulator.currentQ_kVAr || 0)) > 0.1) {
-          hasChanged = true;
-          regulator.currentQ_kVAr = requiredQ;
-          regulator.currentVoltage_V = currentV;
-          
-          // Approximation de l'effet sur la tension (à améliorer avec vraie BFS)
-          const voltageImprovement = requiredQ * 0.02; // Gain approximatif
-          nodeMetric.V_phase_V = Math.max(0, currentV + voltageImprovement);
+      // Sauvegarder les tensions actuelles pour comparaison
+      if (currentResult.nodeMetrics) {
+        for (const nodeMetric of currentResult.nodeMetrics) {
+          previousVoltages.set(nodeMetric.nodeId, nodeMetric.V_phase_V);
         }
       }
       
-      // Appliquer les compensateurs de neutre
-      for (const compensator of compensators.values()) {
-        // Pour une implémentation complète, il faudrait calculer I_N réel
-        // Ici on approxime basé sur le déséquilibre du réseau
+      // Traiter les régulateurs de tension (nœuds PV)
+      let regulatorChanged = false;
+      for (const regulator of regulators.values()) {
+        if (!currentResult.nodeMetrics) continue;
         
-        const baseIN = desequilibrePourcent * 0.1; // Approximation basée sur déséquilibre
-        const currentIN = baseIN * (1 - (compensator.reductionPercent || 0) / 100);
+        const nodeMetric = currentResult.nodeMetrics.find(m => m.nodeId === regulator.nodeId);
+        if (!nodeMetric) continue;
+
+        const currentV_phase = nodeMetric.V_phase_V;
+        // Convertir en tension ligne si nécessaire pour la comparaison avec targetVoltage
+        const node = nodes.find(n => n.id === regulator.nodeId);
+        const isThreePhase = node && this.getNodeVoltageConfig(node.connectionType).isThreePhase;
+        const currentV_line = currentV_phase * (isThreePhase ? Math.sqrt(3) : 1);
         
-        if (currentIN > compensator.tolerance_A) {
-          const maxReduction = Math.min(0.8, compensator.maxPower_kVA / 30);
-          const newReduction = Math.min(maxReduction * 100, 
-            (compensator.reductionPercent || 0) + 5);
+        const targetV = regulator.targetVoltage_V;
+        const errorV = Math.abs(targetV - currentV_line);
+        
+        // Si l'écart est significatif, ajuster Q
+        if (errorV > convergenceTolerance) {
+          // Calcul du Q nécessaire basé sur l'écart de tension
+          const Kp = regulator.maxPower_kVA / 50; // Gain proportionnel adaptatif
+          let requiredQ = Math.sign(targetV - currentV_line) * Math.min(
+            Math.abs(errorV) * Kp,
+            regulator.maxPower_kVA
+          );
           
-          if (Math.abs(newReduction - (compensator.reductionPercent || 0)) > 0.5) {
-            hasChanged = true;
-            compensator.reductionPercent = newReduction;
-            compensator.currentIN_A = baseIN * (1 - newReduction / 100);
+          // Appliquer les limites de puissance
+          if (Math.abs(requiredQ) > regulator.maxPower_kVA) {
+            requiredQ = Math.sign(requiredQ) * regulator.maxPower_kVA;
+            regulator.isLimited = true;
+          } else {
+            regulator.isLimited = false;
+          }
+          
+          // Mettre à jour les valeurs du régulateur
+          const oldQ = regulator.currentQ_kVAr || 0;
+          if (Math.abs(requiredQ - oldQ) > 0.1) {
+            regulator.currentQ_kVAr = requiredQ;
+            regulator.currentVoltage_V = currentV_line;
+            regulatorChanged = true;
             
-            // Répartition approximative du Q sur les phases
-            const totalQ = compensator.maxPower_kVA * (newReduction / 100);
+            // Modifier le nœud pour injecter/absorber Q
+            if (node) {
+              // Créer une production fictive pour injecter Q
+              const existingProd = node.productions.find(p => p.id.startsWith('regulator-'));
+              const qPower_kVA = Math.abs(requiredQ);
+              
+              if (existingProd) {
+                existingProd.S_kVA = qPower_kVA;
+              } else {
+                node.productions.push({
+                  id: `regulator-${regulator.id}`,
+                  label: 'Régulateur',
+                  S_kVA: qPower_kVA
+                });
+              }
+            }
+          }
+        } else {
+          regulator.currentVoltage_V = currentV_line;
+          regulator.isLimited = false;
+        }
+      }
+      
+      // Traiter les compensateurs de neutre (calcul réel de IN)
+      let compensatorChanged = false;
+      for (const compensator of compensators.values()) {
+        // Calculer le courant de neutre réel IN = |Ia + Ib + Ic|
+        let realIN_A = 0;
+        
+        if (loadModel === 'monophase_reparti' && desequilibrePourcent > 0) {
+          // En mode déséquilibré, calculer IN approximatif
+          const nodeMetric = currentResult.nodeMetrics?.find(m => m.nodeId === compensator.nodeId);
+          if (nodeMetric) {
+            // Approximation basée sur le déséquilibre et le courant injecté
+            const baseI = nodeMetric.I_inj_A;
+            const d = desequilibrePourcent / 100;
+            // IN approximatif = déséquilibre * courant total
+            realIN_A = baseI * d * 0.5; // Facteur empirique
+          }
+        }
+        
+        const currentIN = compensator.currentIN_A || realIN_A;
+        
+        if (realIN_A > compensator.tolerance_A) {
+          // Calculer la compensation nécessaire
+          const targetReduction = Math.min(
+            0.9, // Maximum 90% de réduction
+            (realIN_A - compensator.tolerance_A) / realIN_A
+          );
+          
+          // Limiter par la puissance max disponible
+          const maxQ_available = compensator.maxPower_kVA;
+          const requiredQ_total = realIN_A * targetReduction * 0.4; // Facteur empirique V*I
+          
+          if (requiredQ_total <= maxQ_available) {
+            // Répartir Q sur les 3 phases pour minimiser IN
             compensator.compensationQ_kVAr = {
-              A: totalQ * 0.4,
-              B: totalQ * 0.35,
-              C: totalQ * 0.25
+              A: requiredQ_total * 0.4, // Phase avec plus de déséquilibre
+              B: requiredQ_total * 0.3,
+              C: requiredQ_total * 0.3
             };
+            compensator.currentIN_A = realIN_A * (1 - targetReduction);
+            compensator.isLimited = false;
+            compensatorChanged = true;
+          } else {
+            // Limitation par puissance max
+            compensator.compensationQ_kVAr = {
+              A: maxQ_available * 0.4,
+              B: maxQ_available * 0.3,
+              C: maxQ_available * 0.3
+            };
+            const actualReduction = maxQ_available / requiredQ_total * targetReduction;
+            compensator.currentIN_A = realIN_A * (1 - actualReduction);
+            compensator.isLimited = true;
+            compensatorChanged = true;
+          }
+        } else {
+          compensator.currentIN_A = realIN_A;
+          compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
+          compensator.isLimited = false;
+        }
+      }
+      
+      // Si des équipements ont changé, recalculer le réseau
+      if (regulatorChanged || compensatorChanged) {
+        currentResult = this.calculateScenario(
+          nodes, cables, cableTypes, scenario,
+          foisonnementCharges, foisonnementProductions,
+          transformerConfig, loadModel, desequilibrePourcent
+        );
+      }
+      
+      // Test de convergence : écart max des tensions < tolerance
+      maxVoltageDelta = 0; // Reset pour cette itération
+      if (currentResult.nodeMetrics) {
+        for (const nodeMetric of currentResult.nodeMetrics) {
+          const prevV = previousVoltages.get(nodeMetric.nodeId) || nodeMetric.V_phase_V;
+          const deltaV = Math.abs(nodeMetric.V_phase_V - prevV);
+          if (deltaV > maxVoltageDelta) {
+            maxVoltageDelta = deltaV;
           }
         }
       }
       
-      // Test de convergence
-      if (!hasChanged) {
+      if (maxVoltageDelta < convergenceTolerance) {
         converged = true;
       }
     }
     
     if (!converged) {
-      console.warn('⚠️ Simulation equipment BFS did not converge');
+      console.warn(`⚠️ Simulation BFS non convergé après ${maxIterations} itérations (δV max = ${maxVoltageDelta.toFixed(3)}V)`);
+    } else {
+      console.log(`✅ Simulation BFS convergé en ${iteration} itérations`);
     }
 
-    return baseResult;
+    return currentResult;
   }
 
   /**
-   * Propose automatiquement des améliorations de câbles
+   * Fonction utilitaire pour obtenir les informations de tension d'un type de connexion
+   */
+  private getNodeVoltageConfig(connectionType: ConnectionType): { U_base: number; isThreePhase: boolean } {
+    switch (connectionType) {
+      case 'MONO_230V_PN':
+        return { U_base: 230, isThreePhase: false };
+      case 'MONO_230V_PP':
+        return { U_base: 230, isThreePhase: false };
+      case 'TRI_230V_3F':
+        return { U_base: 230, isThreePhase: true };
+      case 'TÉTRA_3P+N_230_400V':
+        return { U_base: 400, isThreePhase: true };
+      default:
+        return { U_base: 230, isThreePhase: true };
+    }
+  }
+
+  /**
+   * Propose automatiquement des améliorations de câbles basées sur l'ampacité réelle
    */
   proposeCableUpgrades(
     project: Project,
     result: CalculationResult,
     voltageDropThreshold: number = 8, // %
-    overloadThreshold: number = 1.0 // facteur de sécurité
+    overloadThreshold: number = 1.0, // facteur de sécurité
+    estimatedCostPerUpgrade: number = 1500 // Coût paramétrable par défaut
   ): CableUpgrade[] {
     const upgrades: CableUpgrade[] = [];
     const cableTypeById = new Map(project.cableTypes.map(ct => [ct.id, ct]));
     
-    // Trier les types de câbles par section (approximation via résistance)
+    // Trier les types de câbles par section (approximation via résistance décroissante)
     const sortedCableTypes = [...project.cableTypes].sort((a, b) => 
       a.R12_ohm_per_km - b.R12_ohm_per_km
     );
@@ -284,34 +395,51 @@ export class SimulationCalculator extends ElectricalCalculator {
     for (const cable of result.cables) {
       if (!cable.voltageDropPercent && !cable.current_A) continue;
 
-      const needsUpgrade = 
-        (cable.voltageDropPercent && Math.abs(cable.voltageDropPercent) > voltageDropThreshold) ||
-        (cable.current_A && cable.current_A > 100 * overloadThreshold); // 100A comme exemple d'I_iz
-
-      if (!needsUpgrade) continue;
-
       const currentType = cableTypeById.get(cable.typeId);
       if (!currentType) continue;
+
+      // Utiliser maxCurrent_A si disponible, sinon fallback estimation basée sur section
+      const maxCurrentA = currentType.maxCurrent_A || this.estimateMaxCurrent(currentType);
+      
+      // Vérifier les conditions d'upgrade
+      const hasVoltageDropIssue = cable.voltageDropPercent && Math.abs(cable.voltageDropPercent) > voltageDropThreshold;
+      const hasOverloadIssue = cable.current_A && cable.current_A > maxCurrentA * overloadThreshold;
+      
+      if (!hasVoltageDropIssue && !hasOverloadIssue) continue;
 
       // Trouver un type de section supérieure
       const currentTypeIndex = sortedCableTypes.findIndex(ct => ct.id === cable.typeId);
       if (currentTypeIndex === -1) continue;
 
-      // Prendre la section immédiatement supérieure
-      const nextType = sortedCableTypes[currentTypeIndex + 1];
+      // Chercher le prochain câble avec ampacité suffisante
+      let nextType: CableType | null = null;
+      for (let i = currentTypeIndex + 1; i < sortedCableTypes.length; i++) {
+        const candidate = sortedCableTypes[i];
+        const candidateMaxCurrent = candidate.maxCurrent_A || this.estimateMaxCurrent(candidate);
+        
+        // Vérifier si ce câble résout le problème d'ampacité
+        if (!hasOverloadIssue || (cable.current_A && cable.current_A <= candidateMaxCurrent * overloadThreshold)) {
+          nextType = candidate;
+          break;
+        }
+      }
+      
       if (!nextType) continue;
 
-      // Estimation des améliorations (simplifié)
+      // Estimation des améliorations
       const improvementFactor = currentType.R12_ohm_per_km / nextType.R12_ohm_per_km;
       const newVoltageDropPercent = (cable.voltageDropPercent || 0) / improvementFactor;
       const newLosses_kW = (cable.losses_kW || 0) / (improvementFactor * improvementFactor);
 
-      const reason: CableUpgrade['reason'] = 
-        Math.abs(cable.voltageDropPercent || 0) > voltageDropThreshold && (cable.current_A || 0) > 100 * overloadThreshold 
-          ? 'both'
-          : Math.abs(cable.voltageDropPercent || 0) > voltageDropThreshold 
-            ? 'voltage_drop' 
-            : 'overload';
+      // Déterminer la raison de l'upgrade
+      let reason: CableUpgrade['reason'];
+      if (hasVoltageDropIssue && hasOverloadIssue) {
+        reason = 'both';
+      } else if (hasVoltageDropIssue) {
+        reason = 'voltage_drop';
+      } else {
+        reason = 'overload';
+      }
 
       upgrades.push({
         originalCableId: cable.id,
@@ -326,17 +454,34 @@ export class SimulationCalculator extends ElectricalCalculator {
           voltageDropPercent: newVoltageDropPercent,
           current_A: cable.current_A || 0, // Le courant ne change pas
           losses_kW: newLosses_kW,
-          estimatedCost: 1500 // Coût estimé par upgrade
+          estimatedCost: estimatedCostPerUpgrade
         },
         improvement: {
           voltageDropReduction: Math.abs((cable.voltageDropPercent || 0) - newVoltageDropPercent),
           lossReduction_kW: (cable.losses_kW || 0) - newLosses_kW,
-          lossReductionPercent: ((cable.losses_kW || 0) - newLosses_kW) / (cable.losses_kW || 1) * 100
+          lossReductionPercent: ((cable.losses_kW || 0) - newLosses_kW) / Math.max(cable.losses_kW || 1, 0.001) * 100
         }
       });
     }
 
     return upgrades;
+  }
+
+  /**
+   * Estime l'ampacité d'un câble si maxCurrent_A n'est pas fourni
+   */
+  private estimateMaxCurrent(cableType: CableType): number {
+    // Estimation basique basée sur la résistance (plus la résistance est faible, plus l'ampacité est élevée)
+    const baseResistance = 1.83; // Résistance cuivre 10 mm² de référence
+    const baseAmpacity = 60; // Ampacité cuivre 10 mm² de référence
+    
+    // Facteur matériau (aluminium ~85% du cuivre)
+    const materialFactor = cableType.matiere === 'ALUMINIUM' ? 0.85 : 1.0;
+    
+    // Estimation par rapport inversement proportionnelle à la résistance
+    const estimatedAmpacity = (baseResistance / cableType.R12_ohm_per_km) * baseAmpacity * materialFactor;
+    
+    return Math.round(estimatedAmpacity);
   }
 
   /**
