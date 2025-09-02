@@ -77,7 +77,7 @@ export class ElectricalCalculator {
       case 'MONO_230V_PN': // Mono en réseau 400V → afficher équivalent ligne
         return Math.sqrt(3);
       default:
-        return Math.sqrt(3);
+        return 1; // Pour les autres types, pas de conversion
     }
   }
 
