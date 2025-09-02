@@ -9,7 +9,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 5.49,
     X0_ohm_per_km: 0.27,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 60,
   },
   {
     id: 'cu-16',
@@ -19,7 +20,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 3.45,
     X0_ohm_per_km: 0.27,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 85,
   },
   {
     id: 'cu-25',
@@ -29,7 +31,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 2.18,
     X0_ohm_per_km: 0.24,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 115,
   },
   {
     id: 'cu-35',
@@ -39,7 +42,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 1.57,
     X0_ohm_per_km: 0.24,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 140,
   },
   {
     id: 'cu-50',
@@ -49,7 +53,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 1.16,
     X0_ohm_per_km: 0.24,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 170,
   },
   {
     id: 'cu-70',
@@ -59,7 +64,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 0.80,
     X0_ohm_per_km: 0.21,
     matiere: 'CUIVRE',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 210,
   },
   {
     id: 'baxb-70',
@@ -69,7 +75,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 2.515,
     X0_ohm_per_km: 0.257,
     matiere: 'ALUMINIUM',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 190,
   },
   {
     id: 'baxb-95',
@@ -79,7 +86,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 2.379,
     X0_ohm_per_km: 0.263,
     matiere: 'ALUMINIUM',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 230,
   },
   {
     id: 'baxb-150',
@@ -89,7 +97,8 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 1.805,
     X0_ohm_per_km: 0.258,
     matiere: 'ALUMINIUM',
-    posesPermises: ['AÉRIEN']
+    posesPermises: ['AÉRIEN'],
+    maxCurrent_A: 300,
   },
   {
     id: 'eaxecwb-4x150',
@@ -99,6 +108,7 @@ export const defaultCableTypes: CableType[] = [
     R0_ohm_per_km: 0.972,
     X0_ohm_per_km: 0.273,
     matiere: 'ALUMINIUM',
-    posesPermises: ['SOUTERRAIN']
+    posesPermises: ['SOUTERRAIN'],
+    maxCurrent_A: 310,
   }
 ];

@@ -58,6 +58,7 @@ export interface CableType {
   X0_ohm_per_km: number;
   matiere: "CUIVRE" | "ALUMINIUM";
   posesPermises: CablePose[];
+  maxCurrent_A?: number; // Ampacité (I_iz) optionnelle si disponible
 }
 
 export interface ClientCharge {
