@@ -822,19 +822,42 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                             {phaseA && phaseB && (
                               <div className="text-center">
                                 <div className="font-medium">U_AB</div>
-                                <div>{(Math.sqrt(3) * Math.min(phaseA.V_phase_V, phaseB.V_phase_V)).toFixed(1)} V</div>
+                                <div>{(() => {
+                                  // Pour MONO_230V_PP (réseau 230V), la tension entre phases est directe (230V)
+                                  // Pour MONO_230V_PN (réseau 400V), utiliser √3
+                                  const nodeType = node.connectionType;
+                                  if (nodeType === 'MONO_230V_PP' || currentProject?.voltageSystem === 'TRIPHASÉ_230V') {
+                                    return Math.min(phaseA.V_phase_V, phaseB.V_phase_V).toFixed(1);
+                                  } else {
+                                    return (Math.sqrt(3) * Math.min(phaseA.V_phase_V, phaseB.V_phase_V)).toFixed(1);
+                                  }
+                                })()} V</div>
                               </div>
                             )}
                             {phaseB && phaseC && (
                               <div className="text-center">
                                 <div className="font-medium">U_BC</div>
-                                <div>{(Math.sqrt(3) * Math.min(phaseB.V_phase_V, phaseC.V_phase_V)).toFixed(1)} V</div>
+                                <div>{(() => {
+                                  const nodeType = node.connectionType;
+                                  if (nodeType === 'MONO_230V_PP' || currentProject?.voltageSystem === 'TRIPHASÉ_230V') {
+                                    return Math.min(phaseB.V_phase_V, phaseC.V_phase_V).toFixed(1);
+                                  } else {
+                                    return (Math.sqrt(3) * Math.min(phaseB.V_phase_V, phaseC.V_phase_V)).toFixed(1);
+                                  }
+                                })()} V</div>
                               </div>
                             )}
                             {phaseC && phaseA && (
                               <div className="text-center">
                                 <div className="font-medium">U_CA</div>
-                                <div>{(Math.sqrt(3) * Math.min(phaseC.V_phase_V, phaseA.V_phase_V)).toFixed(1)} V</div>
+                                <div>{(() => {
+                                  const nodeType = node.connectionType;
+                                  if (nodeType === 'MONO_230V_PP' || currentProject?.voltageSystem === 'TRIPHASÉ_230V') {
+                                    return Math.min(phaseC.V_phase_V, phaseA.V_phase_V).toFixed(1);
+                                  } else {
+                                    return (Math.sqrt(3) * Math.min(phaseC.V_phase_V, phaseA.V_phase_V)).toFixed(1);
+                                  }
+                                })()} V</div>
                               </div>
                             )}
                           </div>
