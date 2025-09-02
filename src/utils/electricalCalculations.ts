@@ -488,14 +488,15 @@ export class ElectricalCalculator {
     const isUnbalanced = loadModel === 'monophase_reparti' && d > 0;
 
     if (isUnbalanced) {
-      // Répartition S_total -> S_A/S_B/S_C selon d avec distribution statistique plus réaliste
-      // Pivot global fixe : phase A pour 400V, paire L1-L2 pour 230V  
+      // Répartition S_total -> S_A/S_B/S_C selon d
+      // Par défaut: répartition équitable 33,3% par phase
+      // Avec déséquilibre: plus de charge sur phase A
       const globalAngle = 0; // Angle identique pour tous les circuits pour préserver la notion de circuit
       
-      // Distribution plus réaliste du déséquilibre
-      const pA = (1/3) + (d * 0.5);  // Phase la plus chargée
-      const pB = (1/3) - (d * 0.25); // Phases moins chargées
-      const pC = (1/3) - (d * 0.25);
+      // Répartition équitable par défaut avec déséquilibre limité à 30%
+      const pA = (1/3) + (d * 0.4);  // Phase A: 33,3% à 46,6% (avec 30% déséq.)
+      const pB = (1/3) - (d * 0.2);  // Phase B: 33,3% à 26,7%
+      const pC = (1/3) - (d * 0.2);  // Phase C: 33,3% à 26,7%
       
       // Vérification de cohérence
       const totalP = pA + pB + pC;

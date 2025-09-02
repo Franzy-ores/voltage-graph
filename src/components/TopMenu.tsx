@@ -7,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 import { PDFGenerator } from "@/utils/pdfGenerator";
+import { PhaseDistributionDisplay } from "@/components/PhaseDistributionDisplay";
 import { toast } from "sonner";
 
 interface TopMenuProps {
@@ -210,6 +211,9 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
             </div>
           )}
 
+          {/* Phase Distribution Display */}
+          <PhaseDistributionDisplay />
+
           {/* Third Row: Load Model and Controls */}
           <div className="flex items-center justify-between gap-4">
             {/* Load Model Controls */}
@@ -242,15 +246,15 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                   <div className="flex items-center gap-2 min-w-[180px]">
                     <Progress 
                       value={currentProject.desequilibrePourcent || 0} 
-                      max={10}
+                      max={30}
                       className="flex-1 h-2"
                     />
                     <Slider
                       value={[currentProject.desequilibrePourcent || 0]}
                       onValueChange={(value) => updateProjectConfig({ desequilibrePourcent: value[0] })}
-                      max={10}
+                      max={30}
                       min={0}
-                      step={0.5}
+                      step={1}
                       className="w-20"
                     />
                   </div>
