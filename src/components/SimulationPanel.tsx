@@ -135,10 +135,13 @@ export const SimulationPanel = () => {
   };
 
   const CompensatorCard = ({ compensator }: { compensator: NeutralCompensator }) => {
-    const node = currentProject.nodes.find(n => n.id === compensator.nodeId);
-    const is400V = currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
-    const isMonoPN = node?.connectionType === 'MONO_230V_PN';
-    const hasDeseq = (currentProject.loadModel ?? 'polyphase_equilibre') === 'monophase_reparti' && (currentProject.desequilibrePourcent ?? 0) > 0;
+    const node = currentProject?.nodes.find(n => n.id === compensator.nodeId);
+    const is400V = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V';
+    const nodeConnectionType = node && currentProject 
+      ? getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource) 
+      : null;
+    const isMonoPN = nodeConnectionType === 'MONO_230V_PN';
+    const hasDeseq = (currentProject?.loadModel ?? 'polyphase_equilibre') === 'monophase_reparti' && (currentProject?.desequilibrePourcent ?? 0) > 0;
     const eligible = is400V && isMonoPN && hasDeseq;
     
     return (
@@ -180,13 +183,13 @@ export const SimulationPanel = () => {
               </div>
               <div className="grid grid-cols-1 gap-1">
                 <div>• Réseau 400V: {is400V ? 'OK' : 'Non'}</div>
-                <div>• Nœud en MONO 230V (PN): {isMonoPN ? 'OK' : (node?.connectionType || 'Non')}</div>
+                <div>• Nœud en MONO 230V (PN): {isMonoPN ? 'OK' : (nodeConnectionType || 'Non')}</div>
                 <div>• Mode déséquilibré: {(currentProject.loadModel === 'monophase_reparti') ? `OK (${currentProject.desequilibrePourcent || 0}%)` : 'Non'}</div>
               </div>
               <div className="flex items-center gap-2 flex-wrap pt-1">
                 {!isMonoPN && node && (
-                  <Button size="sm" variant="outline" onClick={() => updateNode(node.id, { connectionType: 'MONO_230V_PN' })}>
-                    Passer ce nœud en MONO 230V (PN)
+                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ loadModel: 'monophase_reparti' })}>
+                    Activer le mode monophasé réparti
                   </Button>
                 )}
                 {currentProject.loadModel !== 'monophase_reparti' && (

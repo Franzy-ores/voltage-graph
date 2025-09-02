@@ -78,6 +78,7 @@ export interface Node {
   name: string;
   lat: number;
   lng: number;
+  connectionType: ConnectionType; // Temporairement maintenu pour éviter trop de cassures
   clients: ClientCharge[];
   productions: ProductionPV[];
   isSource?: boolean;

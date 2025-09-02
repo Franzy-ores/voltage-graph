@@ -182,7 +182,7 @@ export const MapView = () => {
 
     const handleMapClick = (e: L.LeafletMouseEvent) => {
       if (selectedTool === 'addNode' && !routingActive) {
-        addNode(e.latlng.lat, e.latlng.lng, 'MONO_230V_PN');
+        addNode(e.latlng.lat, e.latlng.lng);
       } else if (routingActive) {
         // En mode routage, ajouter des points intermédiaires
         const newPoint = { lat: e.latlng.lat, lng: e.latlng.lng };
@@ -214,7 +214,7 @@ export const MapView = () => {
             addCable(routingFromNode, routingToNode, selectedCableType, finalCoords);
           } else {
             // Créer un nœud au point final et connecter avec tout le tracé
-            addNode(finalPoint.lat, finalPoint.lng, 'MONO_230V_PN');
+            addNode(finalPoint.lat, finalPoint.lng);
             setTimeout(() => {
               const newNode = currentProject?.nodes[currentProject.nodes.length - 1];
               if (newNode) {
@@ -255,7 +255,7 @@ export const MapView = () => {
           } else {
             // Créer un nœud temporaire au dernier point du tracé
             const lastPoint = finalCoords[finalCoords.length - 1];
-            addNode(lastPoint.lat, lastPoint.lng, 'MONO_230V_PN');
+            addNode(lastPoint.lat, lastPoint.lng);
             // Le nœud créé aura un ID généré, on doit le récupérer
             setTimeout(() => {
               const newNode = currentProject?.nodes[currentProject.nodes.length - 1];
@@ -440,7 +440,8 @@ export const MapView = () => {
       const sourceVoltage = mainSourceNode?.tensionCible || (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
       
       // Déterminer la tension de base selon le type de connexion du nœud (pour l'affichage par défaut)
-      switch (node.connectionType) {
+      const connectionType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource);
+      switch (connectionType) {
         case 'TÉTRA_3P+N_230_400V':
           baseVoltage = 400;
           break;
@@ -466,7 +467,8 @@ export const MapView = () => {
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
           
           // Calculer l'écart par rapport à la tension nominale de référence (230V ou 400V)
-          const nominalVoltage = node.connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
+          const connectionType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource);
+          const nominalVoltage = connectionType === 'TÉTRA_3P+N_230_400V' ? 400 : 230;
           const voltageDeviation = nodeVoltage - nominalVoltage; // Écart réel par rapport au nominal
           nominalDropPercent = (voltageDeviation / nominalVoltage) * 100; // Pourcentage signé
           

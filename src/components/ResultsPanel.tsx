@@ -3,7 +3,9 @@ import { CalculationResult, CalculationScenario, VirtualBusbar } from "@/types/n
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNetworkStore } from '@/store/networkStore';
+import { jsPDF } from 'jspdf';
 import { getConnectedNodes, getConnectedCables } from '@/utils/networkConnectivity';
+import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 
 interface ResultsPanelProps {
   results: {
@@ -603,7 +605,9 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                 <TableCell className="text-xs">
                                   <span className={`font-medium ${
                                     (() => {
-                                      const nominalVoltage = (actualDistalNode?.connectionType === 'TÉTRA_3P+N_230_400V') ? 400 : 230;
+                                       const nominalVoltage = currentProject && actualDistalNode 
+                                         ? (getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' ? 400 : 230)
+                                         : 230;
                                       const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
                                       return nominalDropPercent > 10 
                                         ? 'text-destructive' 
@@ -724,7 +728,9 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                                 <TableCell className="text-xs">
                                   <span className={`font-medium ${
                                     (() => {
-                                      const nominalVoltage = (actualDistalNode?.connectionType === 'TÉTRA_3P+N_230_400V') ? 400 : 230;
+                                       const nominalVoltage = currentProject && actualDistalNode 
+                                         ? (getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', actualDistalNode?.isSource) === 'TÉTRA_3P+N_230_400V' ? 400 : 230)
+                                         : 230;
                                       const nominalDropPercent = Math.abs((cable.voltageDrop_V || 0) / nominalVoltage * 100);
                                       return nominalDropPercent > 10 
                                         ? 'text-destructive' 

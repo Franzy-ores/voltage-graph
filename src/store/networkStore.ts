@@ -201,9 +201,10 @@ const createDefaultProject = (): Project => ({
   nodes: [
     {
       id: "source",
-      name: "Source", 
+      name: "Source",
       lat: 46.6167,
       lng: 6.8833,
+      connectionType: "TÉTRA_3P+N_230_400V",
       clients: [],
       productions: [],
       isSource: true
@@ -335,14 +336,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       const newNominal = newVS === 'TRIPHASÉ_230V' ? 230 : 400;
 
       // Mettre à jour tous les nœuds avec un mapping précis (et retirer la tensionCible de la source)
-      const updatedNodes = currentProject.nodes.map((n) => {
-        const currentType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', !!n.isSource);
-        return {
-          ...n,
-          connectionType: mapConnectionTypeForVoltageSystem(currentType, newVS, !!n.isSource),
-          tensionCible: n.isSource ? undefined : n.tensionCible,
-        };
-      });
+      const updatedNodes = currentProject.nodes.map((n) => ({
+        ...n,
+        connectionType: mapConnectionTypeForVoltageSystem(n.connectionType, newVS, !!n.isSource),
+        tensionCible: n.isSource ? undefined : n.tensionCible,
+      }));
 
       // Mettre à jour la config transformateur (ou créer une valeur par défaut)
       const updatedTransformer: TransformerConfig = {
@@ -389,11 +387,15 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const { currentProject } = get();
     if (!currentProject) return;
 
+    // Déduire le type de connexion automatiquement selon le modèle de charge
+    const connectionType = mapConnectionTypeForLoadModel(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', currentProject.nodes.length === 0);
+
     const newNode: Node = {
       id: `node-${Date.now()}`,
       name: `Nœud ${currentProject.nodes.length + 1}`,
       lat,
       lng,
+      connectionType,
       clients: currentProject.nodes.length === 0 ? [] : [{ 
         id: `client-${Date.now()}`, 
         label: 'Charge 1', 
@@ -812,14 +814,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     
     const newNominal = newVoltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
 
-    const updatedNodes = currentProject.nodes.map(node => {
-      const currentType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', !!node.isSource);
-      return {
-        ...node,
-        connectionType: mapConnectionTypeForVoltageSystem(currentType, newVoltageSystem, !!node.isSource),
-        tensionCible: node.isSource ? undefined : node.tensionCible,
-      };
-    });
+    const updatedNodes = currentProject.nodes.map(node => ({
+      ...node,
+      connectionType: mapConnectionTypeForVoltageSystem(node.connectionType, newVoltageSystem, !!node.isSource),
+      tensionCible: node.isSource ? undefined : node.tensionCible,
+    }));
 
     const updatedTransformer: TransformerConfig = {
       ...(currentProject.transformerConfig || createDefaultTransformerConfig(newVoltageSystem)),
@@ -903,11 +902,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       // Calculer la tension du nœud
       let baseVoltage = 230;
       const node = tempProject.nodes.find(n => n.id === nodeId);
-      if (node) {
-        const connectionType = getNodeConnectionType(tempProject.voltageSystem, tempProject.loadModel || 'polyphase_equilibre', !!node.isSource);
-        if (connectionType === 'TÉTRA_3P+N_230_400V') {
-          baseVoltage = 400;
-        }
+      if (node?.connectionType === 'TÉTRA_3P+N_230_400V') {
+        baseVoltage = 400;
       }
       
       const actualVoltage = baseVoltage - nodeData.deltaU_cum_V;
