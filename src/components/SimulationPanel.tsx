@@ -202,7 +202,7 @@ export const SimulationPanel = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Z_phase (Ω)</Label>
               <Input
@@ -223,20 +223,6 @@ export const SimulationPanel = () => {
                 value={compensator.zNeutral_Ohm ?? 0.2}
                 onChange={(e) => updateNeutralCompensator(compensator.id, {
                   zNeutral_Ohm: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">F (0-1)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                max={1}
-                value={compensator.fraction ?? 0.6}
-                onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  fraction: Math.max(0, Math.min(1, Number(e.target.value)))
                 })}
                 className="h-8"
               />

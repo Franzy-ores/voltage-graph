@@ -454,17 +454,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     _loadModel: LoadModel,
     _desequilibrePourcent: number
   ): boolean {
-    // Paramètres EQUI8
-    const F = Math.max(0, Math.min(1, compensator.fraction ?? 0.6));
-    const Zp = compensator.zPhase_Ohm ?? 0.5;      // Ω
-    const Zn = compensator.zNeutral_Ohm ?? 0.2;    // Ω
+    // Paramètres d'entrée EQUI8 (modèle linéarisé CME)
+    const Zp = compensator.zPhase_Ohm ?? 0.5;      // Ω (phase)
+    const Zn = compensator.zNeutral_Ohm ?? 0.2;    // Ω (neutre)
 
     // Récupération des tensions phase-neutre initiales (U1,U2,U3)
     let U1 = 230, U2 = 230, U3 = 230;
     const perPhase = result.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
     const metric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
     if (perPhase && perPhase.length >= 3) {
-      // Prendre magnitudes par phase si disponibles
       const magA = perPhase.find(p => p.phase === 'A')?.V_phase_V;
       const magB = perPhase.find(p => p.phase === 'B')?.V_phase_V;
       const magC = perPhase.find(p => p.phase === 'C')?.V_phase_V;
@@ -475,83 +473,60 @@ export class SimulationCalculator extends ElectricalCalculator {
       U1 = U2 = U3 = metric.V_phase_V;
     }
 
-    // Construire les vecteurs de tension (angles 0, -120°, +120°)
+    // Moyennes/écarts initiaux
+    const Umoy_init = (U1 + U2 + U3) / 3;
+    const Umax_init = Math.max(U1, U2, U3);
+    const Umin_init = Math.min(U1, U2, U3);
+    const delta_init = Umax_init - Umin_init; // (Umax-Umin)init
+
+    // Ratios par phase (garder 0 si delta_init ~ 0)
+    const denom = Math.abs(delta_init) > 1e-9 ? delta_init : 1; // éviter division par zéro
+    const R1 = Math.abs(delta_init) > 1e-9 ? (U1 - Umoy_init) / denom : 0;
+    const R2 = Math.abs(delta_init) > 1e-9 ? (U2 - Umoy_init) / denom : 0;
+    const R3 = Math.abs(delta_init) > 1e-9 ? (U3 - Umoy_init) / denom : 0;
+
+    // Validité du modèle (conditions: Zph et Zn > 0,15 Ω)
+    const validZ = (Zp > 0.15) && (Zn > 0.15) && (Zp > 0);
+
+    // Facteur réseau k_imp et réduction d'écart de tension d'après CME
+    const k_imp = (2 * Zp) / (Zp + Zn);
+    const factorDen = validZ ? (0.9119 * Math.log(Zp) + 3.8654) : 1; // fallback 1 si invalide
+    const delta_equ = validZ ? (1 / factorDen) * delta_init * k_imp : delta_init;
+
+    // Tensions corrigées par EQUI8 (Umoy init conservée)
+    const U1p = Umoy_init + R1 * delta_equ;
+    const U2p = Umoy_init + R2 * delta_equ;
+    const U3p = Umoy_init + R3 * delta_equ;
+
+    // Calcul du courant neutre initial via phasors (angles 0/-120/+120)
     const deg2rad = (d: number) => (Math.PI * d) / 180;
     const E1 = fromPolar(U1, deg2rad(0));
     const E2 = fromPolar(U2, deg2rad(-120));
     const E3 = fromPolar(U3, deg2rad(120));
-
-    // Impédances (réelles)
     const Z_phase = C(Zp, 0);
-    const Z_neutral = C(Zn, 0);
-
-    // Courants initiaux par phase et courant de neutre
     const Ia0 = div(E1, Z_phase);
     const Ib0 = div(E2, Z_phase);
     const Ic0 = div(E3, Z_phase);
     const In0 = add(add(Ia0, Ib0), Ic0);
     const IN_initial = abs(In0);
 
-    // Si I_N en dessous du seuil, pas d'action
-    if (IN_initial <= (compensator.tolerance_A ?? 0)) {
-      const changed = Math.abs(currentState.IN_A - IN_initial) > 0.01;
-      currentState.IN_A = IN_initial;
-      currentState.reductionPercent = 0;
-      currentState.Q_phases = { A: 0, B: 0, C: 0 };
-      currentState.isLimited = false;
-      // Mettre à jour quelques résultats sur l'objet (affichage)
-      compensator.iN_initial_A = IN_initial;
-      compensator.iN_absorbed_A = 0;
-      compensator.u1p_V = U1;
-      compensator.u2p_V = U2;
-      compensator.u3p_V = U3;
-      return changed;
-    }
+    // Courant dans le neutre de l'EQUI8 (A) - modèle CME
+    const I_EQUI8 = validZ ? 0.392 * Math.pow(Zp, -0.8065) * delta_init * k_imp : 0;
 
-    // Redistribution des courants selon la règle EQUI8
-    const mags = [abs(Ia0), abs(Ib0), abs(Ic0)];
-    const maxIdx = mags.indexOf(Math.max(...mags));
-    const scaleMax = 1 - F / 3;
-    const scaleOther = 1 + F / 3;
-
-    const scales = [scaleOther, scaleOther, scaleOther];
-    scales[maxIdx] = scaleMax;
-
-    let Ia1 = mul(Ia0, C(scales[0], 0));
-    let Ib1 = mul(Ib0, C(scales[1], 0));
-    let Ic1 = mul(Ic0, C(scales[2], 0));
-
-    // Ajuster pour que |I_N'| = (1 - F) * |I_N_initial|
-    const In_temp = add(add(Ia1, Ib1), Ic1);
-    const IN_target = IN_initial * (1 - F);
-    const IN_temp = Math.max(abs(In_temp), 1e-9);
-    const k = IN_target / IN_temp;
-
-    const Ia2 = mul(Ia1, C(k, 0));
-    const Ib2 = mul(Ib1, C(k, 0));
-    const Ic2 = mul(Ic1, C(k, 0));
-
-    const In2 = add(add(Ia2, Ib2), Ic2);
-    const IN_after = abs(In2);
-
-    // Décalage de neutre et tensions corrigées
-    const Vn = mul(In2, Z_neutral);
-    const U1p = abs(sub(E1, Vn));
-    const U2p = abs(sub(E2, Vn));
-    const U3p = abs(sub(E3, Vn));
-
-    // Sorties et état
-    const absorbed = IN_initial - IN_after; // I_N absorbé par l'EQUI8
+    // Estimation du courant neutre résiduel après compensation
+    const IN_after = Math.max(IN_initial - I_EQUI8, 0);
+    const absorbed = I_EQUI8;
     const reductionPercent = IN_initial > 1e-9 ? (absorbed / IN_initial) * 100 : 0;
 
-    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 || Math.abs(currentState.reductionPercent - reductionPercent) > 0.1;
+    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 || Math.abs(currentState.reductionPercent - reductionPercent) > 0.1
+      || Math.abs((compensator.u1p_V ?? 0) - U1p) > 0.5 || Math.abs((compensator.u2p_V ?? 0) - U2p) > 0.5 || Math.abs((compensator.u3p_V ?? 0) - U3p) > 0.5;
 
+    // Mettre à jour l'état et les sorties UI
     currentState.IN_A = IN_after;
     currentState.reductionPercent = reductionPercent;
-    currentState.Q_phases = { A: 0, B: 0, C: 0 }; // Modèle passif: pas d'injection Q directe
-    currentState.isLimited = false; // Pas de limite S appliquée dans ce modèle
+    currentState.Q_phases = { A: 0, B: 0, C: 0 }; // Modèle passif
+    currentState.isLimited = false;
 
-    // Publier sur l'objet pour l'UI
     compensator.iN_initial_A = IN_initial;
     compensator.iN_absorbed_A = absorbed;
     compensator.u1p_V = U1p;
