@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Plus } from "lucide-react";
 import { Node } from "@/types/network";
+import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 
 interface NodeSelectorProps {
   nodes: Node[];
@@ -14,6 +15,9 @@ interface NodeSelectorProps {
   title: string;
   description?: string;
   getRegulatorTypeForSource?: (sourceVoltage: number) => string;
+  // Ajout pour connaître le contexte du projet
+  voltageSystem?: 'TRIPHASÉ_230V' | 'TÉTRAPHASÉ_400V';
+  loadModel?: 'monophase_reparti' | 'polyphase_equilibre';
 }
 
 export const NodeSelector = ({ 
@@ -23,7 +27,9 @@ export const NodeSelector = ({
   trigger, 
   title,
   description,
-  getRegulatorTypeForSource
+  getRegulatorTypeForSource,
+  voltageSystem = 'TÉTRAPHASÉ_400V',
+  loadModel = 'polyphase_equilibre'
 }: NodeSelectorProps) => {
   const [open, setOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string>("");
@@ -91,7 +97,7 @@ export const NodeSelector = ({
                       <div className="flex items-center justify-between w-full">
                         <span>{node.name}</span>
                         <Badge variant="outline" className="ml-2 text-xs">
-                          {node.connectionType.replace('_', ' ')}
+                          {getNodeConnectionType(voltageSystem, loadModel, node.isSource).replace('_', ' ')}
                         </Badge>
                       </div>
                     </SelectItem>

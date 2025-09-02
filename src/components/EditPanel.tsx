@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Trash2, Plus, Target, Zap, Network } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV, LoadModel } from '@/types/network';
+import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { toast } from 'sonner';
 
 export const EditPanel = () => {
@@ -37,7 +38,6 @@ export const EditPanel = () => {
       if (editTarget === 'node' && selectedNode) {
         setFormData({
           name: selectedNode.name,
-          connectionType: selectedNode.connectionType,
           clients: [...(selectedNode.clients || [])],
           productions: [...(selectedNode.productions || [])],
           tensionCible: selectedNode.tensionCible || '',
@@ -146,6 +146,11 @@ export const EditPanel = () => {
     return options[voltageSystem] || [];
   };
 
+  // Calculer le type de connexion actuel du nœud
+  const currentConnectionType = selectedNode && currentProject 
+    ? getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', selectedNode.isSource)
+    : undefined;
+
   return (
     <Sheet open={editPanelOpen && editTarget !== 'simulation'} onOpenChange={closeEditPanel}>
       <SheetContent className="w-96 overflow-y-auto" side="right">
@@ -171,22 +176,17 @@ export const EditPanel = () => {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="connection-type">Type de connexion</Label>
-                <Select
-                  value={formData.connectionType}
-                  onValueChange={(value) => setFormData({ ...formData, connectionType: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getConnectionTypeOptions(currentProject?.voltageSystem || 'TÉTRAPHASÉ_400V').map(option => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="connection-type">Type de connexion (automatique)</Label>
+                <div className="p-2 bg-muted rounded text-sm">
+                  {currentConnectionType ? (
+                    getConnectionTypeOptions(currentProject?.voltageSystem || 'TÉTRAPHASÉ_400V')
+                      .find(opt => opt.value === currentConnectionType)?.label || currentConnectionType
+                  ) : 'Non défini'}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Le type de connexion est déterminé automatiquement selon le système de tension ({currentProject?.voltageSystem}) 
+                  et le modèle de charge ({currentProject?.loadModel || 'polyphase_equilibre'}).
+                </p>
               </div>
 
               {/* Clients */}

@@ -78,7 +78,6 @@ export interface Node {
   name: string;
   lat: number;
   lng: number;
-  connectionType: ConnectionType;
   clients: ClientCharge[];
   productions: ProductionPV[];
   isSource?: boolean;
