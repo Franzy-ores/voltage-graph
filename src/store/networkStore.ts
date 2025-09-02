@@ -927,9 +927,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   // Actions de simulation
   toggleSimulationMode: () => {
     const { simulationMode } = get();
+    const newSimulationMode = !simulationMode;
+    
     set({ 
-      simulationMode: !simulationMode,
-      selectedTool: !simulationMode ? 'simulation' : 'select'
+      simulationMode: newSimulationMode,
+      selectedTool: newSimulationMode ? 'simulation' : 'select',
+      // Réinitialiser les résultats de simulation quand on quitte le mode simulation
+      simulationResults: newSimulationMode ? get().simulationResults : {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null
+      }
     });
   },
 
