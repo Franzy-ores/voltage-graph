@@ -782,15 +782,22 @@ export const MapView = () => {
         // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
         if (nodeAConnected && nodeBConnected) {
           const results = resultsToUse[selectedScenario];
+          console.log(`Cable ${cable.id}: results available:`, !!results, 'scenario:', selectedScenario);
+          console.log(`Cable ${cable.id}: nodeVoltageDrops available:`, !!(results?.nodeVoltageDrops));
+          
           if (results && results.nodeVoltageDrops) {
             const calculatedCable = results.cables.find(c => c.id === cable.id);
+            console.log(`Cable ${cable.id}: calculatedCable found:`, !!calculatedCable);
+            
             if (calculatedCable) {
               // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
               const arrivalNodeId = calculatedCable.nodeBId;
               const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
+              console.log(`Cable ${cable.id}: nodeData for ${arrivalNodeId}:`, nodeData?.deltaU_cum_percent);
               
               if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
                 const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+                console.log(`Cable ${cable.id}: voltage drop ${voltageDropPercent}%`);
                 
                 if (voltageDropPercent < 8) {
                   cableColor = '#22c55e'; // VERT - dans la norme (<8%)
@@ -801,7 +808,11 @@ export const MapView = () => {
                 }
               }
             }
+          } else {
+            console.log(`Cable ${cable.id}: No results for scenario ${selectedScenario}`);
           }
+        } else {
+          console.log(`Cable ${cable.id}: nodes not connected - nodeA: ${nodeAConnected}, nodeB: ${nodeBConnected}`);
         }
       }
       
