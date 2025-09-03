@@ -1034,6 +1034,163 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Propose un renforcement complet du circuit pour ramener toutes les chutes de tension sous un seuil
+   * - Identifie les nœuds au-delà du seuil
+   * - Détermine l'ensemble des câbles du (des) circuit(s) alimentant ces nœuds (chemin depuis la source)
+   * - Teste des paliers de remplacement prédéfinis sur tout le circuit et choisit le plus petit palier valide
+   */
+  public proposeFullCircuitReinforcement(
+    project: Project,
+    baselineResult: CalculationResult,
+    dropThresholdPercent: number = 8
+  ): CableUpgrade[] {
+    const source = project.nodes.find(n => n.isSource);
+    if (!source) return [];
+
+    const offenders = (baselineResult.nodeVoltageDrops || [])
+      .filter(n => Math.abs(n.deltaU_cum_percent) > dropThresholdPercent)
+      .map(n => n.nodeId);
+    if (offenders.length === 0) return [];
+
+    // Construire l'adjacence nœud→(voisin, câble)
+    const adjacency = new Map<string, { neighborId: string; cable: Cable }[]>();
+    for (const cable of project.cables) {
+      if (!adjacency.has(cable.nodeAId)) adjacency.set(cable.nodeAId, []);
+      if (!adjacency.has(cable.nodeBId)) adjacency.set(cable.nodeBId, []);
+      adjacency.get(cable.nodeAId)!.push({ neighborId: cable.nodeBId, cable });
+      adjacency.get(cable.nodeBId)!.push({ neighborId: cable.nodeAId, cable });
+    }
+
+    const cablesOnCircuits = new Set<string>();
+    const findPathCables = (targetId: string) => {
+      const queue: string[] = [source.id];
+      const parent = new Map<string, { prev: string | null; viaCableId: string | null }>();
+      parent.set(source.id, { prev: null, viaCableId: null });
+
+      while (queue.length) {
+        const nid = queue.shift()!;
+        if (nid === targetId) break;
+        const neighbors = adjacency.get(nid) || [];
+        for (const { neighborId, cable } of neighbors) {
+          if (!parent.has(neighborId)) {
+            parent.set(neighborId, { prev: nid, viaCableId: cable.id });
+            queue.push(neighborId);
+          }
+        }
+      }
+
+      if (!parent.has(targetId)) return;
+      let cur = targetId;
+      while (cur !== source.id) {
+        const info = parent.get(cur)!;
+        if (info.viaCableId) cablesOnCircuits.add(info.viaCableId);
+        cur = info.prev!;
+      }
+    };
+
+    offenders.forEach(findPathCables);
+
+    const cableById = new Map(project.cables.map(c => [c.id, c]));
+    const typeById = new Map(project.cableTypes.map(t => [t.id, t]));
+
+    const hasType = (id: string) => project.cableTypes.some(t => t.id === id);
+    const ID_B70 = 'baxb-70';
+    const ID_B95 = 'baxb-95';
+    const ID_B150 = 'baxb-150';
+    const ID_UG150 = 'eaxecwb-4x150'; // Souterrain 150mm²
+
+    const getCandidateTypeForTier = (orig: CableType, tier: number): string | null => {
+      const isCopper = orig.matiere === 'CUIVRE';
+      const isB70 = orig.id === ID_B70 || /BAXB\s*70/i.test(orig.label);
+      const isB95 = orig.id === ID_B95 || /BAXB\s*95/i.test(orig.label);
+      const isB150 = orig.id === ID_B150 || /BAXB\s*150/i.test(orig.label);
+
+      if (tier === 0) {
+        if (isCopper || isB70) return hasType(ID_B95) ? ID_B95 : null;
+        if (isB95) return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
+        if (isB150) return hasType(ID_UG150) ? ID_UG150 : null;
+        return hasType(ID_B95) ? ID_B95 : null;
+      } else if (tier === 1) {
+        if (isCopper || isB70) return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
+        if (isB95) return hasType(ID_UG150) ? ID_UG150 : null;
+        if (isB150) return hasType(ID_UG150) ? ID_UG150 : null;
+        return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
+      } else {
+        return hasType(ID_UG150) ? ID_UG150 : null;
+      }
+    };
+
+    let lastUpgrades: CableUpgrade[] = [];
+
+    for (let tier = 0; tier < 3; tier++) {
+      const draft: CableUpgrade[] = [];
+      for (const cableId of cablesOnCircuits) {
+        const cable = cableById.get(cableId);
+        if (!cable) continue;
+        const origType = typeById.get(cable.typeId);
+        if (!origType) continue;
+        const newTypeId = getCandidateTypeForTier(origType, tier);
+        if (!newTypeId || newTypeId === origType.id) continue;
+
+        const beforeCable = baselineResult.cables.find(c => c.id === cableId);
+        draft.push({
+          originalCableId: cableId,
+          newCableTypeId: newTypeId,
+          reason: 'voltage_drop',
+          before: {
+            voltageDropPercent: beforeCable?.voltageDropPercent || 0,
+            current_A: beforeCable?.current_A || 0,
+            losses_kW: beforeCable?.losses_kW || 0
+          },
+          after: {
+            voltageDropPercent: beforeCable?.voltageDropPercent || 0,
+            current_A: beforeCable?.current_A || 0,
+            losses_kW: beforeCable?.losses_kW || 0,
+            estimatedCost: 1500
+          },
+          improvement: {
+            voltageDropReduction: 0,
+            lossReduction_kW: 0,
+            lossReductionPercent: 0
+          }
+        });
+      }
+
+      if (draft.length === 0) continue;
+
+      // Simuler ce palier de renforcement
+      const equipment: SimulationEquipment = { regulators: [], neutralCompensators: [], cableUpgrades: draft };
+      const sim = this.calculateScenarioWithEquipment(project, baselineResult.scenario, equipment);
+
+      // Mettre à jour les valeurs "après" et les améliorations
+      for (const up of draft) {
+        const afterCable = sim.cables.find(c => c.id === up.originalCableId);
+        if (afterCable) {
+          up.after.voltageDropPercent = afterCable.voltageDropPercent || up.after.voltageDropPercent;
+          up.after.current_A = afterCable.current_A || up.after.current_A;
+          up.after.losses_kW = afterCable.losses_kW || up.after.losses_kW;
+          up.improvement.voltageDropReduction = Math.abs(up.before.voltageDropPercent - up.after.voltageDropPercent);
+          up.improvement.lossReduction_kW = (up.before.losses_kW - up.after.losses_kW);
+          up.improvement.lossReductionPercent = up.before.losses_kW > 0 ? (up.improvement.lossReduction_kW / up.before.losses_kW) * 100 : 0;
+        }
+      }
+
+      lastUpgrades = draft;
+
+      // Vérifier la conformité des nœuds concernés
+      const ok = offenders.every(nodeId => {
+        const nd = sim.nodeVoltageDrops?.find(n => n.nodeId === nodeId);
+        return nd && Math.abs(nd.deltaU_cum_percent) <= dropThresholdPercent;
+      });
+
+      if (ok) return draft;
+    }
+
+    // Si aucun palier ne satisfait la contrainte, retourner le plus fort testé
+    return lastUpgrades;
+  }
+
+  /**
    * Obtient l'ampacité d'un câble basée sur une table de correspondance physique
    */
   private getAmpacityFromSection(section_mm2: number, material: 'CUIVRE'|'ALUMINIUM'): number {

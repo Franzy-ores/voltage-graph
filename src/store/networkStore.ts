@@ -1117,13 +1117,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Utiliser le SimulationCalculator pour proposer des améliorations basées sur la chute de tension
     const calculator = new SimulationCalculator(currentProject.cosPhi);
     
-    // Analyser avec un seuil de 2% pour la chute de tension
-    const upgrades = calculator.proposeCableUpgrades(
+    // Optimisation par circuit en un seul passage avec seuil de 8%
+    const upgrades = calculator.proposeFullCircuitReinforcement(
       currentProject,
       result,
-      2.0, // Seuil de 2% pour la chute de tension
-      1.0, // Facteur de sécurité pour surcharge
-      1500 // Coût estimé par amélioration
+      8.0 // Seuil de 8% pour la chute de tension
     );
 
     set({

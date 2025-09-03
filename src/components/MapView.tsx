@@ -760,13 +760,13 @@ export const MapView = () => {
       let cableColor = '#000000'; // noir par défaut (non calculé)
       let cableWeight = 4; // épaisseur par défaut
       
-      // Vérifier si ce câble a une amélioration active dans la simulation
+      // Vérifier si ce câble a une amélioration (suggestion ou active)
       const hasUpgrade = simulationEquipment?.cableUpgrades?.some(upgrade => 
         upgrade.originalCableId === cable.id
-      ) && simulationMode;
+      );
       
       if (hasUpgrade) {
-        cableColor = '#8A2BE2'; // violet pour les câbles remplacés
+        cableColor = '#8A2BE2'; // violet pour les câbles remplacés/suggérés
         cableWeight = 8; // épaisseur doublée
       } else {
         // Vérifier si les nœuds sont connectés

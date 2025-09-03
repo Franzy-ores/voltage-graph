@@ -476,7 +476,7 @@ export const SimulationPanel = () => {
                     <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Aucune amélioration proposée</p>
                     <p className="text-xs">
-                      Cliquez sur "Analyser automatiquement" pour détecter les câbles avec chute de tension &gt; 2%
+                      Cliquez sur "Analyser automatiquement" pour détecter les circuits avec chute de tension &gt; 8% et proposer un renforcement complet
                     </p>
                   </Card>
                 ) : (
