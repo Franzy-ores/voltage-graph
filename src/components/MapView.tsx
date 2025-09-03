@@ -761,9 +761,15 @@ export const MapView = () => {
       let cableWeight = 4; // épaisseur par défaut
       
       // Vérifier si ce câble a une amélioration (suggestion ou active)
-      const hasUpgrade = simulationEquipment?.cableUpgrades?.some(upgrade => 
-        upgrade.originalCableId === cable.id
-      );
+      const hasUpgrade = simulationEquipment?.cableUpgrades?.some(upgrade => {
+        console.log('Checking upgrade:', upgrade.originalCableId, '=== cable.id:', cable.id, upgrade.originalCableId === cable.id);
+        return upgrade.originalCableId === cable.id;
+      });
+      
+      if (simulationEquipment?.cableUpgrades?.length > 0 && cable.id === currentProject?.cables[0]?.id) {
+        console.log('Cable upgrades available:', simulationEquipment.cableUpgrades);
+        console.log('Current cable ID:', cable.id);
+      }
       
       if (hasUpgrade) {
         cableColor = '#8A2BE2'; // violet pour les câbles remplacés/suggérés
