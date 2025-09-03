@@ -789,23 +789,16 @@ export const MapView = () => {
             const calculatedCable = results.cables.find(c => c.id === cable.id);
             console.log(`Cable ${cable.id}: calculatedCable found:`, !!calculatedCable);
             
-            if (calculatedCable) {
-              // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
-              const arrivalNodeId = calculatedCable.nodeBId;
-              const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
-              console.log(`Cable ${cable.id}: nodeData for ${arrivalNodeId}:`, nodeData?.deltaU_cum_percent);
+            if (calculatedCable && calculatedCable.voltageDropPercent !== undefined) {
+              const voltageDropPercent = Math.abs(calculatedCable.voltageDropPercent);
+              console.log(`Cable ${cable.id}: voltage drop (from cable) ${voltageDropPercent}%`);
               
-              if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
-                const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
-                console.log(`Cable ${cable.id}: voltage drop ${voltageDropPercent}%`);
-                
-                if (voltageDropPercent < 8) {
-                  cableColor = '#22c55e'; // VERT - dans la norme (<8%)
-                } else if (voltageDropPercent < 10) {
-                  cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
-                } else {
-                  cableColor = '#ef4444'; // ROUGE - critique (≥10%)
-                }
+              if (voltageDropPercent < 8) {
+                cableColor = '#22c55e'; // VERT - dans la norme (<8%)
+              } else if (voltageDropPercent < 10) {
+                cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+              } else {
+                cableColor = '#ef4444'; // ROUGE - critique (≥10%)
               }
             }
           } else {
