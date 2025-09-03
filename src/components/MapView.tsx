@@ -60,6 +60,12 @@ export const MapView = () => {
   const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
+  console.log('🐛 MapView results logic:', {
+    simulationMode,
+    activeEquipmentCount,
+    usingSimulation: simulationMode && activeEquipmentCount > 0
+  });
+  
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
 
   // Fonction pour zoomer sur le projet chargé
