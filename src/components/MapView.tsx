@@ -31,6 +31,7 @@ export const MapView = () => {
   const [routingActive, setRoutingActive] = useState(false);
   const [routingFromNode, setRoutingFromNode] = useState<string | null>(null);
   const [routingToNode, setRoutingToNode] = useState<string | null>(null);
+  const [isMapLoading, setIsMapLoading] = useState(true);
   const routingPointsRef = useRef<{ lat: number; lng: number }[]>([]);
   const tempMarkersRef = useRef<L.Marker[]>([]);
   const tempLineRef = useRef<L.Polyline | null>(null);
