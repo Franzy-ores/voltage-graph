@@ -313,11 +313,21 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     // Calcul final avec les équipements convergés
     const finalNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-    return this.calculateScenario(
+    const finalResult = this.calculateScenario(
       finalNodes, cables, cableTypes, scenario,
       foisonnementCharges, foisonnementProductions,
       transformerConfig, loadModel, desequilibrePourcent
     );
+
+    // Mettre à jour la tension mesurée aux nœuds des régulateurs (affichage)
+    for (const [nodeId, regulator] of regulators.entries()) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        regulator.currentVoltage_V = this.getNodeLineVoltageFromResult(finalResult, node, nodes);
+      }
+    }
+
+    return finalResult;
   }
 
   /**
@@ -431,11 +441,27 @@ export class SimulationCalculator extends ElectricalCalculator {
     const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 || 
                    Math.abs(currentState.reductionPercent - reductionPercent) > 0.1;
 
+    // Conversion courant neutre absorbé -> Q équivalent (approx): Q ≈ V_phase * I / 1000 (kVAr)
+    const V_phase_ref = 230; // V
+    let Q_total_kVAr = (absorbed * V_phase_ref) / 1000; // kVAr total à injecter
+    Q_total_kVAr = Math.max(0, Q_total_kVAr);
+
+    // Limitation par la puissance max du compensateur
+    const Smax = Math.max(0, compensator.maxPower_kVA || 0);
+    let limited = false;
+    if (Smax > 0 && Q_total_kVAr > Smax) {
+      Q_total_kVAr = Smax;
+      limited = true;
+    }
+
+    // Répartition par phase (égale) pour la correction du neutre
+    const qPerPhase = Q_total_kVAr / 3;
+
     // Mettre à jour l'état
     currentState.IN_A = IN_after;
     currentState.reductionPercent = reductionPercent;
-    currentState.Q_phases = { A: 0, B: 0, C: 0 }; // Modèle passif
-    currentState.isLimited = false;
+    currentState.Q_phases = { A: qPerPhase, B: qPerPhase, C: qPerPhase };
+    currentState.isLimited = limited;
 
     compensator.iN_initial_A = IN_initial;
     compensator.iN_absorbed_A = absorbed;
@@ -513,48 +539,42 @@ export class SimulationCalculator extends ElectricalCalculator {
         modifiedNode.clients = (modifiedNode.clients || []).filter(c => !c.id.startsWith('regulator-'));
 
         if (Math.abs(Q) > 0.01) {
-          // Pour un équipement purement réactif : P = 0, Q = valeur, S = |Q|
           if (Q > 0) {
             // Injection de réactif (+) -> production avec P=0, Q>0
-            const virt = { 
+            const virt: any = { 
               id: `regulator-${node.id}`, 
               label: 'Régulateur (Q+)', 
-              P_kW: 0,           // Puissance active nulle
-              Q_kVAr: Q,         // Puissance réactive
-              S_kVA: Math.abs(Q) // S = |Q| pour équipement réactif pur
+              P_kW: 0,
+              Q_kVAr: Q
             };
             modifiedNode.productions = [...(modifiedNode.productions || []), virt];
           } else {
             // Absorption de réactif (-) -> charge avec P=0, Q<0  
-            const virt = { 
+            const virt: any = { 
               id: `regulator-${node.id}`, 
               label: 'Régulateur (Q−)', 
-              P_kW: 0,           // Puissance active nulle
-              Q_kVAr: Q,         // Puissance réactive (négative)
-              S_kVA: Math.abs(Q) // S = |Q| pour équipement réactif pur
-            } as any;
+              P_kW: 0,
+              Q_kVAr: Q
+            };
             modifiedNode.clients = [...(modifiedNode.clients || []), virt];
           }
         }
       }
       
-      // Appliquer compensateur (pour l'instant, approximation via production équivalente)
+      // Appliquer compensateur (injection Q par phase)
       const compensatorState = compensatorStates.get(node.id);
       if (compensatorState) {
-        const totalQ = compensatorState.Q_phases.A + compensatorState.Q_phases.B + compensatorState.Q_phases.C;
-        if (totalQ > 0.01) {
-          const compensatorProd = {
-            id: `compensator-${node.id}`,
-            label: 'Compensateur',
-            S_kVA: totalQ
-          };
-          
-          const existingIdx = modifiedNode.productions.findIndex(p => p.id.startsWith('compensator-'));
-          if (existingIdx >= 0) {
-            modifiedNode.productions[existingIdx] = compensatorProd;
-          } else {
-            modifiedNode.productions = [...modifiedNode.productions, compensatorProd];
-          }
+        // Nettoyer les anciennes entrées virtuelles du compensateur
+        modifiedNode.productions = (modifiedNode.productions || []).filter(p => !p.id.startsWith('compensator-'));
+
+        const { A, B, C } = compensatorState.Q_phases;
+        const entries: any[] = [];
+        if (Math.abs(A) > 0.01) entries.push({ id: `compensator-${node.id}-A`, label: 'Compensateur A', P_kW: 0, Q_kVAr: A, phase: 'A' });
+        if (Math.abs(B) > 0.01) entries.push({ id: `compensator-${node.id}-B`, label: 'Compensateur B', P_kW: 0, Q_kVAr: B, phase: 'B' });
+        if (Math.abs(C) > 0.01) entries.push({ id: `compensator-${node.id}-C`, label: 'Compensateur C', P_kW: 0, Q_kVAr: C, phase: 'C' });
+
+        if (entries.length) {
+          modifiedNode.productions = [...(modifiedNode.productions || []), ...entries];
         }
       }
       

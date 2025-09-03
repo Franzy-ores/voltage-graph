@@ -523,6 +523,31 @@ export class ElectricalCalculator {
         S_A_map.set(n.id, C(P_A_kW * 1000, Q_A_kVAr * 1000));
         S_B_map.set(n.id, C(P_B_kW * 1000, Q_B_kVAr * 1000));
         S_C_map.set(n.id, C(P_C_kW * 1000, Q_C_kVAr * 1000));
+
+        // Intégrer les contributions explicites P/Q (équipements virtuels)
+        const addExtra = (items: any[], sign: 1 | -1) => {
+          for (const it of items || []) {
+            const P = Number((it as any).P_kW) || 0;
+            const Q = Number((it as any).Q_kVAr) || 0;
+            if (P === 0 && Q === 0) continue;
+            const phase = (it as any).phase as 'A' | 'B' | 'C' | undefined;
+            const Sextra = C(P * 1000 * sign, Q * 1000 * sign);
+            if (phase === 'A') {
+              S_A_map.set(n.id, add(S_A_map.get(n.id) || C(0,0), Sextra));
+            } else if (phase === 'B') {
+              S_B_map.set(n.id, add(S_B_map.get(n.id) || C(0,0), Sextra));
+            } else if (phase === 'C') {
+              S_C_map.set(n.id, add(S_C_map.get(n.id) || C(0,0), Sextra));
+            } else {
+              const third = scale(Sextra, 1/3);
+              S_A_map.set(n.id, add(S_A_map.get(n.id) || C(0,0), third));
+              S_B_map.set(n.id, add(S_B_map.get(n.id) || C(0,0), third));
+              S_C_map.set(n.id, add(S_C_map.get(n.id) || C(0,0), third));
+            }
+          }
+        };
+        addExtra((n as any).clients || [], 1);
+        addExtra((n as any).productions || [], -1);
       }
 
       const runBFSForPhase = (angleDeg: number, S_map: Map<string, Complex>) => {
@@ -818,9 +843,28 @@ export class ElectricalCalculator {
         const P_kW = S_kVA * cosPhi_eff;
         const Q_kVAr = Math.abs(S_kVA) * sinPhi * Math.sign(S_kVA);
         const S_VA_total = C(P_kW * 1000, Q_kVAr * 1000);
+
+        // Contributions explicites P/Q (équipements virtuels)
+        let S_extra_VA = C(0, 0);
+        for (const it of ((n as any).clients || [])) {
+          const P = Number((it as any).P_kW) || 0;
+          const Q = Number((it as any).Q_kVAr) || 0;
+          if (P !== 0 || Q !== 0) {
+            S_extra_VA = add(S_extra_VA, C(P * 1000, Q * 1000));
+          }
+        }
+        for (const it of ((n as any).productions || [])) {
+          const P = Number((it as any).P_kW) || 0;
+          const Q = Number((it as any).Q_kVAr) || 0;
+          if (P !== 0 || Q !== 0) {
+            S_extra_VA = sub(S_extra_VA, C(P * 1000, Q * 1000)); // injection => signe négatif
+          }
+        }
+
         const { isThreePhase } = this.getVoltage(n.connectionType);
         const divisor = isThreePhase ? 3 : 1;
-        S_node_phase_VA.set(n.id, scale(S_VA_total, 1 / divisor));
+        const S_total_phase = scale(add(S_VA_total, S_extra_VA), 1 / divisor);
+        S_node_phase_VA.set(n.id, S_total_phase);
       }
     };
     computeNodeS();
