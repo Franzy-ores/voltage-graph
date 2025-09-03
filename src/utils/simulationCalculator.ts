@@ -274,37 +274,21 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`📊 Régulateur ${nodeId}: Vbase=${baseV_line.toFixed(1)}V → Q=${state.Q_kVAr.toFixed(2)} kVAr (ΔQ=${deltaQ.toFixed(2)}), limited=${state.isLimited}`);
       }
       
-      // 3. Traiter les compensateurs avec modèle physique (shunt homopolaire)
+      // 3. Traiter les compensateurs via modèle EQUI8 (sans charges virtuelles)
       for (const [nodeId, compensator] of compensators.entries()) {
         const currentState = compensatorStates.get(nodeId)!;
-        const node = nodeById.get(nodeId);
-        const is400V = (transformerConfig?.nominalVoltage_V ?? 400) >= 350;
-        const isMonoPN = node?.connectionType === 'MONO_230V_PN';
-        const hasDeseq = loadModel === 'monophase_reparti' && desequilibrePourcent > 0;
-
-        if (!(is400V && isMonoPN && hasDeseq)) {
-          // Inéligible: remettre l'état à zéro
-          const prevIN = currentState.IN_A;
-          currentState.IN_A = 0;
-          currentState.reductionPercent = 0;
-          currentState.S_virtual_kVA = 0;
-          currentState.isLimited = false;
-          compensator.currentIN_A = 0;
-          compensator.reductionPercent = 0;
-          compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
-          const changed = Math.abs(prevIN) > 0.01;
-          if (changed) equipmentChanged = true;
-          continue;
-        }
-
-        const changed = this.processNeutralCompensator(
-          nodeId, compensator, currentResult, currentState, loadModel, desequilibrePourcent
-        );
-        
-        if (changed) {
-          equipmentChanged = true;
-          console.log(`⚡ Compensateur ${nodeId}: IN=${currentState.IN_A.toFixed(2)} A, Svirt=${currentState.S_virtual_kVA.toFixed(2)} kVA, limited=${currentState.isLimited}`);
-        }
+        // On n'applique plus de charge virtuelle ici; l'effet EQUI8 sera appliqué après le calcul final
+        // Réinitialiser l'état de charge virtuelle si nécessaire
+        const hadNonZero = Math.abs(currentState.S_virtual_kVA) > 0.001 || Math.abs(currentState.IN_A) > 0.01 || Math.abs(currentState.reductionPercent) > 0.1 || currentState.isLimited;
+        currentState.S_virtual_kVA = 0;
+        currentState.IN_A = 0;
+        currentState.reductionPercent = 0;
+        currentState.isLimited = false;
+        // Sorties héritées à zéro (non utilisées par EQUI8)
+        compensator.currentIN_A = 0;
+        compensator.reductionPercent = 0;
+        compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
+        if (hadNonZero) equipmentChanged = true;
       }
       
       // 4. Si équipements changés, recalculer le réseau complet
@@ -345,6 +329,84 @@ export class SimulationCalculator extends ElectricalCalculator {
         foisonnementCharges, foisonnementProductions,
         transformerConfig, loadModel, desequilibrePourcent
       );
+    }
+
+    // 6.b Appliquer le modèle EQUI8 aux nœuds équipés
+    for (const [nodeId, compensator] of compensators.entries()) {
+      if (!compensator.enabled) continue;
+      // Récupérer les tensions initiales par phase
+      let initial: number[] = [230, 230, 230];
+      const perPhaseMetrics = currentResult.nodeMetricsPerPhase?.find(m => m.nodeId === nodeId);
+      if (perPhaseMetrics) {
+        initial = [
+          perPhaseMetrics.voltagesPerPhase.A,
+          perPhaseMetrics.voltagesPerPhase.B,
+          perPhaseMetrics.voltagesPerPhase.C,
+        ];
+      } else {
+        const phasors = currentResult.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
+        if (phasors && phasors.length >= 3) {
+          const a = phasors.find(p => p.phase === 'A')?.V_phase_V ?? 230;
+          const b = phasors.find(p => p.phase === 'B')?.V_phase_V ?? a;
+          const c = phasors.find(p => p.phase === 'C')?.V_phase_V ?? a;
+          initial = [a, b, c];
+        } else {
+          const metric = currentResult.nodeMetrics?.find(m => m.nodeId === nodeId);
+          if (metric) initial = [metric.V_phase_V, metric.V_phase_V, metric.V_phase_V];
+        }
+      }
+      const Zp = Math.max(1e-9, compensator.phaseImpedance ?? compensator.zPhase_Ohm ?? 1e-9);
+      const [uA, uB, uC] = this.calculateEqui8Effect(initial, Zp);
+
+      // Mettre à jour les métriques par phase
+      if (currentResult.nodeMetricsPerPhase) {
+        const idx = currentResult.nodeMetricsPerPhase.findIndex(m => m.nodeId === nodeId);
+        if (idx >= 0) {
+          currentResult.nodeMetricsPerPhase[idx] = {
+            ...currentResult.nodeMetricsPerPhase[idx],
+            voltagesPerPhase: { A: uA, B: uB, C: uC },
+          };
+        } else {
+          currentResult.nodeMetricsPerPhase.push({
+            nodeId,
+            voltagesPerPhase: { A: uA, B: uB, C: uC },
+            voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
+          });
+        }
+      } else {
+        currentResult.nodeMetricsPerPhase = [{
+          nodeId,
+          voltagesPerPhase: { A: uA, B: uB, C: uC },
+          voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
+        }];
+      }
+
+      // Mettre à jour les phasors s'ils existent
+      if (currentResult.nodePhasorsPerPhase) {
+        const updatePhase = (phase: 'A' | 'B' | 'C', mag: number) => {
+          const p = currentResult.nodePhasorsPerPhase!.find(pp => pp.nodeId === nodeId && pp.phase === phase);
+          if (p) p.V_phase_V = mag;
+        };
+        updatePhase('A', uA);
+        updatePhase('B', uB);
+        updatePhase('C', uC);
+      }
+
+      // Mettre à jour la métrique agrégée si présente (moyenne des phases)
+      if (currentResult.nodeMetrics) {
+        const midx = currentResult.nodeMetrics.findIndex(m => m.nodeId === nodeId);
+        if (midx >= 0) {
+          currentResult.nodeMetrics[midx] = {
+            ...currentResult.nodeMetrics[midx],
+            V_phase_V: (uA + uB + uC) / 3,
+          };
+        }
+      }
+
+      // Stocker dans l'équipement pour inspection
+      compensator.u1p_V = uA;
+      compensator.u2p_V = uB;
+      compensator.u3p_V = uC;
     }
 
     // 7. Mise à jour des résultats dans les équipements originaux
@@ -477,6 +539,37 @@ export class SimulationCalculator extends ElectricalCalculator {
     compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
 
     return changed;
+  }
+
+  /**
+   * Modèle EQUI8: calcule les tensions corrigées par compensateur de neutre
+   * initialVoltages: [Uph1, Uph2, Uph3] en volts
+   * Zph_ohms: impédance de phase équivalente du réseau (Ω)
+   */
+  private calculateEqui8Effect(initialVoltages: number[], Zph_ohms: number): number[] {
+    const U1 = initialVoltages[0] ?? 230;
+    const U2 = initialVoltages[1] ?? U1;
+    const U3 = initialVoltages[2] ?? U1;
+    const Umoy = (U1 + U2 + U3) / 3;
+    const Umax = Math.max(U1, U2, U3);
+    const Umin = Math.min(U1, U2, U3);
+    const deltaInit = Umax - Umin;
+    const eps = 1e-9;
+    // Ratios de phase par rapport à l'écart initial
+    const denomDelta = Math.max(deltaInit, eps);
+    const ratio1 = (U1 - Umoy) / denomDelta;
+    const ratio2 = (U2 - Umoy) / denomDelta;
+    const ratio3 = (U3 - Umoy) / denomDelta;
+    // Formule empirique EQUI8 pour le nouvel écart
+    const Z = Math.max(Zph_ohms || 0, eps);
+    const rawDenom = 0.9119 * Math.log(Z) + 3.8654;
+    const safeDenom = (isFinite(rawDenom) && rawDenom > eps) ? rawDenom : 1; // fallback si invalide
+    const deltaEqui8 = deltaInit / safeDenom;
+    // Nouvelles tensions compensées
+    const U1p = Umoy + ratio1 * deltaEqui8;
+    const U2p = Umoy + ratio2 * deltaEqui8;
+    const U3p = Umoy + ratio3 * deltaEqui8;
+    return [U1p, U2p, U3p];
   }
 
   /**
