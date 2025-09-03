@@ -199,6 +199,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // Tensions précédentes pour convergence
     let previousVoltages = new Map<string, number>();
+    // Résultat courant de l'itération
+    let currentResult: CalculationResult;
     
     while (iteration < maxIterations && !converged) {
       iteration++;
@@ -206,7 +208,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       // 1. Calculer le réseau avec les équipements actuels
       const modifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-      let currentResult = this.calculateScenario(
+      currentResult = this.calculateScenario(
         modifiedNodes, cables, cableTypes, scenario,
         foisonnementCharges, foisonnementProductions,
         transformerConfig, loadModel, desequilibrePourcent
@@ -343,23 +345,16 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.log(`✅ Simulation BFS convergé en ${iteration} itérations`);
     }
 
-    // Calcul final avec les équipements convergés
-    const finalNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-    const finalResult = this.calculateScenario(
-      finalNodes, cables, cableTypes, scenario,
-      foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent
-    );
-
-    // Mettre à jour la tension mesurée aux nœuds des régulateurs (affichage)
+    // Mettre à jour la tension mesurée aux nœuds des régulateurs (affichage) avec le dernier résultat
     for (const [nodeId, regulator] of regulators.entries()) {
       const node = nodes.find(n => n.id === nodeId);
       if (node) {
-        regulator.currentVoltage_V = this.getNodeLineVoltageFromResult(finalResult, node, nodes);
+        regulator.currentVoltage_V = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
       }
     }
 
-    return finalResult;
+    // Renvoyer directement le résultat de la dernière itération
+    return currentResult;
   }
 
 
