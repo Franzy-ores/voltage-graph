@@ -553,7 +553,7 @@ export const MapView = () => {
         html: `<div class="${iconSizeClass} rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
           <div class="text-base">${iconContent}</div>
           ${circuitNumber ? `<div class="text-[9px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
-          ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
+          ${showVoltages ? `<div class="text-[9px] leading-tight text-center">
             ${(() => {
               // Afficher les 3 phases en mode monophasé réparti
               if (currentProject.loadModel === 'monophase_reparti') {
