@@ -432,15 +432,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     nodeId: string,
     compensator: NeutralCompensator,
     result: CalculationResult,
-    currentState: { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean },
+    currentState: { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean },
     _loadModel: LoadModel,
     _desequilibrePourcent: number
   ): boolean {
-    // Paramètres d'entrée avec modèle physique amélioré
-    const Zp = compensator.zPhase_Ohm ?? 0.5;      // Ω (phase)
-    const Zn = compensator.zNeutral_Ohm ?? 0.2;    // Ω (neutre)
+    // Impédances fournies (préférence aux nouveaux champs, fallback anciens). Valeurs très faibles si absentes
+    const Zp = Math.max(1e-6, compensator.phaseImpedance ?? compensator.zPhase_Ohm ?? 1e-6); // Ω (phase)
+    const Zn = Math.max(1e-6, compensator.neutralImpedance ?? compensator.zNeutral_Ohm ?? 1e-6); // Ω (neutre)
 
-    // Récupération des tensions phase-neutre initiales (U1,U2,U3)
+    // Tensions phase-neutre (U1,U2,U3) au nœud
     let U1 = 230, U2 = 230, U3 = 230;
     const perPhase = result.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
     const metric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
@@ -448,55 +448,54 @@ export class SimulationCalculator extends ElectricalCalculator {
       const magA = perPhase.find(p => p.phase === 'A')?.V_phase_V;
       const magB = perPhase.find(p => p.phase === 'B')?.V_phase_V;
       const magC = perPhase.find(p => p.phase === 'C')?.V_phase_V;
-      if (magA && magB && magC) {
-        U1 = magA; U2 = magB; U3 = magC;
-      }
+      if (magA && magB && magC) { U1 = magA; U2 = magB; U3 = magC; }
     } else if (metric) {
       U1 = U2 = U3 = metric.V_phase_V;
     }
 
-    // Calcul des courants avec modèle physique
+    // Courants de phase approximés pour obtenir I_N initial
     const I_phases = this.calculatePhaseCurrents(U1, U2, U3, Zp);
-    const compensationVoltage = this.calculateNeutralCompensation(I_phases);
-    
-    // Calcul du courant neutre théorique
     const In0 = add(add(I_phases[0], I_phases[1]), I_phases[2]);
     const IN_initial = abs(In0);
 
-    // Estimation de la réduction avec modèle physique amélioré
-    const compensationMagnitude = abs(compensationVoltage);
-    const reductionFactor = Math.min(0.8, compensationMagnitude / (Zp * IN_initial + 1e-9));
-    const IN_after = Math.max(IN_initial * (1 - reductionFactor), 0);
-    const absorbed = IN_initial - IN_after;
-    const reductionPercent = IN_initial > 1e-9 ? (absorbed / IN_initial) * 100 : 0;
+    // Facteur de compensation: k = |Zn| / (|Zn| + |Zp|)
+    const k = Math.max(0, Math.min(1, Zn / (Zn + Zp)));
 
-    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 || 
-                   Math.abs(currentState.reductionPercent - reductionPercent) > 0.1;
+    // Courant de neutre absorbé par le compensateur
+    let I_absorbed = k * IN_initial; // A
 
-    // Conversion courant neutre absorbé -> Q équivalent (approx): Q ≈ V_phase * I / 1000 (kVAr)
-    const V_phase_ref = 230; // V
-    let Q_total_kVAr = (absorbed * V_phase_ref) / 1000; // kVAr total à injecter
-    Q_total_kVAr = Math.max(0, Q_total_kVAr);
+    // Puissance apparente équivalente consommée par le compensateur (PF≈1)
+    const V_phase_ref = (U1 + U2 + U3) / 3 || 230; // V moyenne de phase
+    let S_virtual_kVA = (V_phase_ref * I_absorbed) / 1000; // kVA
+    S_virtual_kVA = Math.max(0, S_virtual_kVA);
 
     // Limitation par la puissance max du compensateur
     const Smax = Math.max(0, compensator.maxPower_kVA || 0);
     let limited = false;
-    if (Smax > 0 && Q_total_kVAr > Smax) {
-      Q_total_kVAr = Smax;
+    if (Smax > 0 && S_virtual_kVA > Smax) {
+      S_virtual_kVA = Smax;
+      // Ajuster I_absorbed en conséquence
+      I_absorbed = (S_virtual_kVA * 1000) / Math.max(V_phase_ref, 1e-6);
       limited = true;
     }
 
-    // Répartition par phase (égale) pour la correction du neutre
-    const qPerPhase = Q_total_kVAr / 3;
+    const IN_after = Math.max(IN_initial - I_absorbed, 0);
+    const reductionPercent = IN_initial > 1e-9 ? ((IN_initial - IN_after) / IN_initial) * 100 : 0;
+
+    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 ||
+                    Math.abs(currentState.reductionPercent - reductionPercent) > 0.1 ||
+                    Math.abs((currentState.S_virtual_kVA || 0) - S_virtual_kVA) > 0.01;
 
     // Mettre à jour l'état
     currentState.IN_A = IN_after;
     currentState.reductionPercent = reductionPercent;
-    currentState.Q_phases = { A: qPerPhase, B: qPerPhase, C: qPerPhase };
+    currentState.S_virtual_kVA = S_virtual_kVA;
     currentState.isLimited = limited;
 
+    // Sorties d'aide au debug
     compensator.iN_initial_A = IN_initial;
-    compensator.iN_absorbed_A = absorbed;
+    compensator.iN_absorbed_A = I_absorbed;
+    compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
 
     return changed;
   }
@@ -593,20 +592,23 @@ export class SimulationCalculator extends ElectricalCalculator {
         }
       }
       
-      // Appliquer compensateur (injection Q par phase)
+      // Appliquer compensateur (charge virtuelle S)
       const compensatorState = compensatorStates.get(node.id);
       if (compensatorState) {
         // Nettoyer les anciennes entrées virtuelles du compensateur
         modifiedNode.productions = (modifiedNode.productions || []).filter(p => !p.id.startsWith('compensator-'));
+        modifiedNode.clients = (modifiedNode.clients || []).filter(c => !c.id.startsWith('compensator-'));
 
-        const { A, B, C } = compensatorState.Q_phases;
-        const entries: any[] = [];
-        if (Math.abs(A) > 0.01) entries.push({ id: `compensator-${node.id}-A`, label: 'Compensateur A', P_kW: 0, Q_kVAr: A, phase: 'A' });
-        if (Math.abs(B) > 0.01) entries.push({ id: `compensator-${node.id}-B`, label: 'Compensateur B', P_kW: 0, Q_kVAr: B, phase: 'B' });
-        if (Math.abs(C) > 0.01) entries.push({ id: `compensator-${node.id}-C`, label: 'Compensateur C', P_kW: 0, Q_kVAr: C, phase: 'C' });
-
-        if (entries.length) {
-          modifiedNode.productions = [...(modifiedNode.productions || []), ...entries];
+        const Svirt = compensatorState.S_virtual_kVA || 0;
+        if (Svirt > 0.001) {
+          // Modéliser comme une charge triphasée équilibrée purement résistive (PF≈1)
+          const virtLoad: any = {
+            id: `compensator-${node.id}`,
+            label: 'Compensateur (Svirt)',
+            P_kW: Svirt,
+            Q_kVAr: 0
+          };
+          modifiedNode.clients = [...(modifiedNode.clients || []), virtLoad];
         }
       }
       
@@ -621,7 +623,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     regulators: Map<string, VoltageRegulator>,
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
     compensators: Map<string, NeutralCompensator>,
-    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>
+    compensatorStates: Map<string, { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean }>
   ): void {
     // Mise à jour des régulateurs
     for (const [nodeId, regulator] of regulators.entries()) {
@@ -639,7 +641,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       if (state) {
         compensator.currentIN_A = state.IN_A;
         compensator.reductionPercent = state.reductionPercent;
-        compensator.compensationQ_kVAr = state.Q_phases;
+        // Q par phase non utilisé dans le nouveau modèle → 0
+        compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
         compensator.isLimited = state.isLimited;
       }
     }

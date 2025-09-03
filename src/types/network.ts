@@ -153,9 +153,12 @@ export interface NeutralCompensator {
   maxPower_kVA: number; // Puissance totale disponible pour compensation
   tolerance_A: number; // Seuil de courant de neutre pour déclencher la compensation
   enabled: boolean; // Actif dans la simulation
-  // Paramètres EQUI8
-  zPhase_Ohm?: number;   // Impédance phase-neutre équivalente (Ω)
-  zNeutral_Ohm?: number; // Impédance du neutre équivalente (Ω)
+  // Paramètres physiques
+  phaseImpedance?: number;   // Ω/phase (Zp)
+  neutralImpedance?: number; // Ω neutre (Zn)
+  // Compat héritée (fallback)
+  zPhase_Ohm?: number;
+  zNeutral_Ohm?: number;
   fraction?: number;     // Fraction F (0-1)
   // Résultats de simulation
   currentIN_A?: number; // Courant de neutre après compensation (A)
