@@ -593,7 +593,7 @@ export const MapView = () => {
                   const vA = phaseMetrics.voltagesPerPhase.A.toFixed(1);
                   const vB = phaseMetrics.voltagesPerPhase.B.toFixed(1);
                   const vC = phaseMetrics.voltagesPerPhase.C.toFixed(1);
-                  return `<span class="text-blue-600">A:${vA}V</span><br><span class="text-green-600">B:${vB}V</span><br><span class="text-red-600">C:${vC}V</span>`;
+                  return `<span class="text-black">A:${vA}V</span><br><span class="text-black">B:${vB}V</span><br><span class="text-black">C:${vC}V</span>`;
                 } else {
                   return `A:${nodeVoltage.toFixed(0)}V<br>B:${nodeVoltage.toFixed(0)}V<br>C:${nodeVoltage.toFixed(0)}V`;
                 }
