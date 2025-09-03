@@ -560,8 +560,12 @@ export const MapView = () => {
                 const results = resultsToUse[selectedScenario];
                 const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
                 
+                const isUsingSimulation = (simulationMode && activeEquipmentCount > 0);
+                
                 console.log('🐛 Phase voltages for node', node.id, {
-                  usingSimulation: (simulationMode && activeEquipmentCount > 0),
+                  simulationMode,
+                  activeEquipmentCount,
+                  usingSimulation: isUsingSimulation,
                   hasPhaseMetrics: !!phaseMetrics,
                   voltages: phaseMetrics?.voltagesPerPhase
                 });
