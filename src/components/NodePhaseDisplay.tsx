@@ -18,6 +18,13 @@ export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
   
+  console.log('🐛 NodePhaseDisplay logic:', {
+    simulationMode,
+    activeEquipmentCount,
+    usingSimulation: simulationMode && activeEquipmentCount > 0,
+    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'simulation' : 'calculation'
+  });
+  
   if (!resultsToUse[selectedScenario]?.nodeMetricsPerPhase) {
     return null;
   }
