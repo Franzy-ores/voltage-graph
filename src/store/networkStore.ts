@@ -1017,7 +1017,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => {
-    const { simulationEquipment } = get();
+    const { simulationEquipment, simulationMode } = get();
     set({
       simulationEquipment: {
         ...simulationEquipment,
@@ -1026,6 +1026,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         )
       }
     });
+
+    // Déclencher le calcul de simulation lors de la (ré)activation ou de toute mise à jour pertinente
+    if (typeof updates.enabled !== 'undefined') {
+      if (updates.enabled === true && !simulationMode) {
+        set({ simulationMode: true, selectedTool: 'simulation' });
+      }
+      get().runSimulation();
+    } else if (simulationMode) {
+      // Si on est déjà en mode simulation, recalculer sur tout autre paramètre (tension cible, puissance max, etc.)
+      get().runSimulation();
+    }
   },
 
   addNeutralCompensator: (nodeId: string) => {
@@ -1075,7 +1086,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => {
-    const { simulationEquipment } = get();
+    const { simulationEquipment, simulationMode } = get();
     set({
       simulationEquipment: {
         ...simulationEquipment,
@@ -1084,6 +1095,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         )
       }
     });
+
+    // Déclencher le calcul de simulation lors de la (ré)activation ou de toute mise à jour pertinente
+    if (typeof updates.enabled !== 'undefined') {
+      if (updates.enabled === true && !simulationMode) {
+        set({ simulationMode: true, selectedTool: 'simulation' });
+      }
+      get().runSimulation();
+    } else if (simulationMode) {
+      // Si on est déjà en mode simulation, recalculer sur tout autre paramètre
+      get().runSimulation();
+    }
   },
 
   proposeCableUpgrades: () => {
