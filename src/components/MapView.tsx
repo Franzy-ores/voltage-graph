@@ -551,8 +551,8 @@ export const MapView = () => {
       const icon = L.divIcon({
         className: 'custom-node-marker',
         html: `<div class="${iconSizeClass} rounded-full border-2 flex flex-col items-center justify-center text-xs font-bold ${iconClass} p-1">
-          <div class="text-sm">${iconContent}</div>
-          ${circuitNumber ? `<div class="text-[8px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
+          <div class="text-base">${iconContent}</div>
+          ${circuitNumber ? `<div class="text-[9px] bg-black bg-opacity-50 rounded px-1">C${circuitNumber}</div>` : ''}
           ${showVoltages ? `<div class="text-[8px] leading-tight text-center">
             ${(() => {
               // Afficher les 3 phases en mode monophasé réparti
