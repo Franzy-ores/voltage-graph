@@ -1113,46 +1113,18 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     if (!currentProject || !calculationResults[selectedScenario]) return;
 
     const result = calculationResults[selectedScenario]!;
-    // Utiliser le SimulationCalculator pour proposer des améliorations
-    const calculator = new ElectricalCalculator();
-    // Fallback simple pour proposer des améliorations
-    const upgrades: CableUpgrade[] = [];
     
-    // Logique simplifiée pour détecter les câbles à améliorer
-    for (const cable of result.cables) {
-      if (cable.voltageDropPercent && Math.abs(cable.voltageDropPercent) > 8) {
-        // Trouver un câble de section supérieure (approximation)
-        const currentType = currentProject.cableTypes.find(t => t.id === cable.typeId);
-        const betterType = currentProject.cableTypes.find(t => 
-          t.R12_ohm_per_km < (currentType?.R12_ohm_per_km || 1) && 
-          t.matiere === currentType?.matiere
-        );
-        
-        if (betterType) {
-          upgrades.push({
-            originalCableId: cable.id,
-            newCableTypeId: betterType.id,
-            reason: 'voltage_drop',
-            before: {
-              voltageDropPercent: cable.voltageDropPercent,
-              current_A: cable.current_A || 0,
-              losses_kW: cable.losses_kW || 0
-            },
-            after: {
-              voltageDropPercent: cable.voltageDropPercent * 0.7, // Amélioration estimée
-              current_A: cable.current_A || 0,
-              losses_kW: (cable.losses_kW || 0) * 0.5,
-              estimatedCost: 1500
-            },
-            improvement: {
-              voltageDropReduction: Math.abs(cable.voltageDropPercent) * 0.3,
-              lossReduction_kW: (cable.losses_kW || 0) * 0.5,
-              lossReductionPercent: 50
-            }
-          });
-        }
-      }
-    }
+    // Utiliser le SimulationCalculator pour proposer des améliorations basées sur la chute de tension
+    const calculator = new SimulationCalculator(currentProject.cosPhi);
+    
+    // Analyser avec un seuil de 2% pour la chute de tension
+    const upgrades = calculator.proposeCableUpgrades(
+      currentProject,
+      result,
+      2.0, // Seuil de 2% pour la chute de tension
+      1.0, // Facteur de sécurité pour surcharge
+      1500 // Coût estimé par amélioration
+    );
 
     set({
       simulationEquipment: {
@@ -1161,7 +1133,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
     });
     
-    toast.success(`${upgrades.length} améliorations de câbles proposées`);
+    toast.success(`${upgrades.length} améliorations de câbles proposées automatiquement`);
   },
 
   toggleCableUpgrade: (upgradeId: string) => {

@@ -464,9 +464,10 @@ export const SimulationPanel = () => {
                     size="sm"
                     variant="outline"
                     onClick={proposeCableUpgrades}
+                    className="flex items-center gap-1"
                   >
-                    <TrendingUp className="h-3 w-3 mr-1" />
-                    Analyser
+                    <TrendingUp className="h-3 w-3" />
+                    Analyser automatiquement
                   </Button>
                 </div>
 
@@ -475,7 +476,7 @@ export const SimulationPanel = () => {
                     <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Aucune amélioration proposée</p>
                     <p className="text-xs">
-                      Analysez le réseau pour des propositions
+                      Cliquez sur "Analyser automatiquement" pour détecter les câbles avec chute de tension &gt; 2%
                     </p>
                   </Card>
                 ) : (
