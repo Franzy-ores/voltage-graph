@@ -849,6 +849,18 @@ export const MapView = () => {
         </Button>
       </div>
       
+      {/* Indicateur de chargement de la carte */}
+      {isMapLoading && (
+        <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-background border rounded-lg p-4 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="animate-spin w-4 h-4 border-2 border-primary border-t-transparent rounded-full"></div>
+              <span className="text-sm">Chargement de la carte...</span>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <CableTypeSelector />
       
       {/* Tool indicator */}
