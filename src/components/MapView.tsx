@@ -566,6 +566,25 @@ export const MapView = () => {
                   voltages: phaseMetrics?.voltagesPerPhase
                 });
                 
+                // Comparaison spéciale pour le nœud compensateur
+                if (node.id === 'node-1756199772381') {
+                  const calcResults = calculationResults[selectedScenario];
+                  const simResults = simulationResults[selectedScenario];
+                  const calcMetrics = calcResults?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+                  const simMetrics = simResults?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+                  
+                  console.log('🔍 COMPENSATEUR COMPARISON:', {
+                    nodeId: node.id,
+                    calculation: calcMetrics?.voltagesPerPhase,
+                    simulation: simMetrics?.voltagesPerPhase,
+                    difference: {
+                      A: simMetrics?.voltagesPerPhase.A - calcMetrics?.voltagesPerPhase.A,
+                      B: simMetrics?.voltagesPerPhase.B - calcMetrics?.voltagesPerPhase.B,
+                      C: simMetrics?.voltagesPerPhase.C - calcMetrics?.voltagesPerPhase.C
+                    }
+                  });
+                }
+                
                 if (phaseMetrics) {
                   const vA = phaseMetrics.voltagesPerPhase.A.toFixed(0);
                   const vB = phaseMetrics.voltagesPerPhase.B.toFixed(0);
