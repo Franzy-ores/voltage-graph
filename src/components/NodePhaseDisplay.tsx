@@ -6,15 +6,23 @@ interface NodePhaseDisplayProps {
 }
 
 export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
-  const { calculationResults, selectedScenario, currentProject } = useNetworkStore();
+  const { calculationResults, simulationResults, selectedScenario, currentProject, simulationEquipment } = useNetworkStore();
   
-  if (!currentProject || 
-      currentProject.loadModel !== 'monophase_reparti' || 
-      !calculationResults[selectedScenario]?.nodeMetricsPerPhase) {
+  if (!currentProject || currentProject.loadModel !== 'monophase_reparti') {
     return null;
   }
 
-  const nodeMetrics = calculationResults[selectedScenario]!.nodeMetricsPerPhase!
+  // Utiliser les résultats de simulation si du matériel de simulation est actif
+  const hasActiveEquipment = simulationEquipment.regulators.some(r => r.enabled) || 
+                             simulationEquipment.neutralCompensators.some(c => c.enabled);
+  
+  const resultsToUse = hasActiveEquipment ? simulationResults : calculationResults;
+  
+  if (!resultsToUse[selectedScenario]?.nodeMetricsPerPhase) {
+    return null;
+  }
+
+  const nodeMetrics = resultsToUse[selectedScenario]!.nodeMetricsPerPhase!
     .find(nm => nm.nodeId === nodeId);
     
   if (!nodeMetrics) {
