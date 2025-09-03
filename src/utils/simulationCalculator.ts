@@ -337,7 +337,17 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     }
     
-    // 6. Mise à jour des résultats dans les équipements originaux
+    // 6. Calcul final avec états d'équipement figés pour garantir la cohérence
+    {
+      const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+      currentResult = this.calculateScenario(
+        finalModifiedNodes, cables, cableTypes, scenario,
+        foisonnementCharges, foisonnementProductions,
+        transformerConfig, loadModel, desequilibrePourcent
+      );
+    }
+
+    // 7. Mise à jour des résultats dans les équipements originaux
     this.updateEquipmentResults(regulators, regulatorStates, compensators, compensatorStates);
     
     if (!converged) {
@@ -637,20 +647,36 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   // Récupère la tension ligne du nœud à partir du résultat (gère équilibré/déséquilibré)
   private getNodeLineVoltageFromResult(result: CalculationResult, node: Node, _allNodes: Node[]): number {
-    const { isThreePhase, U_base } = this.getNodeVoltageConfig(node.connectionType);
+    const { U_base } = this.getNodeVoltageConfig(node.connectionType);
+
+    // Déterminer l'échelle ligne/phase correctement selon le type de connexion
+    const lineScale = (() => {
+      switch (node.connectionType) {
+        case 'TRI_230V_3F':
+          // En 3F/230V, V_phase_V est déjà la tension composée (230V)
+          return 1;
+        case 'TÉTRA_3P+N_230_400V':
+          // En 3P+N/400V, conversion phase → ligne
+          return Math.sqrt(3);
+        case 'MONO_230V_PN':
+        case 'MONO_230V_PP':
+        default:
+          return 1;
+      }
+    })();
 
     // Mode équilibré: nodeMetrics présent avec V_phase_V
     const metric = result.nodeMetrics?.find(m => m.nodeId === node.id);
     if (metric) {
       const V_phase = metric.V_phase_V;
-      return isThreePhase ? V_phase * Math.sqrt(3) : V_phase;
+      return V_phase * lineScale;
     }
 
     // Mode déséquilibré: utiliser nodePhasorsPerPhase et prendre la pire phase
     const phases = result.nodePhasorsPerPhase?.filter(p => p.nodeId === node.id) || [];
     if (phases.length > 0) {
       const minPhaseMag = Math.min(...phases.map(p => p.V_phase_V));
-      return isThreePhase ? minPhaseMag * Math.sqrt(3) : minPhaseMag;
+      return minPhaseMag * lineScale;
     }
 
     // Fallback: tension nominale
