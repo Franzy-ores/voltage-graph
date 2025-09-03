@@ -559,12 +559,12 @@ export class SimulationCalculator extends ElectricalCalculator {
             };
             modifiedNode.productions = [...(modifiedNode.productions || []), virt];
           } else {
-            // Absorption de réactif (-) -> charge avec P=0, Q<0  
+            // Absorption de réactif (-) -> charge avec P=0, Q>0 (consommation)
             const virt: any = { 
               id: `regulator-${node.id}`, 
               label: 'Régulateur (Q−)', 
               P_kW: 0,
-              Q_kVAr: Q
+              Q_kVAr: Math.abs(Q)
             };
             modifiedNode.clients = [...(modifiedNode.clients || []), virt];
           }
