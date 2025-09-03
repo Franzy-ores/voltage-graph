@@ -988,23 +988,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       return;
     }
 
-    // Déterminer automatiquement le type selon la tension de la source
-    const sourceNode = currentProject.nodes.find(n => n.isSource);
-    const sourceVoltage = sourceNode?.tensionCible || (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
-    const type = sourceVoltage > 300 ? '400V' : '230V';
-    
-    const regulatorType: RegulatorType = type === '230V' ? '230V_77kVA' : '400V_44kVA';
-    const maxPower = type === '230V' ? 77 : 44;
-    const targetVoltage = type === '230V' ? 230 : 400;
-
-    const newRegulator: VoltageRegulator = {
-      id: `regulator-${nodeId}-${Date.now()}`,
-      nodeId,
-      type: regulatorType,
-      targetVoltage_V: targetVoltage,
-      maxPower_kVA: maxPower,
-      enabled: true
-    };
+    // Utiliser le calculateur pour créer le régulateur avec le voltageSystem du projet
+    const calculator = new SimulationCalculator();
+    const newRegulator = calculator.createDefaultRegulator(nodeId, currentProject.voltageSystem);
 
     set({
       simulationEquipment: {
@@ -1013,7 +999,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
     });
     
-    toast.success(`Armoire de régulation ${type} ajoutée`);
+    toast.success(`Armoire de régulation ${newRegulator.type} ajoutée`);
     
     // Recalculer automatiquement la simulation
     get().runSimulation();

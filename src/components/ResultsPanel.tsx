@@ -390,6 +390,65 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
           </CardContent>
         </Card>
 
+        {/* Node Voltages */}
+        {currentResult?.nodeMetrics && currentResult.nodeMetrics.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Tensions des Nœuds</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1 text-xs max-h-48 overflow-y-auto">
+                {currentResult.nodeMetrics.map((metric) => {
+                  const node = currentProject?.nodes.find(n => n.id === metric.nodeId);
+                  if (!node) return null;
+                  
+                  // Calculer la tension ligne pour l'affichage
+                  const lineVoltage = (() => {
+                    const config = (() => {
+                      switch (node.connectionType) {
+                        case 'MONO_230V_PN':
+                        case 'MONO_230V_PP':
+                          return { isThreePhase: false };
+                        case 'TRI_230V_3F':
+                        case 'TÉTRA_3P+N_230_400V':
+                        default:
+                          return { isThreePhase: true };
+                      }
+                    })();
+                    
+                    return config.isThreePhase ? metric.V_phase_V * Math.sqrt(3) : metric.V_phase_V;
+                  })();
+                  
+                  // Déterminer la conformité de tension
+                  const nominalVoltage = currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+                  const voltageDropPercent = Math.abs((nominalVoltage - lineVoltage) / nominalVoltage * 100);
+                  
+                  let complianceColor = 'text-green-600';
+                  if (voltageDropPercent > 10) complianceColor = 'text-red-600';
+                  else if (voltageDropPercent > 8) complianceColor = 'text-orange-600';
+                  
+                  return (
+                    <div key={metric.nodeId} className="flex justify-between items-center">
+                      <span className="truncate pr-2">
+                        {node.name}
+                        {node.isSource && <span className="text-muted-foreground ml-1">(Source)</span>}
+                      </span>
+                      <div className="text-right">
+                        <span className={`font-medium ${complianceColor}`}>
+                          {lineVoltage.toFixed(1)} V
+                        </span>
+                        <div className="text-muted-foreground text-xs">
+                          {voltageDropPercent > 0.1 ? `${voltageDropPercent > 0 ? '-' : '+'}${voltageDropPercent.toFixed(1)}%` : '0%'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Comparison by Circuits */}
         {currentResult?.virtualBusbar?.circuits && currentResult.virtualBusbar.circuits.length > 0 && (
           <Card>

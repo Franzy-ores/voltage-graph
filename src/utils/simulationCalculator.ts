@@ -13,7 +13,8 @@ import {
   RegulatorType,
   TransformerConfig,
   LoadModel,
-  ConnectionType
+  ConnectionType,
+  VoltageSystem
 } from '@/types/network';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { Complex, C, add, sub, mul, div, abs, fromPolar } from '@/utils/complex';
@@ -843,10 +844,12 @@ export class SimulationCalculator extends ElectricalCalculator {
   /**
    * Crée une armoire de régulation par défaut pour un nœud
    */
-  createDefaultRegulator(nodeId: string, voltageSystem: '230V' | '400V'): VoltageRegulator {
-    const type: RegulatorType = voltageSystem === '230V' ? '230V_77kVA' : '400V_44kVA';
-    const maxPower = voltageSystem === '230V' ? 77 : 44;
-    const targetVoltage = voltageSystem === '230V' ? 230 : 400;
+  createDefaultRegulator(nodeId: string, voltageSystem: VoltageSystem): VoltageRegulator {
+    // Pour un réseau TRIPHASÉ_230V: tension ligne = 230V, régulateur 77kVA
+    // Pour un réseau TÉTRAPHASÉ_400V: tension ligne = 400V, régulateur 44kVA
+    const type: RegulatorType = voltageSystem === 'TRIPHASÉ_230V' ? '230V_77kVA' : '400V_44kVA';
+    const maxPower = voltageSystem === 'TRIPHASÉ_230V' ? 77 : 44;
+    const targetVoltage = voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
 
     return {
       id: `regulator-${nodeId}-${Date.now()}`,
