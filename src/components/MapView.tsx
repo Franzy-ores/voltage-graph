@@ -559,6 +559,13 @@ export const MapView = () => {
               if (currentProject.loadModel === 'monophase_reparti') {
                 const results = resultsToUse[selectedScenario];
                 const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+                
+                console.log('🐛 Phase voltages for node', node.id, {
+                  usingSimulation: (simulationMode && activeEquipmentCount > 0),
+                  hasPhaseMetrics: !!phaseMetrics,
+                  voltages: phaseMetrics?.voltagesPerPhase
+                });
+                
                 if (phaseMetrics) {
                   const vA = phaseMetrics.voltagesPerPhase.A.toFixed(0);
                   const vB = phaseMetrics.voltagesPerPhase.B.toFixed(0);
