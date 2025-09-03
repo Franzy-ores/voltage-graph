@@ -458,17 +458,37 @@ export const SimulationPanel = () => {
 
             <TabsContent value="upgrades" className="mt-4">
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Renforcement des câbles</h3>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={proposeCableUpgrades}
-                    className="flex items-center gap-1"
-                  >
-                    <TrendingUp className="h-3 w-3" />
-                    Analyser automatiquement
-                  </Button>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">Renforcement des câbles</h3>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
+                        <Label className="text-xs">Seuil ΔU:</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          max="15"
+                          step="0.1"
+                          defaultValue="8"
+                          className="h-7 w-16 text-xs"
+                          id="voltage-threshold"
+                        />
+                        <span className="text-xs text-muted-foreground">%</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          const threshold = parseFloat((document.getElementById('voltage-threshold') as HTMLInputElement)?.value || '8');
+                          proposeCableUpgrades(threshold);
+                        }}
+                        className="flex items-center gap-1"
+                      >
+                        <TrendingUp className="h-3 w-3" />
+                        Analyser
+                      </Button>
+                    </div>
+                  </div>
                 </div>
 
                 {simulationEquipment.cableUpgrades.length === 0 ? (
@@ -476,13 +496,33 @@ export const SimulationPanel = () => {
                     <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Aucune amélioration proposée</p>
                     <p className="text-xs">
-                      Cliquez sur "Analyser automatiquement" pour détecter les circuits avec chute de tension &gt; 8% et proposer un renforcement complet
+                      Réglez le seuil et cliquez sur "Analyser" pour détecter les circuits avec chute de tension excessive
                     </p>
                   </Card>
                 ) : (
-                  simulationEquipment.cableUpgrades.map((upgrade, index) => (
-                    <UpgradeCard key={index} upgrade={upgrade} />
-                  ))
+                  <div className="space-y-3">
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => {
+                          if (!simulationMode) {
+                            // Activer le mode simulation
+                            toggleSimulationMode();
+                          }
+                          // Lancer la simulation avec les remplacements proposés
+                          runSimulation();
+                        }}
+                        className="flex items-center gap-1"
+                      >
+                        <CheckCircle className="h-3 w-3" />
+                        Appliquer ces remplacements
+                      </Button>
+                    </div>
+                    {simulationEquipment.cableUpgrades.map((upgrade, index) => (
+                      <UpgradeCard key={index} upgrade={upgrade} />
+                    ))}
+                  </div>
                 )}
               </div>
             </TabsContent>

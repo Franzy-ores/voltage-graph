@@ -104,7 +104,7 @@ interface NetworkActions {
   addNeutralCompensator: (nodeId: string) => void;
   removeNeutralCompensator: (compensatorId: string) => void;
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => void;
-  proposeCableUpgrades: () => void;
+  proposeCableUpgrades: (threshold?: number) => void;
   toggleCableUpgrade: (upgradeId: string) => void;
   runSimulation: () => void;
   
@@ -1108,7 +1108,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     }
   },
 
-  proposeCableUpgrades: () => {
+  proposeCableUpgrades: (threshold?: number) => {
     const { currentProject, calculationResults, selectedScenario, simulationEquipment } = get();
     if (!currentProject || !calculationResults[selectedScenario]) return;
 
@@ -1117,11 +1117,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Utiliser le SimulationCalculator pour proposer des améliorations basées sur la chute de tension
     const calculator = new SimulationCalculator(currentProject.cosPhi);
     
-    // Optimisation par circuit en un seul passage avec seuil de 8%
+    // Optimisation par circuit en un seul passage avec seuil paramétrable (par défaut 8%)
     const upgrades = calculator.proposeFullCircuitReinforcement(
       currentProject,
       result,
-      8.0 // Seuil de 8% pour la chute de tension
+      threshold ?? 8.0 // Seuil paramétrable pour la chute de tension
     );
 
     set({
@@ -1131,7 +1131,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
     });
     
-    toast.success(`${upgrades.length} améliorations de câbles proposées automatiquement`);
+    toast.success(`${upgrades.length} améliorations proposées (seuil: ${threshold ?? 8}%)`);
   },
 
   toggleCableUpgrade: (upgradeId: string) => {
