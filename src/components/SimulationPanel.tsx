@@ -494,18 +494,55 @@ export const SimulationPanel = () => {
           <Separator />
           
           {currentResult && baseline && (
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <div className="font-medium text-muted-foreground">Baseline</div>
-                <div>Pertes: {baseline.globalLosses_kW.toFixed(2)} kW</div>
-                <div>ΔU max: {baseline.maxVoltageDropPercent.toFixed(1)}%</div>
+            <>
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <div className="font-medium text-muted-foreground">Baseline</div>
+                  <div>Pertes: {baseline.globalLosses_kW.toFixed(2)} kW</div>
+                  <div>ΔU max: {baseline.maxVoltageDropPercent.toFixed(1)}%</div>
+                </div>
+                <div>
+                  <div className="font-medium text-green-600">Simulation</div>
+                  <div>Pertes: {currentResult.globalLosses_kW.toFixed(2)} kW</div>
+                  <div>ΔU max: {currentResult.maxVoltageDropPercent.toFixed(1)}%</div>
+                </div>
               </div>
-              <div>
-                <div className="font-medium text-green-600">Simulation</div>
-                <div>Pertes: {currentResult.globalLosses_kW.toFixed(2)} kW</div>
-                <div>ΔU max: {currentResult.maxVoltageDropPercent.toFixed(1)}%</div>
-              </div>
-            </div>
+
+              {simulationEquipment.cableUpgrades.length > 0 && (
+                <div className="mt-4 p-3 bg-muted/30 rounded-md">
+                  <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                    <Cable className="h-3 w-3 text-purple-600" />
+                    Résumé des remplacements
+                  </div>
+                  
+                  {/* Longueur totale remplacée */}
+                  <div className="text-xs mb-2">
+                    <span className="font-medium">Longueur totale à remplacer:</span> {
+                      simulationEquipment.cableUpgrades.reduce((total, upgrade) => {
+                        const cable = currentProject.cables.find(c => c.id === upgrade.originalCableId);
+                        return total + (cable?.length_m || 0);
+                      }, 0).toFixed(0)
+                    } mètres
+                  </div>
+                  
+                  {/* Détails des remplacements */}
+                  <div className="space-y-1 text-xs">
+                    {simulationEquipment.cableUpgrades.map((upgrade, index) => {
+                      const cable = currentProject.cables.find(c => c.id === upgrade.originalCableId);
+                      const originalType = currentProject.cableTypes.find(t => t.id === cable?.typeId);
+                      const newType = currentProject.cableTypes.find(t => t.id === upgrade.newCableTypeId);
+                      
+                      return (
+                        <div key={index} className="text-muted-foreground">
+                          Remplacement du tronçon '{upgrade.originalCableId}' : 
+                          câble {originalType?.label || 'inconnu'} par {newType?.label || 'inconnu'}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           <div className="flex gap-2">

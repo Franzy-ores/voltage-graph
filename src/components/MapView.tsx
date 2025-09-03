@@ -758,30 +758,41 @@ export const MapView = () => {
 
     currentProject.cables.forEach(cable => {
       let cableColor = '#000000'; // noir par défaut (non calculé)
+      let cableWeight = 4; // épaisseur par défaut
       
-      // Vérifier si les nœuds sont connectés
-      const nodeAConnected = connectedNodes.has(cable.nodeAId);
-      const nodeBConnected = connectedNodes.has(cable.nodeBId);
+      // Vérifier si ce câble a une amélioration active dans la simulation
+      const hasUpgrade = simulationEquipment?.cableUpgrades?.some(upgrade => 
+        upgrade.originalCableId === cable.id
+      ) && simulationMode;
       
-      // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
-      if (nodeAConnected && nodeBConnected) {
-        const results = resultsToUse[selectedScenario];
-        if (results && results.nodeVoltageDrops) {
-          const calculatedCable = results.cables.find(c => c.id === cable.id);
-          if (calculatedCable) {
-            // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
-            const arrivalNodeId = calculatedCable.nodeBId;
-            const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
-            
-            if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
-              const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+      if (hasUpgrade) {
+        cableColor = '#8A2BE2'; // violet pour les câbles remplacés
+        cableWeight = 8; // épaisseur doublée
+      } else {
+        // Vérifier si les nœuds sont connectés
+        const nodeAConnected = connectedNodes.has(cable.nodeAId);
+        const nodeBConnected = connectedNodes.has(cable.nodeBId);
+        
+        // Si les nœuds sont connectés ET qu'il y a des résultats de calcul
+        if (nodeAConnected && nodeBConnected) {
+          const results = resultsToUse[selectedScenario];
+          if (results && results.nodeVoltageDrops) {
+            const calculatedCable = results.cables.find(c => c.id === cable.id);
+            if (calculatedCable) {
+              // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
+              const arrivalNodeId = calculatedCable.nodeBId;
+              const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
               
-              if (voltageDropPercent < 8) {
-                cableColor = '#22c55e'; // VERT - dans la norme (<8%)
-              } else if (voltageDropPercent < 10) {
-                cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
-              } else {
-                cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+              if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
+                const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+                
+                if (voltageDropPercent < 8) {
+                  cableColor = '#22c55e'; // VERT - dans la norme (<8%)
+                } else if (voltageDropPercent < 10) {
+                  cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+                } else {
+                  cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+                }
               }
             }
           }
@@ -792,7 +803,7 @@ export const MapView = () => {
         cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
           color: cableColor,
-          weight: 4,
+          weight: cableWeight,
           opacity: 0.8
         }
       ).addTo(map);
@@ -844,7 +855,7 @@ export const MapView = () => {
 
       cablesRef.current.set(cable.id, polyline);
     });
-  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario]);
+  }, [currentProject?.cables, selectedTool, setSelectedCable, openEditPanel, deleteCable, calculationResults, selectedScenario, simulationEquipment, simulationMode]);
 
   return (
     <div className="flex-1 relative">
