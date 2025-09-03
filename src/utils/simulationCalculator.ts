@@ -362,33 +362,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     return finalResult;
   }
 
-  /**
-   * Algorithme Newton-Raphson pour la régulation de tension avec sensibilité
-   */
-  private updateRegulatorWithJacobian(nodeId: string, targetV: number, currentV: number, regulator: VoltageRegulator): number {
-    // Calculer la sensibilité dV/dQ (approximation linéarisée)
-    const sensitivity = this.calculateVoltageSensitivity(nodeId, currentV); // dV/dQ en V/kVAr
-    const deltaV = targetV - currentV;
-    const deltaQ = sensitivity !== 0 ? deltaV / sensitivity : 0;
-    
-    // Limiter à la puissance maximum
-    const maxPower = regulator.maxPower_kVA;
-    return Math.max(-maxPower, Math.min(maxPower, deltaQ));
-  }
-
-  /**
-   * Calcule la sensibilité de tension dV/dQ pour l'algorithme Newton-Raphson
-   */
-  private calculateVoltageSensitivity(nodeId: string, voltage_V: number): number {
-    // Approximation basée sur l'impédance équivalente du réseau
-    // Pour un réseau radial: dV/dQ ≈ X_equivalent / V_nominal
-    const nominalVoltage = 230; // V (base de calcul)
-    const equivalentReactance = 0.1; // Ω (estimation simplifiée)
-    
-    // Sensibilité linéarisée: plus la tension est basse, plus l'effet est important
-    const voltageFactor = nominalVoltage / Math.max(voltage_V, 0.8 * nominalVoltage);
-    return equivalentReactance * voltageFactor;
-  }
 
   /**
    * Modèle physique du compensateur de neutre basé sur les composantes symétriques
