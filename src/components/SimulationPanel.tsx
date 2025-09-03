@@ -21,8 +21,10 @@ import {
   Trash2,
   Plus,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  BarChart3
 } from "lucide-react";
+import { CableComparisonDisplay } from "./CableComparisonDisplay";
 
 export const SimulationPanel = () => {
   const {
@@ -378,7 +380,7 @@ export const SimulationPanel = () => {
       <ScrollArea className="flex-1">
         <div className="p-4">
           <Tabs defaultValue="regulators" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="regulators" className="text-xs">
                 <Zap className="h-3 w-3 mr-1" />
                 Régulation
@@ -390,6 +392,10 @@ export const SimulationPanel = () => {
               <TabsTrigger value="upgrades" className="text-xs">
                 <TrendingUp className="h-3 w-3 mr-1" />
                 Câbles
+              </TabsTrigger>
+              <TabsTrigger value="comparison" className="text-xs">
+                <BarChart3 className="h-3 w-3 mr-1" />
+                Comparaison
               </TabsTrigger>
             </TabsList>
 
@@ -482,6 +488,29 @@ export const SimulationPanel = () => {
                   simulationEquipment.cableUpgrades.map((upgrade, index) => (
                     <UpgradeCard key={index} upgrade={upgrade} />
                   ))
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="comparison" className="mt-4">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">Comparaison Avant/Après</h3>
+                  <Badge variant={currentResult?.baselineResult ? "default" : "secondary"}>
+                    {currentResult?.baselineResult ? "Données disponibles" : "Pas de baseline"}
+                  </Badge>
+                </div>
+
+                {currentResult?.baselineResult ? (
+                  <CableComparisonDisplay />
+                ) : (
+                  <Card className="p-4 text-center text-muted-foreground">
+                    <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Aucune comparaison disponible</p>
+                    <p className="text-xs">
+                      Ajoutez des améliorations de câbles et lancez une simulation pour voir les comparaisons
+                    </p>
+                  </Card>
                 )}
               </div>
             </TabsContent>
