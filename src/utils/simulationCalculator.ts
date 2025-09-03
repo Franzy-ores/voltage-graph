@@ -175,7 +175,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     compensators: Map<string, NeutralCompensator>
   ): CalculationResult {
     
-    const maxIterations = 20;
+    const maxIterations = SimulationCalculator.SIM_MAX_ITERATIONS;
     let converged = false;
     let iteration = 0;
     let maxVoltageDelta = 0;
@@ -187,14 +187,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // État des équipements à chaque itération
     const regulatorStates = new Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>();
-    const compensatorStates = new Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>();
+    const compensatorStates = new Map<string, { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean }>();
     
     // Initialisation des états
     for (const [nodeId, regulator] of regulators.entries()) {
       regulatorStates.set(nodeId, { Q_kVAr: 0, V_target: regulator.targetVoltage_V, isLimited: false });
     }
-    for (const [nodeId, compensator] of compensators.entries()) {
-      compensatorStates.set(nodeId, { Q_phases: { A: 0, B: 0, C: 0 }, IN_A: 0, reductionPercent: 0, isLimited: false });
+    for (const [nodeId, _compensator] of compensators.entries()) {
+      compensatorStates.set(nodeId, { S_virtual_kVA: 0, IN_A: 0, reductionPercent: 0, isLimited: false });
     }
     
     // Tensions précédentes pour convergence
@@ -221,28 +221,57 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       let equipmentChanged = false;
       
-      // 2. Traiter les régulateurs avec algorithme Newton-Raphson amélioré
+      // 2. Traiter les régulateurs avec sensibilité dV/dQ dynamique via ΔQ test
+      let maxQDelta = 0;
       for (const [nodeId, regulator] of regulators.entries()) {
         const node = nodeById.get(nodeId);
         if (!node) continue;
 
-        const currentV_line = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
+        const baseV_line = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
         const targetV = regulator.targetVoltage_V;
-        
-        // Utiliser Newton-Raphson pour calculer le Q requis
-        const requiredQ = this.updateRegulatorWithJacobian(nodeId, targetV, currentV_line, regulator);
         const state = regulatorStates.get(nodeId)!;
-        
-        if (Math.abs(requiredQ - state.Q_kVAr) > 0.05) {
-          state.Q_kVAr = requiredQ;
-          state.isLimited = Math.abs(requiredQ) >= regulator.maxPower_kVA;
-          equipmentChanged = true;
+
+        // Construire un état test avec ΔQ = +1 kVAr
+        const deltaQtest = 1; // kVAr
+        const testRegulatorStates = new Map(regulatorStates);
+        const testState = { ...state, Q_kVAr: state.Q_kVAr + deltaQtest };
+        testRegulatorStates.set(nodeId, testState);
+
+        const testNodes = this.applyEquipmentToNodes(nodes, testRegulatorStates, compensatorStates);
+        const testResult = this.calculateScenario(
+          testNodes, cables, cableTypes, scenario,
+          foisonnementCharges, foisonnementProductions,
+          transformerConfig, loadModel, desequilibrePourcent
+        );
+        const testV_line = this.getNodeLineVoltageFromResult(testResult, node, nodes);
+
+        // Sensibilité numérique
+        let sensitivity = (testV_line - baseV_line) / deltaQtest; // V/kVAr
+        if (!isFinite(sensitivity) || Math.abs(sensitivity) < 1e-6) {
+          // Fallback minimal pour éviter division par zéro
+          sensitivity = 0.05; // V/kVAr
         }
 
-        console.log(`📊 Régulateur ${nodeId}: Q=${state.Q_kVAr.toFixed(2)} kVAr, limited=${state.isLimited}`);
+        // Correction de Q (damping pour stabilité)
+        const deltaV = targetV - baseV_line;
+        let deltaQ = deltaV / sensitivity; // kVAr nécessaires
+        // Limiter la variation par itération pour éviter la surcompensation
+        const maxStep = Math.max(2, regulator.maxPower_kVA * 0.25);
+        deltaQ = Math.max(-maxStep, Math.min(maxStep, deltaQ));
+
+        const newQ = Math.max(-regulator.maxPower_kVA, Math.min(regulator.maxPower_kVA, state.Q_kVAr + deltaQ));
+        const qChange = Math.abs(newQ - state.Q_kVAr);
+        if (qChange > 0.05) {
+          state.Q_kVAr = newQ;
+          state.isLimited = Math.abs(newQ) >= regulator.maxPower_kVA;
+          equipmentChanged = true;
+        }
+        if (qChange > maxQDelta) maxQDelta = qChange;
+
+        console.log(`📊 Régulateur ${nodeId}: Vbase=${baseV_line.toFixed(1)}V → Q=${state.Q_kVAr.toFixed(2)} kVAr (ΔQ=${deltaQ.toFixed(2)}), limited=${state.isLimited}`);
       }
       
-      // 3. Traiter les compensateurs avec modèle physique amélioré
+      // 3. Traiter les compensateurs avec modèle physique (shunt homopolaire)
       for (const [nodeId, compensator] of compensators.entries()) {
         const currentState = compensatorStates.get(nodeId)!;
         const node = nodeById.get(nodeId);
@@ -255,7 +284,7 @@ export class SimulationCalculator extends ElectricalCalculator {
           const prevIN = currentState.IN_A;
           currentState.IN_A = 0;
           currentState.reductionPercent = 0;
-          currentState.Q_phases = { A: 0, B: 0, C: 0 };
+          currentState.S_virtual_kVA = 0;
           currentState.isLimited = false;
           compensator.currentIN_A = 0;
           compensator.reductionPercent = 0;
@@ -271,7 +300,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         
         if (changed) {
           equipmentChanged = true;
-          console.log(`⚡ Compensateur ${nodeId}: IN=${currentState.IN_A.toFixed(2)} A, limited=${currentState.isLimited}`);
+          console.log(`⚡ Compensateur ${nodeId}: IN=${currentState.IN_A.toFixed(2)} A, Svirt=${currentState.S_virtual_kVA.toFixed(2)} kVA, limited=${currentState.isLimited}`);
         }
       }
       
@@ -285,7 +314,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         );
       }
       
-      // 5. Test de convergence
+      // 5. Test de convergence (tension + stabilité Q)
       maxVoltageDelta = 0;
       if (currentResult.nodeMetrics) {
         for (const nodeMetric of currentResult.nodeMetrics) {
@@ -297,7 +326,10 @@ export class SimulationCalculator extends ElectricalCalculator {
         }
       }
       
-      if (maxVoltageDelta < SimulationCalculator.SIM_CONVERGENCE_TOLERANCE_PHASE_V) {
+      if (
+        maxVoltageDelta < SimulationCalculator.SIM_CONVERGENCE_TOLERANCE_PHASE_V &&
+        (typeof maxQDelta === 'number' ? maxQDelta : 0) < 0.1
+      ) {
         converged = true;
       }
     }
@@ -525,7 +557,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   private applyEquipmentToNodes(
     originalNodes: Node[],
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
-    compensatorStates: Map<string, { Q_phases: { A: number, B: number, C: number }, IN_A: number, reductionPercent: number, isLimited: boolean }>
+    compensatorStates: Map<string, { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean }>
   ): Node[] {
     return originalNodes.map(node => {
       let modifiedNode = { ...node };
