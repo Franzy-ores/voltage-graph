@@ -407,6 +407,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       compensator.u1p_V = uA;
       compensator.u2p_V = uB;
       compensator.u3p_V = uC;
+
+      // 🔄 CORRECTION: Propager les nouvelles tensions aux nœuds en aval
+      this.propagateVoltagesDownstream(nodeId, { A: uA, B: uB, C: uC }, nodes, cables, cableTypes, currentResult);
     }
 
     // 7. Mise à jour des résultats dans les équipements originaux
@@ -428,6 +431,161 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     // Renvoyer directement le résultat de la dernière itération
     return currentResult;
+  }
+
+  /**
+   * Propage les nouvelles tensions d'un nœud compensateur vers les nœuds en aval
+   */
+  private propagateVoltagesDownstream(
+    sourceNodeId: string, 
+    sourceVoltages: { A: number; B: number; C: number },
+    nodes: Node[], 
+    cables: Cable[], 
+    cableTypes: CableType[],
+    result: CalculationResult
+  ): void {
+    console.log(`🔄 Propagating voltages from compensator ${sourceNodeId}:`, sourceVoltages);
+    
+    // Créer un graphe des connexions
+    const nodeConnections = new Map<string, { cable: Cable; otherNodeId: string }[]>();
+    
+    for (const cable of cables) {
+      const connections1 = nodeConnections.get(cable.nodeAId) || [];
+      const connections2 = nodeConnections.get(cable.nodeBId) || [];
+      
+      connections1.push({ cable, otherNodeId: cable.nodeBId });
+      connections2.push({ cable, otherNodeId: cable.nodeAId });
+      
+      nodeConnections.set(cable.nodeAId, connections1);
+      nodeConnections.set(cable.nodeBId, connections2);
+    }
+
+    // BFS pour propager les tensions
+    const visited = new Set<string>();
+    const queue: { nodeId: string; voltages: { A: number; B: number; C: number } }[] = [];
+    
+    // Commencer par le nœud compensateur
+    queue.push({ nodeId: sourceNodeId, voltages: sourceVoltages });
+    visited.add(sourceNodeId);
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      const connections = nodeConnections.get(current.nodeId) || [];
+      
+      for (const { cable, otherNodeId } of connections) {
+        if (visited.has(otherNodeId)) continue;
+        
+        // Calculer les nouvelles tensions au nœud en aval
+        const newVoltages = this.calculateDownstreamVoltages(
+          current.voltages, 
+          cable, 
+          current.nodeId === cable.nodeAId, // true si on va de A vers B
+          nodes, 
+          cableTypes
+        );
+        
+        // Mettre à jour les résultats
+        this.updateNodeVoltagesInResult(otherNodeId, newVoltages, result);
+        
+        // Continuer la propagation
+        visited.add(otherNodeId);
+        queue.push({ nodeId: otherNodeId, voltages: newVoltages });
+        
+        console.log(`  → Node ${otherNodeId}: A=${newVoltages.A.toFixed(1)}V, B=${newVoltages.B.toFixed(1)}V, C=${newVoltages.C.toFixed(1)}V`);
+      }
+    }
+  }
+
+  /**
+   * Calcule les tensions en aval d'un câble avec chutes de tension
+   */
+  private calculateDownstreamVoltages(
+    upstreamVoltages: { A: number; B: number; C: number },
+    cable: Cable,
+    isForwardDirection: boolean,
+    nodes: Node[],
+    cableTypes: CableType[]
+  ): { A: number; B: number; C: number } {
+    const cableType = cableTypes.find(t => t.id === cable.typeId);
+    if (!cableType) return upstreamVoltages;
+
+    // Récupérer les nœuds
+    const nodeA = nodes.find(n => n.id === cable.nodeAId);
+    const nodeB = nodes.find(n => n.id === cable.nodeBId);
+    if (!nodeA || !nodeB) return upstreamVoltages;
+
+    // Calculer les courants (approximation basée sur les charges des nœuds)
+    const targetNode = isForwardDirection ? nodeB : nodeA;
+    const totalLoad = (targetNode.clients || []).reduce((sum, charge) => sum + charge.S_kVA, 0);
+    const totalProd = (targetNode.productions || []).reduce((sum, prod) => sum + prod.S_kVA, 0);
+    const netLoad = Math.max(0, totalLoad - totalProd); // kVA
+
+    // Courant approximatif par phase (réparti uniformément)
+    const current_A = netLoad > 0 ? netLoad * 1000 / (3 * 230) : 0; // A par phase approximatif
+
+    // Résistance et réactance du câble
+    const R_ohm = cableType.R12_ohm_per_km * (cable.length_m || 0) / 1000;
+    const X_ohm = cableType.X12_ohm_per_km * (cable.length_m || 0) / 1000;
+
+    // Chute de tension par phase: ΔU = I × (R + jX) ≈ I × R (approximation résistive)
+    const voltageDrop = current_A * R_ohm;
+
+    // Appliquer la chute (négative si on va dans le sens du courant)
+    const dropSign = isForwardDirection ? -1 : 1;
+    
+    return {
+      A: upstreamVoltages.A + dropSign * voltageDrop,
+      B: upstreamVoltages.B + dropSign * voltageDrop,  
+      C: upstreamVoltages.C + dropSign * voltageDrop
+    };
+  }
+
+  /**
+   * Met à jour les tensions d'un nœud dans les résultats
+   */
+  private updateNodeVoltagesInResult(
+    nodeId: string, 
+    voltages: { A: number; B: number; C: number }, 
+    result: CalculationResult
+  ): void {
+    // Mettre à jour nodeMetricsPerPhase
+    if (result.nodeMetricsPerPhase) {
+      const idx = result.nodeMetricsPerPhase.findIndex(m => m.nodeId === nodeId);
+      if (idx >= 0) {
+        result.nodeMetricsPerPhase[idx] = {
+          ...result.nodeMetricsPerPhase[idx],
+          voltagesPerPhase: voltages,
+        };
+      } else {
+        result.nodeMetricsPerPhase.push({
+          nodeId,
+          voltagesPerPhase: voltages,
+          voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
+        });
+      }
+    }
+
+    // Mettre à jour nodePhasorsPerPhase si présent
+    if (result.nodePhasorsPerPhase) {
+      const updatePhase = (phase: 'A' | 'B' | 'C', mag: number) => {
+        const p = result.nodePhasorsPerPhase!.find(pp => pp.nodeId === nodeId && pp.phase === phase);
+        if (p) p.V_phase_V = mag;
+      };
+      updatePhase('A', voltages.A);
+      updatePhase('B', voltages.B);
+      updatePhase('C', voltages.C);
+    }
+
+    // Mettre à jour la métrique agrégée (moyenne)
+    if (result.nodeMetrics) {
+      const midx = result.nodeMetrics.findIndex(m => m.nodeId === nodeId);
+      if (midx >= 0) {
+        result.nodeMetrics[midx] = {
+          ...result.nodeMetrics[midx],
+          V_phase_V: (voltages.A + voltages.B + voltages.C) / 3,
+        };
+      }
+    }
   }
 
 
