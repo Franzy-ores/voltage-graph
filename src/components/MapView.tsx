@@ -63,7 +63,8 @@ export const MapView = () => {
   console.log('🐛 MapView results logic:', {
     simulationMode,
     activeEquipmentCount,
-    usingSimulation: simulationMode && activeEquipmentCount > 0
+    usingSimulation: simulationMode && activeEquipmentCount > 0,
+    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION'
   });
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
