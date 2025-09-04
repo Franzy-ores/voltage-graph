@@ -751,6 +751,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         const virtualProduction = {
           id: `regulator_${node.id}`,
           name: 'Régulateur de tension',
+          label: 'Régulateur de tension',
           S_kVA: Math.abs(regulatorState.Q_kVAr), // Magnitude
           cosPhi: 0, // Puissance purement réactive
           type: 'AUTRE' as const
@@ -764,6 +765,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         const virtualLoad = {
           id: `compensator_${node.id}`,
           name: 'Compensateur de neutre',
+          label: 'Compensateur de neutre',
           S_kVA: compensatorState.S_virtual_kVA,
           cosPhi: 0.95,
           type: 'AUTRE' as const
@@ -864,8 +866,8 @@ export class SimulationCalculator extends ElectricalCalculator {
   private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>): Map<string, { parent: string | null, children: string[] }> {
     const treeStructure = new Map<string, { parent: string | null, children: string[] }>();
     
-    // Trouver le nœud racine (transformateur)
-    const rootNode = nodes.find(n => n.isTransformer) || nodes[0];
+    // Trouver le nœud racine (source)
+    const rootNode = nodes.find(n => n.isSource) || nodes[0];
     if (!rootNode) return treeStructure;
     
     // BFS pour construire l'arbre
@@ -918,5 +920,69 @@ export class SimulationCalculator extends ElectricalCalculator {
     const u3Corrected = u3 - deltaU3 * correctionFactor * 0.8;
     
     return [u1Corrected, u2Corrected, u3Corrected];
+  }
+
+  /**
+   * Crée un régulateur par défaut
+   */
+  createDefaultRegulator(nodeId: string, voltageSystem?: VoltageSystem): VoltageRegulator {
+    return {
+      id: `reg_${nodeId}`,
+      nodeId,
+      type: 'STATIC' as RegulatorType,
+      enabled: false,
+      targetVoltage_V: voltageSystem === "TÉTRAPHASÉ_400V" ? 400 : 230,
+      maxPower_kVA: 50,
+      currentVoltage_V: 0,
+      currentQ_kVAr: 0,
+      isLimited: false
+    };
+  }
+
+  /**
+   * Propose un renforcement complet du circuit
+   */
+  proposeFullCircuitReinforcement(project: Project, result: CalculationResult, threshold: number = 8.0): CableUpgrade[] {
+    const upgrades: CableUpgrade[] = [];
+    
+    // Trouver le type de câble le plus robuste
+    const bestCableType = project.cableTypes.reduce((best, current) => 
+      (current.maxCurrent_A || 0) > (best.maxCurrent_A || 0) ? current : best
+    );
+
+    // Proposer des améliorations pour tous les câbles avec problèmes
+    project.cables.forEach(cable => {
+      // Vérifier si le câble a des problèmes de chute de tension
+      const hasVoltageIssue = (cable.voltageDropPercent || 0) > threshold;
+      const hasOverload = (cable.current_A || 0) > ((project.cableTypes.find(t => t.id === cable.typeId)?.maxCurrent_A || 1000));
+      
+      if ((hasVoltageIssue || hasOverload) && cable.typeId !== bestCableType.id) {
+        const currentType = project.cableTypes.find(t => t.id === cable.typeId);
+        
+        upgrades.push({
+          originalCableId: cable.id,
+          newCableTypeId: bestCableType.id,
+          reason: hasVoltageIssue && hasOverload ? 'both' : hasVoltageIssue ? 'voltage_drop' : 'overload',
+          before: {
+            voltageDropPercent: cable.voltageDropPercent || 0,
+            current_A: cable.current_A || 0,
+            losses_kW: 0 // Simplifié pour l'instant
+          },
+          after: {
+            voltageDropPercent: Math.max(0, (cable.voltageDropPercent || 0) * 0.5), // Estimation
+            current_A: cable.current_A || 0,
+            losses_kW: 0, // Simplifié pour l'instant
+            estimatedCost: 1000
+          },
+          improvement: {
+            voltageDropReduction: (cable.voltageDropPercent || 0) * 0.5,
+            lossReduction_kW: 0,
+            lossReductionPercent: 0
+          }
+        });
+      }
+    });
+
+    return upgrades;
   }
 }
