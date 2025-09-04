@@ -162,6 +162,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                     <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
                     <SelectItem value="MIXTE">Mixte</SelectItem>
                     <SelectItem value="PRODUCTION">Production</SelectItem>
+                    <SelectItem value="FORCÉ">Forcé</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
