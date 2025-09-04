@@ -159,6 +159,66 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Répartit dynamiquement les charges et productions sur les phases selon les règles définies
+   */
+  private distributeLoadsAndProductionsPerPhase(
+    nodes: Node[],
+    cosPhi: number
+  ): Map<string, { chargesPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}>, productionsPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}> }> {
+    const distributionMap = new Map<string, { 
+      chargesPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}>, 
+      productionsPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}> 
+    }>();
+    
+    nodes.forEach(node => {
+      const chargesPerPhase = { A: { P_kW: 0, Q_kVAr: 0 }, B: { P_kW: 0, Q_kVAr: 0 }, C: { P_kW: 0, Q_kVAr: 0 } };
+      const productionsPerPhase = { A: { P_kW: 0, Q_kVAr: 0 }, B: { P_kW: 0, Q_kVAr: 0 }, C: { P_kW: 0, Q_kVAr: 0 } };
+      
+      // Répartir les charges de manière aléatoire sur les phases
+      if (node.clients && node.clients.length > 0) {
+        const phases = ['A', 'B', 'C'] as const;
+        
+        node.clients.forEach(client => {
+          // Assigner chaque client à une phase aléatoire
+          const randomPhase = phases[Math.floor(Math.random() * 3)];
+          const power = client.S_kVA || 0;
+          
+          // Calculer P et Q pour cette phase
+          const tanPhi = Math.tan(Math.acos(Math.min(1, Math.max(0, cosPhi))));
+          chargesPerPhase[randomPhase].P_kW += power * cosPhi;
+          chargesPerPhase[randomPhase].Q_kVAr += power * cosPhi * tanPhi;
+        });
+      }
+      
+      // Répartir les productions selon la règle ≤5kVA = mono, >5kVA = tri
+      if (node.productions && node.productions.length > 0) {
+        const phases = ['A', 'B', 'C'] as const;
+        
+        node.productions.forEach(production => {
+          const power = production.S_kVA || 0;
+          if (power <= 5) {
+            // Monophasé - assigner à une phase aléatoire
+            const randomPhase = phases[Math.floor(Math.random() * 3)];
+            productionsPerPhase[randomPhase].P_kW += power;
+            // Production avec facteur de puissance unitaire (Q = 0)
+          } else {
+            // Triphasé - répartir équitablement sur les trois phases
+            const powerPerPhase = power / 3;
+            productionsPerPhase.A.P_kW += powerPerPhase;
+            productionsPerPhase.B.P_kW += powerPerPhase;
+            productionsPerPhase.C.P_kW += powerPerPhase;
+            // Production avec facteur de puissance unitaire (Q = 0)
+          }
+        });
+      }
+      
+      distributionMap.set(node.id, { chargesPerPhase, productionsPerPhase });
+    });
+    
+    return distributionMap;
+  }
+
+  /**
    * BFS modifié pour intégrer les équipements de simulation avec vraie convergence
    * et recalcul des nœuds aval pour chaque régulateur
    */
@@ -203,16 +263,36 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Résultat courant de l'itération
     let currentResult: CalculationResult;
     
+    
+    // Générer la distribution dynamique des charges et productions par phase une seule fois
+    // Utiliser le cosPhi du projet (this.simCosPhi) pour les calculs P/Q
+    const phaseDistribution = this.distributeLoadsAndProductionsPerPhase(nodes, this.simCosPhi);
+    
     while (iteration < maxIterations && !converged) {
       iteration++;
       console.log(`🔄 Simulation iteration ${iteration}`);
       
-      // 1. Calculer le réseau avec les équipements actuels
+      // 1. Calculer le réseau avec les équipements actuels et la distribution dynamique
       const modifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+      
+      // Intégrer la distribution par phase dans les nodes modifiés
+      const nodesWithPhaseDistribution = modifiedNodes.map(node => {
+        const distribution = phaseDistribution.get(node.id);
+        if (distribution) {
+          return {
+            ...node,
+            phaseDistribution: distribution
+          };
+        }
+        return node;
+      });
+      
+      // Utiliser foisonnements = 0 et desequilibrePourcent = 1 pour activer le mode par phase
       currentResult = this.calculateScenario(
-        modifiedNodes, cables, cableTypes, scenario,
-        foisonnementCharges, foisonnementProductions,
-        transformerConfig, loadModel, desequilibrePourcent
+        nodesWithPhaseDistribution, cables, cableTypes, scenario,
+        0, // foisonnementCharges = 0 pour utiliser la distribution exacte
+        0, // foisonnementProductions = 0 pour utiliser la distribution exacte  
+        transformerConfig, loadModel, 1 // desequilibrePourcent = 1 pour activer le mode par phase
       );
       
       // Sauvegarder les tensions pour convergence
@@ -241,10 +321,24 @@ export class SimulationCalculator extends ElectricalCalculator {
         testRegulatorStates.set(nodeId, testState);
 
         const testNodes = this.applyEquipmentToNodes(nodes, testRegulatorStates, compensatorStates);
+        
+        // Intégrer la distribution par phase dans les nodes de test
+        const testNodesWithPhaseDistribution = testNodes.map(node => {
+          const distribution = phaseDistribution.get(node.id);
+          if (distribution) {
+            return {
+              ...node,
+              phaseDistribution: distribution
+            };
+          }
+          return node;
+        });
+        
         const testResult = this.calculateScenario(
-          testNodes, cables, cableTypes, scenario,
-          foisonnementCharges, foisonnementProductions,
-          transformerConfig, loadModel, desequilibrePourcent
+          testNodesWithPhaseDistribution, cables, cableTypes, scenario,
+          0, // foisonnementCharges = 0 pour utiliser la distribution exacte
+          0, // foisonnementProductions = 0 pour utiliser la distribution exacte
+          transformerConfig, loadModel, 1 // desequilibrePourcent = 1 pour activer le mode par phase
         );
         const testV_line = this.getNodeLineVoltageFromResult(testResult, node, nodes);
 
