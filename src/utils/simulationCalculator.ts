@@ -39,6 +39,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
+  /**
    * Calcule un scénario avec équipements de simulation
    */
   calculateWithSimulation(
@@ -58,6 +59,62 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.loadModel,
       project.desequilibrePourcent
     );
+
+    // Ensuite calculer avec les équipements de simulation actifs
+    const simulationResult = this.calculateScenarioWithEquipment(
+      project,
+      scenario,
+      equipment
+    );
+
+    return {
+      ...simulationResult,
+      isSimulation: true,
+      equipment,
+      baselineResult
+    };
+  }
+    // D'abord calculer le scénario de base (sans équipements)
+    let baselineResult: CalculationResult;
+    
+    if (scenario === 'FORCÉ' && project.forcedModeConfig) {
+      // Mode forcé : calculer le baseline avec le déséquilibre calibré
+      const { U1, U2, U3 } = project.forcedModeConfig.measuredVoltages;
+      const U_moy = (U1 + U2 + U3) / 3;
+      const U_dev_max = Math.max(
+        Math.abs(U1 - U_moy),
+        Math.abs(U2 - U_moy),
+        Math.abs(U3 - U_moy)
+      );
+      const calculatedImbalance = (U_dev_max / U_moy) * 100;
+      
+      console.log(`Mode FORCÉ: baseline avec déséquilibre calibré = ${calculatedImbalance.toFixed(2)}%`);
+      
+      baselineResult = this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        0, // foisonnements = 0 pour mode par phase
+        0,
+        project.transformerConfig,
+        'monophase_reparti', // Forcer le mode par phase
+        calculatedImbalance
+      );
+    } else {
+      // Autres modes : baseline normal
+      baselineResult = this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        project.foisonnementCharges,
+        project.foisonnementProductions,
+        project.transformerConfig,
+        project.loadModel,
+        project.desequilibrePourcent
+      );
+    }
 
     // Ensuite calculer avec les équipements de simulation actifs
     const simulationResult = this.calculateScenarioWithEquipment(
@@ -119,6 +176,7 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Algorithme BFS modifié avec intégration native des équipements de simulation
+   * et gestion du mode forcé
    */
   private calculateScenarioWithEnhancedBFS(
     nodes: Node[],
@@ -140,8 +198,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     const regulatorByNode = new Map(activeRegulators.map(r => [r.nodeId, r]));
     const compensatorByNode = new Map(activeCompensators.map(c => [c.nodeId, c]));
     
-    // Si aucun équipement actif, utiliser l'algorithme standard
-    if (activeRegulators.length === 0 && activeCompensators.length === 0) {
+    // Si aucun équipement actif et pas en mode forcé, utiliser l'algorithme standard
+    if (activeRegulators.length === 0 && activeCompensators.length === 0 && scenario !== 'FORCÉ') {
       return this.calculateScenario(
         nodes, cables, cableTypes, scenario,
         foisonnementCharges, foisonnementProductions, 
@@ -160,11 +218,29 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Répartit dynamiquement les charges et productions sur les phases selon les règles définies
+   * et calcule automatiquement le déséquilibre pour le mode forcé
    */
   private distributeLoadsAndProductionsPerPhase(
     nodes: Node[],
-    cosPhi: number
+    cosPhi: number,
+    scenario?: CalculationScenario,
+    forcedModeConfig?: { measuredVoltages: { U1: number; U2: number; U3: number }, measurementNodeId: string }
   ): Map<string, { chargesPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}>, productionsPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}> }> {
+    
+    // Si mode forcé, calculer le déséquilibre automatiquement à partir des mesures
+    let calculatedImbalance = 0;
+    if (scenario === 'FORCÉ' && forcedModeConfig) {
+      const { U1, U2, U3 } = forcedModeConfig.measuredVoltages;
+      const U_moy = (U1 + U2 + U3) / 3;
+      const U_dev_max = Math.max(
+        Math.abs(U1 - U_moy),
+        Math.abs(U2 - U_moy),
+        Math.abs(U3 - U_moy)
+      );
+      calculatedImbalance = (U_dev_max / U_moy) * 100;
+      console.log(`Mode FORCÉ: déséquilibre calculé = ${calculatedImbalance.toFixed(2)}% à partir des tensions [${U1}, ${U2}, ${U3}]V`);
+    }
+
     const distributionMap = new Map<string, { 
       chargesPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}>, 
       productionsPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}> 

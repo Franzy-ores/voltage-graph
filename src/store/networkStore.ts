@@ -70,7 +70,7 @@ interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
   loadProject: (project: Project) => void;
-  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent'>>) => void;
+  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent' | 'forcedModeConfig'>>) => void;
   
   // Node actions
   addNode: (lat: number, lng: number) => void;
@@ -238,12 +238,14 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   calculationResults: {
     PRÉLÈVEMENT: null,
     MIXTE: null,
-    PRODUCTION: null
+    PRODUCTION: null,
+    FORCÉ: null
   },
   simulationResults: {
     PRÉLÈVEMENT: null,
     MIXTE: null,
-    PRODUCTION: null
+    PRODUCTION: null,
+    FORCÉ: null
   },
   selectedTool: 'select',
   selectedNodeId: null,
@@ -270,7 +272,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       calculationResults: {
         PRÉLÈVEMENT: null,
         MIXTE: null,
-        PRODUCTION: null
+        PRODUCTION: null,
+        FORCÉ: null
       }
     });
   },
@@ -682,6 +685,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
         currentProject.desequilibrePourcent ?? 0
+      ),
+      FORCÉ: calculator.calculateScenario(
+        currentProject.nodes,
+        currentProject.cables,
+        currentProject.cableTypes,
+        'FORCÉ',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
       )
     };
 
@@ -783,6 +797,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.cables, 
         currentProject.cableTypes, 
         'PRODUCTION',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.transformerConfig,
+        currentProject.loadModel ?? 'polyphase_equilibre',
+        currentProject.desequilibrePourcent ?? 0
+      ),
+      FORCÉ: calculator.calculateScenario(
+        currentProject.nodes, 
+        currentProject.cables, 
+        currentProject.cableTypes, 
+        'FORCÉ',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
@@ -966,7 +991,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       simulationResults: newSimulationMode ? get().simulationResults : {
         PRÉLÈVEMENT: null,
         MIXTE: null,
-        PRODUCTION: null
+        PRODUCTION: null,
+        FORCÉ: null
       },
       // Désactiver tous les équipements de simulation quand on quitte le mode simulation
       simulationEquipment: newSimulationMode ? simulationEquipment : {
@@ -1152,10 +1178,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       const newSimulationResults: { [key in CalculationScenario]: any } = {
         PRÉLÈVEMENT: null,
         MIXTE: null,
-        PRODUCTION: null
+        PRODUCTION: null,
+        FORCÉ: null
       };
       
-      const scenarios: CalculationScenario[] = ['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION'];
+      const scenarios: CalculationScenario[] = ['PRÉLÈVEMENT', 'MIXTE', 'PRODUCTION', 'FORCÉ'];
       
       for (const scenario of scenarios) {
         try {

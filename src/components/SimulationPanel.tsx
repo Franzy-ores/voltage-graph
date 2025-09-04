@@ -11,6 +11,7 @@ import { useNetworkStore } from "@/store/networkStore";
 import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
+import { ForcedModePanel } from "@/components/ForcedModePanel";
 import { 
   Zap, 
   Settings, 
@@ -21,7 +22,8 @@ import {
   Trash2,
   Plus,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Target
 } from "lucide-react";
 
 export const SimulationPanel = () => {
@@ -377,8 +379,15 @@ export const SimulationPanel = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
+          {/* Panel Mode Forcé */}
+          <ForcedModePanel />
+          
           <Tabs defaultValue="regulators" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="forced" className="text-xs">
+                <Target className="h-3 w-3 mr-1" />
+                Forcé
+              </TabsTrigger>
               <TabsTrigger value="regulators" className="text-xs">
                 <Zap className="h-3 w-3 mr-1" />
                 Régulation
@@ -392,6 +401,13 @@ export const SimulationPanel = () => {
                 Câbles
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="forced" className="mt-4">
+              <div className="text-center text-muted-foreground text-sm py-4">
+                La configuration du mode forcé est gérée dans le panneau ci-dessus.
+                Sélectionnez le scénario "FORCÉ" depuis le menu principal pour activer cette fonctionnalité.
+              </div>
+            </TabsContent>
 
             <TabsContent value="regulators" className="mt-4">
               <div className="space-y-4">

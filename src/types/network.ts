@@ -10,7 +10,7 @@ export type ConnectionType =
 
 export type CablePose = "AÉRIEN" | "SOUTERRAIN";
 
-export type CalculationScenario = "PRÉLÈVEMENT" | "MIXTE" | "PRODUCTION";
+export type CalculationScenario = "PRÉLÈVEMENT" | "MIXTE" | "PRODUCTION" | "FORCÉ";
 
 export type LoadModel = 'monophase_reparti' | 'polyphase_equilibre';
 
@@ -118,6 +118,15 @@ export interface Project {
   // Nouveau: modèle de charge et taux de déséquilibre
   loadModel?: LoadModel; // 'polyphase_equilibre' par défaut (compatibilité)
   desequilibrePourcent?: number; // 0 à 100, uniquement si loadModel = 'monophase_reparti'
+  // Configuration mode forcé
+  forcedModeConfig?: {
+    measuredVoltages: {
+      U1: number;
+      U2: number;
+      U3: number;
+    };
+    measurementNodeId: string;
+  };
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
     south: number;
