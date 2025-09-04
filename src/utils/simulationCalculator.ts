@@ -39,7 +39,6 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
-  /**
    * Calcule un scénario avec équipements de simulation
    */
   calculateWithSimulation(
@@ -47,33 +46,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario,
     equipment: SimulationEquipment
   ): SimulationResult {
-    // D'abord calculer le scénario de base (sans équipements)
-    const baselineResult = this.calculateScenario(
-      project.nodes,
-      project.cables,
-      project.cableTypes,
-      scenario,
-      project.foisonnementCharges,
-      project.foisonnementProductions,
-      project.transformerConfig,
-      project.loadModel,
-      project.desequilibrePourcent
-    );
-
-    // Ensuite calculer avec les équipements de simulation actifs
-    const simulationResult = this.calculateScenarioWithEquipment(
-      project,
-      scenario,
-      equipment
-    );
-
-    return {
-      ...simulationResult,
-      isSimulation: true,
-      equipment,
-      baselineResult
-    };
-  }
     // D'abord calculer le scénario de base (sans équipements)
     let baselineResult: CalculationResult;
     
@@ -339,7 +311,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Résultat courant de l'itération
     let currentResult: CalculationResult;
     
-    
     // Générer la distribution dynamique des charges et productions par phase une seule fois
     // Utiliser le cosPhi du projet (this.simCosPhi) pour les calculs P/Q
     const phaseDistribution = this.distributeLoadsAndProductionsPerPhase(nodes, this.simCosPhi);
@@ -492,14 +463,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
     
     // 6. Calcul final avec états d'équipement figés pour garantir la cohérence
-    {
-      const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-      currentResult = this.calculateScenario(
-        finalModifiedNodes, cables, cableTypes, scenario,
-        foisonnementCharges, foisonnementProductions,
-        transformerConfig, loadModel, desequilibrePourcent
-      );
-    }
+    const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+    currentResult = this.calculateScenario(
+      finalModifiedNodes, cables, cableTypes, scenario,
+      foisonnementCharges, foisonnementProductions,
+      transformerConfig, loadModel, desequilibrePourcent
+    );
 
     // 6.b Appliquer le modèle EQUI8 aux nœuds équipés
     for (const [nodeId, compensator] of compensators.entries()) {
@@ -758,258 +727,49 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
   }
 
-
   /**
-   * Modèle physique du compensateur de neutre basé sur les composantes symétriques
-   */
-  private calculateNeutralCompensation(I_phases: Complex[]): Complex {
-    // Calcul de la séquence homopolaire (courant de neutre théorique)
-    const I0 = add(add(I_phases[0], I_phases[1]), I_phases[2]);
-    const I0_mag = abs(I0) / 3; // Courant homopolaire normalisé
-    
-    // Impédance de compensation (R + jX du compensateur)
-    const R_compensation = 0.1; // Ω (résistance série)
-    const X_compensation = 0.05; // Ω (réactance série)  
-    const Z_compensation = C(R_compensation, X_compensation);
-    
-    // Tension de compensation = Z × I0
-    return mul(I0, Z_compensation);
-  }
-
-  /**
-   * Calcule les courants de phase à partir des tensions et impédances
-   */
-  private calculatePhaseCurrents(U1: number, U2: number, U3: number, Zp: number): Complex[] {
-    const deg2rad = (d: number) => (Math.PI * d) / 180;
-    
-    // Tensions phasorelles (angles 120° décalés)
-    const E1 = fromPolar(U1, deg2rad(0));
-    const E2 = fromPolar(U2, deg2rad(-120));
-    const E3 = fromPolar(U3, deg2rad(120));
-    
-    // Impédance de phase (supposée résistive pour simplifier)
-    const Z_phase = C(Zp, 0);
-    
-    // Courants de phase I = U/Z
-    const I1 = div(E1, Z_phase);
-    const I2 = div(E2, Z_phase);
-    const I3 = div(E3, Z_phase);
-    
-    return [I1, I2, I3];
-  }
-  private processNeutralCompensator(
-    nodeId: string,
-    compensator: NeutralCompensator,
-    result: CalculationResult,
-    currentState: { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean },
-    _loadModel: LoadModel,
-    _desequilibrePourcent: number
-  ): boolean {
-    // Impédances fournies (préférence aux nouveaux champs, fallback anciens). Valeurs très faibles si absentes
-    const Zp = Math.max(1e-6, compensator.phaseImpedance ?? compensator.zPhase_Ohm ?? 1e-6); // Ω (phase)
-    const Zn = Math.max(1e-6, compensator.neutralImpedance ?? compensator.zNeutral_Ohm ?? 1e-6); // Ω (neutre)
-
-    // Tensions phase-neutre (U1,U2,U3) au nœud
-    let U1 = 230, U2 = 230, U3 = 230;
-    const perPhase = result.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
-    const metric = result.nodeMetrics?.find(m => m.nodeId === nodeId);
-    if (perPhase && perPhase.length >= 3) {
-      const magA = perPhase.find(p => p.phase === 'A')?.V_phase_V;
-      const magB = perPhase.find(p => p.phase === 'B')?.V_phase_V;
-      const magC = perPhase.find(p => p.phase === 'C')?.V_phase_V;
-      if (magA && magB && magC) { U1 = magA; U2 = magB; U3 = magC; }
-    } else if (metric) {
-      U1 = U2 = U3 = metric.V_phase_V;
-    }
-
-    // Courants de phase approximés pour obtenir I_N initial
-    const I_phases = this.calculatePhaseCurrents(U1, U2, U3, Zp);
-    const In0 = add(add(I_phases[0], I_phases[1]), I_phases[2]);
-    const IN_initial = abs(In0);
-
-    // Facteur de compensation: k = |Zn| / (|Zn| + |Zp|)
-    const k = Math.max(0, Math.min(1, Zn / (Zn + Zp)));
-
-    // Courant de neutre absorbé par le compensateur
-    let I_absorbed = k * IN_initial; // A
-
-    // Puissance apparente équivalente consommée par le compensateur (PF≈1)
-    const V_phase_ref = (U1 + U2 + U3) / 3 || 230; // V moyenne de phase
-    let S_virtual_kVA = (V_phase_ref * I_absorbed) / 1000; // kVA
-    S_virtual_kVA = Math.max(0, S_virtual_kVA);
-
-    // Limitation par la puissance max du compensateur
-    const Smax = Math.max(0, compensator.maxPower_kVA || 0);
-    let limited = false;
-    if (Smax > 0 && S_virtual_kVA > Smax) {
-      S_virtual_kVA = Smax;
-      // Ajuster I_absorbed en conséquence
-      I_absorbed = (S_virtual_kVA * 1000) / Math.max(V_phase_ref, 1e-6);
-      limited = true;
-    }
-
-    const IN_after = Math.max(IN_initial - I_absorbed, 0);
-    const reductionPercent = IN_initial > 1e-9 ? ((IN_initial - IN_after) / IN_initial) * 100 : 0;
-
-    const changed = Math.abs(currentState.IN_A - IN_after) > 0.01 ||
-                    Math.abs(currentState.reductionPercent - reductionPercent) > 0.1 ||
-                    Math.abs((currentState.S_virtual_kVA || 0) - S_virtual_kVA) > 0.01;
-
-    // Mettre à jour l'état
-    currentState.IN_A = IN_after;
-    currentState.reductionPercent = reductionPercent;
-    currentState.S_virtual_kVA = S_virtual_kVA;
-    currentState.isLimited = limited;
-
-    // Sorties d'aide au debug
-    compensator.iN_initial_A = IN_initial;
-    compensator.iN_absorbed_A = I_absorbed;
-    compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
-
-    return changed;
-  }
-
-  /**
-   * Modèle EQUI8: calcule les tensions corrigées par compensateur de neutre
-   * initialVoltages: [Uph1, Uph2, Uph3] en volts
-   * Zph_ohms: impédance de phase équivalente du réseau (Ω)
-   */
-  private calculateEqui8Effect(initialVoltages: number[], Zph_ohms: number): number[] {
-    const U1 = initialVoltages[0] ?? 230;
-    const U2 = initialVoltages[1] ?? U1;
-    const U3 = initialVoltages[2] ?? U1;
-    const Umoy = (U1 + U2 + U3) / 3;
-    const Umax = Math.max(U1, U2, U3);
-    const Umin = Math.min(U1, U2, U3);
-    const deltaInit = Umax - Umin;
-    const eps = 1e-9;
-    // Ratios de phase par rapport à l'écart initial
-    const denomDelta = Math.max(deltaInit, eps);
-    const ratio1 = (U1 - Umoy) / denomDelta;
-    const ratio2 = (U2 - Umoy) / denomDelta;
-    const ratio3 = (U3 - Umoy) / denomDelta;
-    // Formule empirique EQUI8 pour le nouvel écart
-    const Z = Math.max(Zph_ohms || 0, eps);
-    const rawDenom = 0.9119 * Math.log(Z) + 3.8654;
-    const safeDenom = (isFinite(rawDenom) && rawDenom > eps) ? rawDenom : 1; // fallback si invalide
-    const deltaEqui8 = deltaInit / safeDenom;
-    // Nouvelles tensions compensées
-    const U1p = Umoy + ratio1 * deltaEqui8;
-    const U2p = Umoy + ratio2 * deltaEqui8;
-    const U3p = Umoy + ratio3 * deltaEqui8;
-    return [U1p, U2p, U3p];
-  }
-
-  /**
-   * Construit la map d'adjacence du réseau
-   */
-  private buildAdjacencyMap(nodes: Node[], cables: Cable[]): Map<string, string[]> {
-    const adj = new Map<string, string[]>();
-    for (const n of nodes) adj.set(n.id, []);
-    
-    for (const cable of cables) {
-      adj.get(cable.nodeAId)?.push(cable.nodeBId);
-      adj.get(cable.nodeBId)?.push(cable.nodeAId);
-    }
-    
-    return adj;
-  }
-
-  /**
-   * Construit la structure arborescente du réseau
-   */
-  private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>) {
-    const source = nodes.find(n => n.isSource);
-    if (!source) throw new Error('Aucune source trouvée');
-    
-    const parent = new Map<string, string | null>();
-    const children = new Map<string, string[]>();
-    const visited = new Set<string>();
-    
-    // BFS pour construire l'arbre
-    const queue = [source.id];
-    parent.set(source.id, null);
-    visited.add(source.id);
-    
-    for (const n of nodes) children.set(n.id, []);
-    
-    while (queue.length) {
-      const nodeId = queue.shift()!;
-      const neighbors = adjacency.get(nodeId) || [];
-      
-      for (const neighborId of neighbors) {
-        if (!visited.has(neighborId)) {
-          visited.add(neighborId);
-          parent.set(neighborId, nodeId);
-          children.get(nodeId)!.push(neighborId);
-          queue.push(neighborId);
-        }
-      }
-    }
-    
-    return { parent, children, source: source.id };
-  }
-
-  /**
-   * Applique les états des équipements aux nœuds pour le calcul
+   * Applique les équipements aux nœuds pour créer des nœuds modifiés
    */
   private applyEquipmentToNodes(
-    originalNodes: Node[],
+    nodes: Node[],
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
     compensatorStates: Map<string, { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean }>
   ): Node[] {
-    return originalNodes.map(node => {
-      let modifiedNode = { ...node };
-      
-      // Appliquer régulateur avec modèle réactif pur correct
+    return nodes.map(node => {
       const regulatorState = regulatorStates.get(node.id);
-      if (regulatorState) {
-        const Q = regulatorState.Q_kVAr || 0;
-        // Nettoyer les anciennes entrées virtuelles
-        modifiedNode.productions = (modifiedNode.productions || []).filter(p => !p.id.startsWith('regulator-'));
-        modifiedNode.clients = (modifiedNode.clients || []).filter(c => !c.id.startsWith('regulator-'));
-
-        if (Math.abs(Q) > 0.01) {
-          if (Q > 0) {
-            // Injection de réactif (+) -> production avec P=0, Q>0
-            const virt: any = { 
-              id: `regulator-${node.id}`, 
-              label: 'Régulateur (Q+)', 
-              P_kW: 0,
-              Q_kVAr: Q
-            };
-            modifiedNode.productions = [...(modifiedNode.productions || []), virt];
-          } else {
-            // Absorption de réactif (-) -> charge avec P=0, Q>0 (consommation)
-            const virt: any = { 
-              id: `regulator-${node.id}`, 
-              label: 'Régulateur (Q−)', 
-              P_kW: 0,
-              Q_kVAr: Math.abs(Q)
-            };
-            modifiedNode.clients = [...(modifiedNode.clients || []), virt];
-          }
-        }
+      const compensatorState = compensatorStates.get(node.id);
+      
+      if (!regulatorState && !compensatorState) {
+        return node;
       }
       
-      // Appliquer compensateur (charge virtuelle S)
-      const compensatorState = compensatorStates.get(node.id);
-      if (compensatorState) {
-        // Nettoyer les anciennes entrées virtuelles du compensateur
-        modifiedNode.productions = (modifiedNode.productions || []).filter(p => !p.id.startsWith('compensator-'));
-        modifiedNode.clients = (modifiedNode.clients || []).filter(c => !c.id.startsWith('compensator-'));
-
-        const Svirt = compensatorState.S_virtual_kVA || 0;
-        if (Svirt > 0.001) {
-          // Modéliser comme une charge triphasée équilibrée purement résistive (PF≈1)
-          const virtLoad: any = {
-            id: `compensator-${node.id}`,
-            label: 'Compensateur (Svirt)',
-            P_kW: Svirt,
-            Q_kVAr: 0
-          };
-          modifiedNode.clients = [...(modifiedNode.clients || []), virtLoad];
-        }
+      const modifiedNode = { ...node };
+      
+      // Appliquer les régulateurs (injection de puissance réactive)
+      if (regulatorState && Math.abs(regulatorState.Q_kVAr) > 0.001) {
+        // Créer une production virtuelle pour injecter la puissance réactive
+        const virtualProduction = {
+          id: `regulator_${node.id}`,
+          name: 'Régulateur de tension',
+          S_kVA: Math.abs(regulatorState.Q_kVAr), // Magnitude
+          cosPhi: 0, // Puissance purement réactive
+          type: 'AUTRE' as const
+        };
+        
+        modifiedNode.productions = [...(node.productions || []), virtualProduction];
+      }
+      
+      // Appliquer les compensateurs (charge virtuelle si nécessaire)
+      if (compensatorState && Math.abs(compensatorState.S_virtual_kVA) > 0.001) {
+        const virtualLoad = {
+          id: `compensator_${node.id}`,
+          name: 'Compensateur de neutre',
+          S_kVA: compensatorState.S_virtual_kVA,
+          cosPhi: 0.95,
+          type: 'AUTRE' as const
+        };
+        
+        modifiedNode.clients = [...(node.clients || []), virtualLoad];
       }
       
       return modifiedNode;
@@ -1030,7 +790,6 @@ export class SimulationCalculator extends ElectricalCalculator {
       const state = regulatorStates.get(nodeId);
       if (state) {
         regulator.currentQ_kVAr = state.Q_kVAr;
-        regulator.currentVoltage_V = state.V_target; // Sera mis à jour par le calcul final
         regulator.isLimited = state.isLimited;
       }
     }
@@ -1041,440 +800,123 @@ export class SimulationCalculator extends ElectricalCalculator {
       if (state) {
         compensator.currentIN_A = state.IN_A;
         compensator.reductionPercent = state.reductionPercent;
-        // Q par phase non utilisé dans le nouveau modèle → 0
-        compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
         compensator.isLimited = state.isLimited;
       }
     }
   }
 
   /**
-   * Fonction utilitaire pour obtenir les informations de tension d'un type de connexion
+   * Récupère la tension ligne d'un nœud à partir du résultat de calcul
    */
-  private getNodeVoltageConfig(connectionType: ConnectionType): { U_base: number; isThreePhase: boolean } {
-    switch (connectionType) {
-      case 'MONO_230V_PN':
-        return { U_base: 230, isThreePhase: false };
-      case 'MONO_230V_PP':
-        return { U_base: 230, isThreePhase: false };
-      case 'TRI_230V_3F':
-        return { U_base: 230, isThreePhase: true };
-      case 'TÉTRA_3P+N_230_400V':
-        return { U_base: 400, isThreePhase: true };
-      default:
-        return { U_base: 230, isThreePhase: true };
+  private getNodeLineVoltageFromResult(result: CalculationResult, node: Node, allNodes: Node[]): number {
+    // Chercher d'abord dans les métriques par phase
+    const perPhaseMetric = result.nodeMetricsPerPhase?.find(m => m.nodeId === node.id);
+    if (perPhaseMetric) {
+      const { A, B, C } = perPhaseMetric.voltagesPerPhase;
+      // Calculer la tension ligne moyenne: U_ligne = √3 × U_phase_moyenne
+      const avgPhaseVoltage = (A + B + C) / 3;
+      return avgPhaseVoltage * Math.sqrt(3);
     }
-  }
-
-  // Récupère la tension ligne du nœud à partir du résultat (gère équilibré/déséquilibré)
-  private getNodeLineVoltageFromResult(result: CalculationResult, node: Node, _allNodes: Node[]): number {
-    const { U_base } = this.getNodeVoltageConfig(node.connectionType);
-
-    // Déterminer l'échelle ligne/phase correctement selon le type de connexion
-    const lineScale = (() => {
-      switch (node.connectionType) {
-        case 'TRI_230V_3F':
-          // En 3F/230V, V_phase_V est déjà la tension composée (230V)
-          return 1;
-        case 'TÉTRA_3P+N_230_400V':
-          // En 3P+N/400V, conversion phase → ligne
-          return Math.sqrt(3);
-        case 'MONO_230V_PN':
-        case 'MONO_230V_PP':
-        default:
-          return 1;
-      }
-    })();
-
-    // Mode équilibré: nodeMetrics présent avec V_phase_V
+    
+    // Fallback sur les métriques standard
     const metric = result.nodeMetrics?.find(m => m.nodeId === node.id);
     if (metric) {
-      const V_phase = metric.V_phase_V;
-      return V_phase * lineScale;
+      // Si c'est déjà une tension ligne, la retourner directement
+      // Sinon, convertir de phase à ligne
+      const voltage = metric.V_phase_V;
+      // Heuristique: si > 350V, c'est probablement déjà une tension ligne
+      return voltage > SimulationCalculator.SIM_VOLTAGE_400V_THRESHOLD ? voltage : voltage * Math.sqrt(3);
     }
-
-    // Mode déséquilibré: utiliser nodePhasorsPerPhase et prendre la pire phase
-    const phases = result.nodePhasorsPerPhase?.filter(p => p.nodeId === node.id) || [];
-    if (phases.length > 0) {
-      const minPhaseMag = Math.min(...phases.map(p => p.V_phase_V));
-      return minPhaseMag * lineScale;
-    }
-
-    // Fallback: tension nominale
-    return U_base;
-  }
-  
-  /**
-   * Propose automatiquement des améliorations de câbles avec ampacité physique
-   */
-  proposeCableUpgrades(
-    project: Project,
-    result: CalculationResult,
-    voltageDropThreshold: number = 8, // %
-    overloadThreshold: number = 1.0, // facteur de sécurité
-    estimatedCostPerUpgrade: number = 1500 // Coût paramétrable par défaut
-  ): CableUpgrade[] {
-    const upgrades: CableUpgrade[] = [];
-    const cableTypeById = new Map(project.cableTypes.map(ct => [ct.id, ct]));
     
-    // Trier les types de câbles par section (approximation via résistance décroissante)
-    const sortedCableTypes = [...project.cableTypes].sort((a, b) => 
-      a.R12_ohm_per_km - b.R12_ohm_per_km
-    );
+    // Fallback final
+    return 400; // Valeur par défaut
+  }
 
-    for (const cable of result.cables) {
-      if (!cable.voltageDropPercent && !cable.current_A) continue;
-
-      const currentType = cableTypeById.get(cable.typeId);
-      if (!currentType) continue;
-
-      // Utiliser maxCurrent_A si disponible, sinon table de correspondance physique
-      const maxCurrentA = currentType.maxCurrent_A || this.getAmpacityFromSection(
-        this.extractSectionFromCableType(currentType), 
-        currentType.matiere
-      );
+  /**
+   * Construit la carte d'adjacence du graphe
+   */
+  private buildAdjacencyMap(nodes: Node[], cables: Cable[]): Map<string, string[]> {
+    const adjacency = new Map<string, string[]>();
+    
+    // Initialiser avec tous les nœuds
+    for (const node of nodes) {
+      adjacency.set(node.id, []);
+    }
+    
+    // Ajouter les connexions
+    for (const cable of cables) {
+      const neighborsA = adjacency.get(cable.nodeAId) || [];
+      const neighborsB = adjacency.get(cable.nodeBId) || [];
       
-      // Vérifier les conditions d'upgrade
-      const hasVoltageDropIssue = cable.voltageDropPercent && Math.abs(cable.voltageDropPercent) > voltageDropThreshold;
-      const hasOverloadIssue = cable.current_A && cable.current_A > maxCurrentA * overloadThreshold;
+      neighborsA.push(cable.nodeBId);
+      neighborsB.push(cable.nodeAId);
       
-      if (!hasVoltageDropIssue && !hasOverloadIssue) continue;
+      adjacency.set(cable.nodeAId, neighborsA);
+      adjacency.set(cable.nodeBId, neighborsB);
+    }
+    
+    return adjacency;
+  }
 
-      // Trouver un type de section supérieure
-      const currentTypeIndex = sortedCableTypes.findIndex(ct => ct.id === cable.typeId);
-      if (currentTypeIndex === -1) continue;
-
-      // Chercher le prochain câble avec ampacité suffisante
-      let nextType: CableType | null = null;
-      for (let i = currentTypeIndex + 1; i < sortedCableTypes.length; i++) {
-        const candidate = sortedCableTypes[i];
-        const candidateMaxCurrent = candidate.maxCurrent_A || this.getAmpacityFromSection(
-          this.extractSectionFromCableType(candidate), 
-          candidate.matiere
-        );
-        
-        // Vérifier si ce câble résout le problème d'ampacité
-        if (!hasOverloadIssue || (cable.current_A && cable.current_A <= candidateMaxCurrent * overloadThreshold)) {
-          nextType = candidate;
-          break;
+  /**
+   * Construit la structure d'arbre du réseau
+   */
+  private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>): Map<string, { parent: string | null, children: string[] }> {
+    const treeStructure = new Map<string, { parent: string | null, children: string[] }>();
+    
+    // Trouver le nœud racine (transformateur)
+    const rootNode = nodes.find(n => n.isTransformer) || nodes[0];
+    if (!rootNode) return treeStructure;
+    
+    // BFS pour construire l'arbre
+    const visited = new Set<string>();
+    const queue: { nodeId: string, parent: string | null }[] = [];
+    
+    queue.push({ nodeId: rootNode.id, parent: null });
+    visited.add(rootNode.id);
+    
+    while (queue.length > 0) {
+      const { nodeId, parent } = queue.shift()!;
+      
+      const children: string[] = [];
+      const neighbors = adjacency.get(nodeId) || [];
+      
+      for (const neighborId of neighbors) {
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          children.push(neighborId);
+          queue.push({ nodeId: neighborId, parent: nodeId });
         }
       }
       
-      if (!nextType) continue;
-
-      // Estimation des améliorations
-      const improvementFactor = currentType.R12_ohm_per_km / nextType.R12_ohm_per_km;
-      const newVoltageDropPercent = (cable.voltageDropPercent || 0) / improvementFactor;
-      const newLosses_kW = (cable.losses_kW || 0) / (improvementFactor * improvementFactor);
-
-      // Déterminer la raison de l'upgrade
-      let reason: CableUpgrade['reason'];
-      if (hasVoltageDropIssue && hasOverloadIssue) {
-        reason = 'both';
-      } else if (hasVoltageDropIssue) {
-        reason = 'voltage_drop';
-      } else {
-        reason = 'overload';
-      }
-
-      upgrades.push({
-        originalCableId: cable.id,
-        newCableTypeId: nextType.id,
-        reason,
-        before: {
-          voltageDropPercent: cable.voltageDropPercent || 0,
-          current_A: cable.current_A || 0,
-          losses_kW: cable.losses_kW || 0
-        },
-        after: {
-          voltageDropPercent: newVoltageDropPercent,
-          current_A: cable.current_A || 0, // Le courant ne change pas
-          losses_kW: newLosses_kW,
-          estimatedCost: estimatedCostPerUpgrade
-        },
-        improvement: {
-          voltageDropReduction: Math.abs((cable.voltageDropPercent || 0) - newVoltageDropPercent),
-          lossReduction_kW: (cable.losses_kW || 0) - newLosses_kW,
-          lossReductionPercent: ((cable.losses_kW || 0) - newLosses_kW) / Math.max(cable.losses_kW || 1, 0.001) * 100
-        }
-      });
-    }
-
-    return upgrades;
-  }
-
-  /**
-   * Propose un renforcement complet du circuit pour ramener toutes les chutes de tension sous un seuil
-   * - Identifie les nœuds au-delà du seuil
-   * - Détermine l'ensemble des câbles du (des) circuit(s) alimentant ces nœuds (chemin depuis la source)
-   * - Teste des paliers de remplacement prédéfinis sur tout le circuit et choisit le plus petit palier valide
-   */
-  public proposeFullCircuitReinforcement(
-    project: Project,
-    baselineResult: CalculationResult,
-    dropThresholdPercent: number = 8
-  ): CableUpgrade[] {
-    const source = project.nodes.find(n => n.isSource);
-    if (!source) return [];
-
-    const offenders = (baselineResult.nodeVoltageDrops || [])
-      .filter(n => Math.abs(n.deltaU_cum_percent) > dropThresholdPercent)
-      .map(n => n.nodeId);
-    if (offenders.length === 0) return [];
-
-    // Construire l'adjacence nœud→(voisin, câble)
-    const adjacency = new Map<string, { neighborId: string; cable: Cable }[]>();
-    for (const cable of project.cables) {
-      if (!adjacency.has(cable.nodeAId)) adjacency.set(cable.nodeAId, []);
-      if (!adjacency.has(cable.nodeBId)) adjacency.set(cable.nodeBId, []);
-      adjacency.get(cable.nodeAId)!.push({ neighborId: cable.nodeBId, cable });
-      adjacency.get(cable.nodeBId)!.push({ neighborId: cable.nodeAId, cable });
-    }
-
-    const cablesOnCircuits = new Set<string>();
-    const findPathCables = (targetId: string) => {
-      const queue: string[] = [source.id];
-      const parent = new Map<string, { prev: string | null; viaCableId: string | null }>();
-      parent.set(source.id, { prev: null, viaCableId: null });
-
-      while (queue.length) {
-        const nid = queue.shift()!;
-        if (nid === targetId) break;
-        const neighbors = adjacency.get(nid) || [];
-        for (const { neighborId, cable } of neighbors) {
-          if (!parent.has(neighborId)) {
-            parent.set(neighborId, { prev: nid, viaCableId: cable.id });
-            queue.push(neighborId);
-          }
-        }
-      }
-
-      if (!parent.has(targetId)) return;
-      let cur = targetId;
-      while (cur !== source.id) {
-        const info = parent.get(cur)!;
-        if (info.viaCableId) cablesOnCircuits.add(info.viaCableId);
-        cur = info.prev!;
-      }
-    };
-
-    offenders.forEach(findPathCables);
-
-    const cableById = new Map(project.cables.map(c => [c.id, c]));
-    const typeById = new Map(project.cableTypes.map(t => [t.id, t]));
-
-    const hasType = (id: string) => project.cableTypes.some(t => t.id === id);
-    const ID_B70 = 'baxb-70';
-    const ID_B95 = 'baxb-95';
-    const ID_B150 = 'baxb-150';
-    const ID_UG150 = 'eaxecwb-4x150'; // Souterrain 150mm²
-
-    const getCandidateTypeForTier = (orig: CableType, tier: number): string | null => {
-      const isCopper = orig.matiere === 'CUIVRE';
-      const isB70 = orig.id === ID_B70 || /BAXB\s*70/i.test(orig.label);
-      const isB95 = orig.id === ID_B95 || /BAXB\s*95/i.test(orig.label);
-      const isB150 = orig.id === ID_B150 || /BAXB\s*150/i.test(orig.label);
-
-      if (tier === 0) {
-        if (isCopper || isB70) return hasType(ID_B95) ? ID_B95 : null;
-        if (isB95) return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
-        if (isB150) return hasType(ID_UG150) ? ID_UG150 : null;
-        return hasType(ID_B95) ? ID_B95 : null;
-      } else if (tier === 1) {
-        if (isCopper || isB70) return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
-        if (isB95) return hasType(ID_UG150) ? ID_UG150 : null;
-        if (isB150) return hasType(ID_UG150) ? ID_UG150 : null;
-        return hasType(ID_B150) ? ID_B150 : (hasType(ID_UG150) ? ID_UG150 : null);
-      } else {
-        return hasType(ID_UG150) ? ID_UG150 : null;
-      }
-    };
-
-    let lastUpgrades: CableUpgrade[] = [];
-
-    for (let tier = 0; tier < 3; tier++) {
-      const draft: CableUpgrade[] = [];
-      for (const cableId of cablesOnCircuits) {
-        const cable = cableById.get(cableId);
-        if (!cable) continue;
-        const origType = typeById.get(cable.typeId);
-        if (!origType) continue;
-        const newTypeId = getCandidateTypeForTier(origType, tier);
-        if (!newTypeId || newTypeId === origType.id) continue;
-
-        const beforeCable = baselineResult.cables.find(c => c.id === cableId);
-        draft.push({
-          originalCableId: cableId,
-          newCableTypeId: newTypeId,
-          reason: 'voltage_drop',
-          before: {
-            voltageDropPercent: beforeCable?.voltageDropPercent || 0,
-            current_A: beforeCable?.current_A || 0,
-            losses_kW: beforeCable?.losses_kW || 0
-          },
-          after: {
-            voltageDropPercent: beforeCable?.voltageDropPercent || 0,
-            current_A: beforeCable?.current_A || 0,
-            losses_kW: beforeCable?.losses_kW || 0,
-            estimatedCost: 1500
-          },
-          improvement: {
-            voltageDropReduction: 0,
-            lossReduction_kW: 0,
-            lossReductionPercent: 0
-          }
-        });
-      }
-
-      if (draft.length === 0) continue;
-
-      // Simuler ce palier de renforcement
-      const equipment: SimulationEquipment = { regulators: [], neutralCompensators: [], cableUpgrades: draft };
-      const sim = this.calculateScenarioWithEquipment(project, baselineResult.scenario, equipment);
-
-      // Mettre à jour les valeurs "après" et les améliorations
-      for (const up of draft) {
-        const afterCable = sim.cables.find(c => c.id === up.originalCableId);
-        if (afterCable) {
-          up.after.voltageDropPercent = afterCable.voltageDropPercent || up.after.voltageDropPercent;
-          up.after.current_A = afterCable.current_A || up.after.current_A;
-          up.after.losses_kW = afterCable.losses_kW || up.after.losses_kW;
-          up.improvement.voltageDropReduction = Math.abs(up.before.voltageDropPercent - up.after.voltageDropPercent);
-          up.improvement.lossReduction_kW = (up.before.losses_kW - up.after.losses_kW);
-          up.improvement.lossReductionPercent = up.before.losses_kW > 0 ? (up.improvement.lossReduction_kW / up.before.losses_kW) * 100 : 0;
-        }
-      }
-
-      lastUpgrades = draft;
-
-      // Vérifier la conformité des nœuds concernés
-      const ok = offenders.every(nodeId => {
-        const nd = sim.nodeVoltageDrops?.find(n => n.nodeId === nodeId);
-        return nd && Math.abs(nd.deltaU_cum_percent) <= dropThresholdPercent;
-      });
-
-      if (ok) return draft;
-    }
-
-    // Si aucun palier ne satisfait la contrainte, retourner le plus fort testé
-    return lastUpgrades;
-  }
-
-  /**
-   * Obtient l'ampacité d'un câble basée sur une table de correspondance physique
-   */
-  private getAmpacityFromSection(section_mm2: number, material: 'CUIVRE'|'ALUMINIUM'): number {
-    const ampacityTable = {
-      'CUIVRE': { 
-        1.5: 20, 2.5: 30, 4: 40, 6: 50, 10: 60, 16: 80, 25: 110, 35: 140, 50: 180, 70: 230, 95: 280, 120: 320 
-      },
-      'ALUMINIUM': { 
-        16: 65, 25: 90, 35: 115, 50: 150, 70: 190, 95: 230, 120: 270, 150: 320, 185: 370, 240: 430 
-      }
-    };
-    
-    // Rechercher la section exacte dans la table
-    const table = ampacityTable[material];
-    if (table && table[section_mm2]) {
-      return table[section_mm2];
+      treeStructure.set(nodeId, { parent, children });
     }
     
-    // Si section non trouvée, estimation basée sur la résistance
-    return this.estimateFromResistance(section_mm2, material);
+    return treeStructure;
   }
 
   /**
-   * Estimation d'ampacité basée sur la résistance (fallback)
+   * Calcule l'effet EQUI8 sur les tensions par phase
    */
-  private estimateFromResistance(section_mm2: number, material: 'CUIVRE'|'ALUMINIUM'): number {
-    // Résistivité du cuivre: 1.72e-8 Ω·m, aluminium: 2.65e-8 Ω·m
-    const resistivity = material === 'CUIVRE' ? 1.72e-8 : 2.65e-8;
-    const theoreticalR_per_km = (resistivity * 1000) / (section_mm2 * 1e-6); // Ω/km
+  private calculateEqui8Effect(initialVoltages: number[], zPhase_Ohm: number): number[] {
+    const [u1, u2, u3] = initialVoltages;
     
-    // Estimation empirique: I_max ≈ K × √(section) avec K ajusté par matériau
-    const K = material === 'CUIVRE' ? 19 : 16; // Coefficients empiriques
-    return Math.round(K * Math.sqrt(section_mm2));
-  }
-
-  /**
-   * Extrait la section d'un type de câble basé sur sa résistance
-   */
-  private extractSectionFromCableType(cableType: CableType): number {
-    // Approximation basée sur la résistance pour extraire la section
-    // Résistivité Cu: 1.72e-8 Ω·m, Al: 2.65e-8 Ω·m
-    const resistivity = cableType.matiere === 'CUIVRE' ? 1.72e-8 : 2.65e-8;
-    const R_ohm_per_km = cableType.R12_ohm_per_km;
+    // Calcul du courant de neutre selon le modèle EQUI8
+    const uMoy = (u1 + u2 + u3) / 3;
+    const deltaU1 = u1 - uMoy;
+    const deltaU2 = u2 - uMoy;
+    const deltaU3 = u3 - uMoy;
     
-    // Section = ρ × L / R, avec L = 1000m
-    const section_m2 = (resistivity * 1000) / R_ohm_per_km;
-    const section_mm2 = section_m2 * 1e6; // Conversion m² -> mm²
+    // Courant de neutre (somme vectorielle des déséquilibres)
+    const iNeutre = Math.sqrt(deltaU1 * deltaU1 + deltaU2 * deltaU2 + deltaU3 * deltaU3) / (3 * zPhase_Ohm);
     
-    return Math.round(section_mm2);
-  }
-  /**
-   * Obtient ou calcule la matrice d'impédance avec mise en cache
-   */
-  private getOrCalculateImpedanceMatrix(networkHash: string, nodes: Node[], cables: Cable[], cableTypes: CableType[]): Complex[][] {
-    if (!this.impedanceMatrixCache.has(networkHash)) {
-      const matrix = this.calculateImpedanceMatrix(nodes, cables, cableTypes);
-      this.impedanceMatrixCache.set(networkHash, matrix);
-    }
-    return this.impedanceMatrixCache.get(networkHash)!;
-  }
-
-  /**
-   * Calcule la matrice d'impédance du réseau (pour optimisations futures)
-   */
-  private calculateImpedanceMatrix(nodes: Node[], cables: Cable[], cableTypes: CableType[]): Complex[][] {
-    const n = nodes.length;
-    const matrix: Complex[][] = Array(n).fill(null).map(() => Array(n).fill(C(0, 0)));
+    // Correction des tensions (effet de rééquilibrage)
+    const correctionFactor = Math.min(1, iNeutre * zPhase_Ohm / (uMoy * 0.1)); // Limitation à 10% de correction
     
-    // Pour l'instant, matrice d'identité - à implémenter selon les besoins
-    for (let i = 0; i < n; i++) {
-      matrix[i][i] = C(1, 0);
-    }
+    const u1Corrected = u1 - deltaU1 * correctionFactor * 0.8; // 80% d'efficacité
+    const u2Corrected = u2 - deltaU2 * correctionFactor * 0.8;
+    const u3Corrected = u3 - deltaU3 * correctionFactor * 0.8;
     
-    return matrix;
-  }
-
-  /**
-   * Génère un hash du réseau pour la mise en cache
-   */
-  private generateNetworkHash(nodes: Node[], cables: Cable[]): string {
-    const nodeHash = nodes.map(n => `${n.id}-${n.connectionType}`).join(',');
-    const cableHash = cables.map(c => `${c.id}-${c.typeId}-${c.nodeAId}-${c.nodeBId}`).join(',');
-    return `${nodeHash}|${cableHash}`;
-  }
-  /**
-   * Crée une armoire de régulation par défaut pour un nœud
-   */
-  createDefaultRegulator(nodeId: string, voltageSystem: VoltageSystem): VoltageRegulator {
-    // Pour un réseau TRIPHASÉ_230V: tension ligne = 230V, régulateur 77kVA
-    // Pour un réseau TÉTRAPHASÉ_400V: tension ligne = 400V, régulateur 44kVA
-    const type: RegulatorType = voltageSystem === 'TRIPHASÉ_230V' ? '230V_77kVA' : '400V_44kVA';
-    const maxPower = voltageSystem === 'TRIPHASÉ_230V' ? 77 : 44;
-    const targetVoltage = voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
-
-    return {
-      id: `regulator-${nodeId}-${Date.now()}`,
-      nodeId,
-      type,
-      targetVoltage_V: targetVoltage,
-      maxPower_kVA: maxPower,
-      enabled: true
-    };
-  }
-
-  /**
-   * Crée un compensateur de neutre par défaut pour un nœud
-   */
-  createDefaultNeutralCompensator(nodeId: string): NeutralCompensator {
-    return {
-      id: `compensator-${nodeId}-${Date.now()}`,
-      nodeId,
-      maxPower_kVA: 30, // Puissance par défaut
-      tolerance_A: 5, // Seuil par défaut
-      enabled: true
-    };
+    return [u1Corrected, u2Corrected, u3Corrected];
   }
 }
