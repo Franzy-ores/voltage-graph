@@ -165,6 +165,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.transformerConfig,
       project.loadModel,
       desequilibrePourcent,
+      project.manualPhaseDistribution,
       equipment
     );
   }
@@ -183,6 +184,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     transformerConfig: TransformerConfig | null,
     loadModel: LoadModel,
     desequilibrePourcent: number,
+    manualPhaseDistribution: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number}; constraints: {min:number;max:number;total:number} } | undefined,
     equipment: SimulationEquipment
   ): CalculationResult {
     // Extraire les équipements actifs
@@ -207,6 +209,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       nodes, cables, cableTypes, scenario,
       foisonnementCharges, foisonnementProductions,
       transformerConfig, loadModel, desequilibrePourcent,
+      manualPhaseDistribution,
       regulatorByNode, compensatorByNode
     );
   }
@@ -218,6 +221,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   private distributeLoadsAndProductionsPerPhase(
     nodes: Node[],
     cosPhi: number,
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number}; constraints: {min:number;max:number;total:number} },
     scenario?: CalculationScenario,
     forcedModeConfig?: { measuredVoltages: { U1: number; U2: number; U3: number }, measurementNodeId: string }
   ): Map<string, { chargesPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}>, productionsPerPhase: Record<'A'|'B'|'C', {P_kW: number, Q_kVAr: number}> }> {
@@ -303,6 +307,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     transformerConfig: TransformerConfig | null,
     loadModel: LoadModel,
     desequilibrePourcent: number,
+    manualPhaseDistribution: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number}; constraints: {min:number;max:number;total:number} } | undefined,
     regulators: Map<string, VoltageRegulator>,
     compensators: Map<string, NeutralCompensator>
   ): CalculationResult {

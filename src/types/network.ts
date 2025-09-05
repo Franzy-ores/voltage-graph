@@ -135,10 +135,17 @@ export interface Project {
     center: { lat: number; lng: number };
     zoom: number;
   };
+  // Répartition manuelle des phases (charges et productions)
+  manualPhaseDistribution?: {
+    charges: { A: number; B: number; C: number };
+    productions: { A: number; B: number; C: number };
+    constraints: { min: number; max: number; total: number };
+  };
   nodes: Node[];
   cables: Cable[];
   cableTypes: CableType[];
 }
+
 
 // Types pour les équipements de simulation
 export type RegulatorType = "230V_77kVA" | "400V_44kVA";

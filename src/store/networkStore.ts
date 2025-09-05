@@ -70,7 +70,7 @@ interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
   loadProject: (project: Project) => void;
-  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent' | 'forcedModeConfig'>>) => void;
+  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent' | 'forcedModeConfig' | 'manualPhaseDistribution'>>) => void;
   
   // Node actions
   addNode: (lat: number, lng: number) => void;
@@ -198,6 +198,11 @@ const createDefaultProject = (): Project => ({
   transformerConfig: createDefaultTransformerConfig("TÉTRAPHASÉ_400V"), // Configuration transformateur par défaut
   loadModel: 'polyphase_equilibre',
   desequilibrePourcent: 0,
+  manualPhaseDistribution: {
+    charges: { A: 33.33, B: 33.33, C: 33.34 },
+    productions: { A: 33.33, B: 33.33, C: 33.34 },
+    constraints: { min: -20, max: 20, total: 100 }
+  },
   nodes: [
     {
       id: "source",
@@ -226,6 +231,11 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   transformerConfig: createDefaultTransformerConfig(voltageSystem), // Configuration transformateur adaptée au système
   loadModel: 'polyphase_equilibre',
   desequilibrePourcent: 0,
+  manualPhaseDistribution: {
+    charges: { A: 33.33, B: 33.33, C: 33.34 },
+    productions: { A: 33.33, B: 33.33, C: 33.34 },
+    constraints: { min: -20, max: 20, total: 100 }
+  },
   nodes: [],
   cables: [],
   cableTypes: [...defaultCableTypes]
