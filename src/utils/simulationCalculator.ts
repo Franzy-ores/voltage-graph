@@ -131,6 +131,29 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     }
 
+    // Calculer le pourcentage de déséquilibre pour le mode FORCÉ
+    let desequilibrePourcent: number;
+    if (scenario === 'FORCÉ' && project.forcedModeConfig) {
+      // Étape de calibration : Calculer le pourcentage de déséquilibre à partir des tensions mesurées
+      const { U1, U2, U3 } = project.forcedModeConfig.measuredVoltages;
+      const tensionMoyenne = (U1 + U2 + U3) / 3;
+      const ecartMax = Math.max(
+        Math.abs(U1 - tensionMoyenne),
+        Math.abs(U2 - tensionMoyenne),
+        Math.abs(U3 - tensionMoyenne)
+      );
+
+      desequilibrePourcent = (ecartMax / tensionMoyenne) * 100;
+
+      // Limiter le pourcentage de déséquilibre pour la robustesse du modèle
+      desequilibrePourcent = Math.min(Math.max(desequilibrePourcent, 0), 100);
+      
+      console.log(`Mode FORCÉ: déséquilibre calculé dynamiquement = ${desequilibrePourcent.toFixed(2)}% à partir des tensions [${U1}, ${U2}, ${U3}]V`);
+    } else {
+      // Pour les autres modes, utiliser le pourcentage de déséquilibre de la configuration du projet
+      desequilibrePourcent = project.desequilibrePourcent || 0;
+    }
+
     // Utiliser l'algorithme BFS modifié avec équipements de simulation
     return this.calculateScenarioWithEnhancedBFS(
       modifiedNodes,
@@ -141,7 +164,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.foisonnementProductions,
       project.transformerConfig,
       project.loadModel,
-      project.desequilibrePourcent,
+      desequilibrePourcent,
       equipment
     );
   }
