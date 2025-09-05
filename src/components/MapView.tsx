@@ -476,9 +476,19 @@ export const MapView = () => {
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
           
-          // Calculer l'écart par rapport à la tension nominale de référence (230V ou 400V)
+          // Calculer l'écart par rapport à la tension nominale de référence
           const connectionType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource);
-          const nominalVoltage = (connectionType === 'TÉTRA_3P+N_230_400V') ? 400 : 230;
+          
+          // Logique spéciale pour MONO_230V_PN en système 400V : référence 230V
+          let nominalVoltage: number;
+          if (connectionType === 'MONO_230V_PN' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') {
+            nominalVoltage = 230; // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
+          } else if (connectionType === 'TÉTRA_3P+N_230_400V') {
+            nominalVoltage = 400;
+          } else {
+            nominalVoltage = 230;
+          }
+          
           const voltageDeviation = nodeVoltage - nominalVoltage; // Écart réel par rapport au nominal
           nominalDropPercent = (voltageDeviation / nominalVoltage) * 100; // Pourcentage signé
           
