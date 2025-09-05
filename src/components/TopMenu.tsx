@@ -238,6 +238,35 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
+              {/* Foisonnement Sliders - sous Modèle */}
+              <div className="flex items-center gap-4">
+                {/* Charges Slider */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
+                  <Slider
+                    value={[currentProject.foisonnementCharges]}
+                    onValueChange={(value) => setFoisonnementCharges(value[0])}
+                    max={100}
+                    min={0}
+                    step={1}
+                    className="w-32 slider-charges"
+                  />
+                </div>
+
+                {/* Productions Slider */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
+                  <Slider
+                    value={[currentProject.foisonnementProductions]}
+                    onValueChange={(value) => setFoisonnementProductions(value[0])}
+                    max={100}
+                    min={0}
+                    step={1}
+                    className="w-32 slider-productions"
+                  />
+                </div>
+              </div>
+
               {/* Unbalance Controls - Only for monophase_reparti */}
               {currentProject.loadModel === 'monophase_reparti' && (
                 <div className="flex items-center gap-3">
@@ -263,34 +292,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               )}
             </div>
 
-            {/* Foisonnement Sliders */}
-            <div className="flex items-center gap-4">
-              {/* Charges Slider */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
-                <Slider
-                  value={[currentProject.foisonnementCharges]}
-                  onValueChange={(value) => setFoisonnementCharges(value[0])}
-                  max={100}
-                  min={0}
-                  step={1}
-                  className="w-32 slider-charges"
-                />
-              </div>
-
-              {/* Productions Slider */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
-                <Slider
-                  value={[currentProject.foisonnementProductions]}
-                  onValueChange={(value) => setFoisonnementProductions(value[0])}
-                  max={100}
-                  min={0}
-                  step={1}
-                  className="w-32 slider-productions"
-                />
-              </div>
-            </div>
+            {/* Spacer div pour maintenir la structure */}
+            <div className="flex items-center gap-4"></div>
           </div>
         </div>
       )}

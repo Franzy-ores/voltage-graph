@@ -1032,8 +1032,16 @@ export class ElectricalCalculator {
       const deltaU_V = U_ref_display - U_node_line;
       const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
 
-      // Référence nominale (conformité): 400V pour tétra, sinon 230V (équivalent via getVoltage)
-      const { U_base: U_nom } = this.getVoltage(n.connectionType);
+      // Référence nominale (conformité): logique spéciale pour MONO_230V_PN en système 400V
+      let U_nom: number;
+      if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+        // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
+        U_nom = 230;
+      } else {
+        // Logique standard
+        const { U_base } = this.getVoltage(n.connectionType);
+        U_nom = U_base;
+      }
       const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line) / U_nom) * 100 : 0;
       const absPctNom = Math.abs(deltaU_pct_nominal);
       if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
