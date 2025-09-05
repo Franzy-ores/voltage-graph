@@ -479,18 +479,34 @@ export const MapView = () => {
           // Calculer l'écart par rapport à la tension nominale de référence
           const connectionType = getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource);
           
-          // Logique spéciale pour MONO_230V_PN en système 400V : référence 230V
-          let nominalVoltage: number;
+          // Pour les nœuds MONO_230V_PN en système 400V, utiliser la tension la plus élevée des phases
           if (connectionType === 'MONO_230V_PN' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') {
-            nominalVoltage = 230; // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
-          } else if (connectionType === 'TÉTRA_3P+N_230_400V') {
-            nominalVoltage = 400;
+            const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+            if (phaseMetrics) {
+              // Prendre la tension la plus élevée des trois phases
+              const maxPhaseVoltage = Math.max(
+                phaseMetrics.voltagesPerPhase.A,
+                phaseMetrics.voltagesPerPhase.B,
+                phaseMetrics.voltagesPerPhase.C
+              );
+              nodeVoltage = maxPhaseVoltage;
+              console.log(`Node ${node.id} (MONO_230V_PN): phases [${phaseMetrics.voltagesPerPhase.A.toFixed(1)}, ${phaseMetrics.voltagesPerPhase.B.toFixed(1)}, ${phaseMetrics.voltagesPerPhase.C.toFixed(1)}], max: ${maxPhaseVoltage.toFixed(1)}V`);
+            }
+            // Référence 230V pour MONO_230V_PN en système 400V
+            const voltageDeviation = nodeVoltage - 230;
+            nominalDropPercent = (voltageDeviation / 230) * 100;
           } else {
-            nominalVoltage = 230;
+            // Logique standard pour les autres types
+            let nominalVoltage: number;
+            if (connectionType === 'TÉTRA_3P+N_230_400V') {
+              nominalVoltage = 400;
+            } else {
+              nominalVoltage = 230;
+            }
+            
+            const voltageDeviation = nodeVoltage - nominalVoltage;
+            nominalDropPercent = (voltageDeviation / nominalVoltage) * 100;
           }
-          
-          const voltageDeviation = nodeVoltage - nominalVoltage; // Écart réel par rapport au nominal
-          nominalDropPercent = (voltageDeviation / nominalVoltage) * 100; // Pourcentage signé
           
           // Conformité basée sur la valeur absolue (±10%)
           isOutOfCompliance = Math.abs(nominalDropPercent) > 10;
