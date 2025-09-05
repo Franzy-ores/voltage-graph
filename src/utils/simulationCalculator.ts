@@ -249,42 +249,64 @@ export class SimulationCalculator extends ElectricalCalculator {
       const chargesPerPhase = { A: { P_kW: 0, Q_kVAr: 0 }, B: { P_kW: 0, Q_kVAr: 0 }, C: { P_kW: 0, Q_kVAr: 0 } };
       const productionsPerPhase = { A: { P_kW: 0, Q_kVAr: 0 }, B: { P_kW: 0, Q_kVAr: 0 }, C: { P_kW: 0, Q_kVAr: 0 } };
       
-      // Répartir les charges de manière aléatoire sur les phases
+      // Répartir les charges selon la configuration manuelle ou aléatoirement
       if (node.clients && node.clients.length > 0) {
         const phases = ['A', 'B', 'C'] as const;
+        const totalChargePower = node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
         
-        node.clients.forEach(client => {
-          // Assigner chaque client à une phase aléatoire
-          const randomPhase = phases[Math.floor(Math.random() * 3)];
-          const power = client.S_kVA || 0;
-          
-          // Calculer P et Q pour cette phase
-          const tanPhi = Math.tan(Math.acos(Math.min(1, Math.max(0, cosPhi))));
-          chargesPerPhase[randomPhase].P_kW += power * cosPhi;
-          chargesPerPhase[randomPhase].Q_kVAr += power * cosPhi * tanPhi;
-        });
+        if (manualPhaseDistribution) {
+          // Répartition manuelle selon les pourcentages définis
+          const chargeRatios = manualPhaseDistribution.charges;
+          phases.forEach(phase => {
+            const power = totalChargePower * (chargeRatios[phase] / 100);
+            const tanPhi = Math.tan(Math.acos(Math.min(1, Math.max(0, cosPhi))));
+            chargesPerPhase[phase].P_kW += power * cosPhi;
+            chargesPerPhase[phase].Q_kVAr += power * cosPhi * tanPhi;
+          });
+        } else {
+          // Répartition aléatoire (comportement existant)
+          node.clients.forEach(client => {
+            const randomPhase = phases[Math.floor(Math.random() * 3)];
+            const power = client.S_kVA || 0;
+            const tanPhi = Math.tan(Math.acos(Math.min(1, Math.max(0, cosPhi))));
+            chargesPerPhase[randomPhase].P_kW += power * cosPhi;
+            chargesPerPhase[randomPhase].Q_kVAr += power * cosPhi * tanPhi;
+          });
+        }
       }
       
-      // Répartir les productions selon la règle ≤5kVA = mono, >5kVA = tri
+      // Répartir les productions selon la configuration manuelle ou les règles existantes
       if (node.productions && node.productions.length > 0) {
         const phases = ['A', 'B', 'C'] as const;
+        const totalProductionPower = node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
         
-        node.productions.forEach(production => {
-          const power = production.S_kVA || 0;
-          if (power <= 5) {
-            // Monophasé - assigner à une phase aléatoire
-            const randomPhase = phases[Math.floor(Math.random() * 3)];
-            productionsPerPhase[randomPhase].P_kW += power;
+        if (manualPhaseDistribution) {
+          // Répartition manuelle selon les pourcentages définis
+          const productionRatios = manualPhaseDistribution.productions;
+          phases.forEach(phase => {
+            const power = totalProductionPower * (productionRatios[phase] / 100);
+            productionsPerPhase[phase].P_kW += power;
             // Production avec facteur de puissance unitaire (Q = 0)
-          } else {
-            // Triphasé - répartir équitablement sur les trois phases
-            const powerPerPhase = power / 3;
-            productionsPerPhase.A.P_kW += powerPerPhase;
-            productionsPerPhase.B.P_kW += powerPerPhase;
-            productionsPerPhase.C.P_kW += powerPerPhase;
-            // Production avec facteur de puissance unitaire (Q = 0)
-          }
-        });
+          });
+        } else {
+          // Répartition selon les règles existantes (≤5kVA = mono, >5kVA = tri)
+          node.productions.forEach(production => {
+            const power = production.S_kVA || 0;
+            if (power <= 5) {
+              // Monophasé - assigner à une phase aléatoire
+              const randomPhase = phases[Math.floor(Math.random() * 3)];
+              productionsPerPhase[randomPhase].P_kW += power;
+              // Production avec facteur de puissance unitaire (Q = 0)
+            } else {
+              // Triphasé - répartir équitablement sur les trois phases
+              const powerPerPhase = power / 3;
+              productionsPerPhase.A.P_kW += powerPerPhase;
+              productionsPerPhase.B.P_kW += powerPerPhase;
+              productionsPerPhase.C.P_kW += powerPerPhase;
+              // Production avec facteur de puissance unitaire (Q = 0)
+            }
+          });
+        }
       }
       
       distributionMap.set(node.id, { chargesPerPhase, productionsPerPhase });
@@ -341,7 +363,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // Générer la distribution dynamique des charges et productions par phase une seule fois
     // Utiliser le cosPhi du projet (this.simCosPhi) pour les calculs P/Q
-    const phaseDistribution = this.distributeLoadsAndProductionsPerPhase(nodes, this.simCosPhi);
+    const phaseDistribution = this.distributeLoadsAndProductionsPerPhase(nodes, this.simCosPhi, manualPhaseDistribution);
     
     while (iteration < maxIterations && !converged) {
       iteration++;
