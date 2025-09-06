@@ -71,7 +71,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         0,
         project.transformerConfig,
         'monophase_reparti', // Forcer le mode par phase
-        calculatedImbalance
+        calculatedImbalance,
+        project.manualPhaseDistribution
       );
     } else {
       // Autres modes : baseline normal
@@ -84,7 +85,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.foisonnementProductions,
         project.transformerConfig,
         project.loadModel,
-        project.desequilibrePourcent
+        project.desequilibrePourcent,
+        project.manualPhaseDistribution
       );
     }
 
@@ -200,7 +202,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       return this.calculateScenario(
         nodes, cables, cableTypes, scenario,
         foisonnementCharges, foisonnementProductions, 
-        transformerConfig, loadModel, desequilibrePourcent
+        transformerConfig, loadModel, desequilibrePourcent,
+        manualPhaseDistribution
       );
     }
 
@@ -385,12 +388,13 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       // Utiliser foisonnements = 0 et desequilibrePourcent = 1 pour activer le mode par phase
-      currentResult = this.calculateScenario(
-        nodesWithPhaseDistribution, cables, cableTypes, scenario,
-        0, // foisonnementCharges = 0 pour utiliser la distribution exacte
-        0, // foisonnementProductions = 0 pour utiliser la distribution exacte  
-        transformerConfig, loadModel, 1 // desequilibrePourcent = 1 pour activer le mode par phase
-      );
+        currentResult = this.calculateScenario(
+          nodesWithPhaseDistribution, cables, cableTypes, scenario,
+          0, // foisonnementCharges = 0 pour utiliser la distribution exacte
+          0, // foisonnementProductions = 0 pour utiliser la distribution exacte
+          transformerConfig, loadModel, 1, // desequilibrePourcent = 1 pour activer le mode par phase
+          manualPhaseDistribution
+        );
       
       // Sauvegarder les tensions pour convergence
       if (currentResult.nodeMetrics) {
@@ -435,7 +439,8 @@ export class SimulationCalculator extends ElectricalCalculator {
           testNodesWithPhaseDistribution, cables, cableTypes, scenario,
           0, // foisonnementCharges = 0 pour utiliser la distribution exacte
           0, // foisonnementProductions = 0 pour utiliser la distribution exacte
-          transformerConfig, loadModel, 1 // desequilibrePourcent = 1 pour activer le mode par phase
+          transformerConfig, loadModel, 1, // desequilibrePourcent = 1 pour activer le mode par phase
+          manualPhaseDistribution
         );
         const testV_line = this.getNodeLineVoltageFromResult(testResult, node, nodes);
 
@@ -488,7 +493,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         currentResult = this.calculateScenario(
           finalModifiedNodes, cables, cableTypes, scenario,
           foisonnementCharges, foisonnementProductions,
-          transformerConfig, loadModel, desequilibrePourcent
+          transformerConfig, loadModel, desequilibrePourcent,
+          manualPhaseDistribution
         );
       }
       
@@ -517,7 +523,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     currentResult = this.calculateScenario(
       finalModifiedNodes, cables, cableTypes, scenario,
       foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent
+      transformerConfig, loadModel, desequilibrePourcent,
+      manualPhaseDistribution
     );
 
     // 6.b Appliquer le modèle EQUI8 aux nœuds équipés

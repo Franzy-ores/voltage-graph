@@ -25,7 +25,7 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
     const cableTypes: CableType[] = [mkCableType('t1', 0.5, 0, 0.5, 0)];
     const transformer = baseTransformer(400, 160, 0); // pas de chute transfo
 
-    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 100, 100, transformer);
+    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 100, 100, transformer, 'polyphase_equilibre', 0, undefined);
     const cab = result.cables[0];
 
     // Courant attendu ~ 43.5 A ; ΔU ~ I * R * L = 43.5 * 0.05 = 2.175 V
@@ -48,7 +48,7 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
     const cableTypes: CableType[] = [mkCableType('t1', 0.2, 0, 0.2, 0)];
     const transformer = baseTransformer(400, 100, 4); // Ucc=4%
 
-    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 100, 100, transformer);
+    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 100, 100, transformer, 'polyphase_equilibre', 0, undefined);
     const cab = result.cables[0];
     expect(cab.current_A!).toBeGreaterThan(40);
     expect(cab.current_A!).toBeLessThan(60);
@@ -73,7 +73,7 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
     const cableTypes: CableType[] = [mkCableType('t1', 0.2, 0, 0.2, 0)];
     const transformer = baseTransformer(400, 160, 0);
 
-    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRODUCTION' as CalculationScenario, 100, 100, transformer);
+    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRODUCTION' as CalculationScenario, 100, 100, transformer, 'polyphase_equilibre', 0, undefined);
     expect(result.totalProductions_kVA).toBeGreaterThan(0);
     expect(result.virtualBusbar).toBeTruthy();
     if (result.virtualBusbar) {

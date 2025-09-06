@@ -672,7 +672,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes,
@@ -683,7 +684,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes,
@@ -694,7 +696,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       FORCÉ: calculator.calculateScenario(
         currentProject.nodes,
@@ -705,7 +708,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       )
     };
 
@@ -789,7 +793,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       MIXTE: calculator.calculateScenario(
         currentProject.nodes, 
@@ -800,7 +805,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       PRODUCTION: calculator.calculateScenario(
         currentProject.nodes, 
@@ -811,7 +817,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       ),
       FORCÉ: calculator.calculateScenario(
         currentProject.nodes, 
@@ -822,7 +829,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.foisonnementProductions,
         currentProject.transformerConfig,
         currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0
+        currentProject.desequilibrePourcent ?? 0,
+        currentProject.manualPhaseDistribution
       )
     };
 
@@ -928,7 +936,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         tempProject.cableTypes,
         selectedScenario,
         testFoisonnement,
-        0
+        0,
+        tempProject.transformerConfig,
+        tempProject.loadModel ?? 'polyphase_equilibre',
+        tempProject.desequilibrePourcent ?? 0,
+        tempProject.manualPhaseDistribution
       );
 
       const nodeData = result.nodeVoltageDrops?.find(n => n.nodeId === nodeId);

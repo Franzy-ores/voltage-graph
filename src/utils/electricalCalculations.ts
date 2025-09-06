@@ -291,7 +291,8 @@ export class ElectricalCalculator {
     foisonnementProductions: number = 100,
     transformerConfig?: TransformerConfig,
     loadModel: LoadModel = 'polyphase_equilibre',
-    desequilibrePourcent: number = 0
+    desequilibrePourcent: number = 0,
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
   ): CalculationResult {
     // Validation robuste des entrées
     this.validateInputs(nodes, cables, cableTypes, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
@@ -484,24 +485,33 @@ export class ElectricalCalculator {
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
     // ---- Mode déséquilibré (monophasé réparti) -> calcul triphasé par phase ----
-    const d = Math.max(0, Math.min(1, (desequilibrePourcent || 0) / 100));
-    const isUnbalanced = loadModel === 'monophase_reparti' && d > 0;
+    const isUnbalanced = loadModel === 'monophase_reparti';
 
     if (isUnbalanced) {
-      // Répartition S_total -> S_A/S_B/S_C selon d
-      // Par défaut: répartition équitable 33,3% par phase
-      // Avec déséquilibre: plus de charge sur phase A
+      // Répartition S_total -> S_A/S_B/S_C selon la répartition manuelle ou équilibré par défaut
       const globalAngle = 0; // Angle identique pour tous les circuits pour préserver la notion de circuit
       
-      // Répartition équitable par défaut avec déséquilibre limité à 30%
-      const pA = (1/3) + (d * 0.4);  // Phase A: 33,3% à 46,6% (avec 30% déséq.)
-      const pB = (1/3) - (d * 0.2);  // Phase B: 33,3% à 26,7%
-      const pC = (1/3) - (d * 0.2);  // Phase C: 33,3% à 26,7%
+      // Utiliser la répartition manuelle si disponible, sinon répartition équitable par défaut
+      let pA_charges = 1/3, pB_charges = 1/3, pC_charges = 1/3;
+      let pA_productions = 1/3, pB_productions = 1/3, pC_productions = 1/3;
+      
+      if (manualPhaseDistribution) {
+        pA_charges = manualPhaseDistribution.charges.A / 100;
+        pB_charges = manualPhaseDistribution.charges.B / 100;
+        pC_charges = manualPhaseDistribution.charges.C / 100;
+        pA_productions = manualPhaseDistribution.productions.A / 100;
+        pB_productions = manualPhaseDistribution.productions.B / 100;
+        pC_productions = manualPhaseDistribution.productions.C / 100;
+      }
       
       // Vérification de cohérence
-      const totalP = pA + pB + pC;
-      if (Math.abs(totalP - 1) > 1e-6) {
-        console.warn(`⚠️ Répartition des phases incohérente: pA=${pA}, pB=${pB}, pC=${pC}, total=${totalP}`);
+      const totalCharges = pA_charges + pB_charges + pC_charges;
+      const totalProductions = pA_productions + pB_productions + pC_productions;
+      if (Math.abs(totalCharges - 1) > 1e-6) {
+        console.warn(`⚠️ Répartition des charges incohérente: pA=${pA_charges}, pB=${pB_charges}, pC=${pC_charges}, total=${totalCharges}`);
+      }
+      if (Math.abs(totalProductions - 1) > 1e-6) {
+        console.warn(`⚠️ Répartition des productions incohérente: pA=${pA_productions}, pB=${pB_productions}, pC=${pC_productions}, total=${totalProductions}`);
       }
 
       const S_A_map = new Map<string, Complex>();
@@ -511,9 +521,22 @@ export class ElectricalCalculator {
       for (const n of nodes) {
         const S_kVA_tot = S_node_total_kVA.get(n.id) || 0; // signé
         const sign = Math.sign(S_kVA_tot) || 1;
-        const S_A_kVA = S_kVA_tot * pA;
-        const S_B_kVA = S_kVA_tot * pB;
-        const S_C_kVA = S_kVA_tot * pC;
+        
+        // Séparer charges et productions pour appliquer des répartitions différentes
+        let S_A_kVA = 0, S_B_kVA = 0, S_C_kVA = 0;
+        
+        if (S_kVA_tot > 0) {
+          // Charges positives - utiliser la répartition des charges
+          S_A_kVA = S_kVA_tot * pA_charges;
+          S_B_kVA = S_kVA_tot * pB_charges;
+          S_C_kVA = S_kVA_tot * pC_charges;
+        } else {
+          // Productions négatives - utiliser la répartition des productions
+          S_A_kVA = S_kVA_tot * pA_productions;
+          S_B_kVA = S_kVA_tot * pB_productions;
+          S_C_kVA = S_kVA_tot * pC_productions;
+        }
+        
         const P_A_kW = S_A_kVA * cosPhi_eff;
         const Q_A_kVAr = Math.abs(S_A_kVA) * sinPhi * sign;
         const P_B_kW = S_B_kVA * cosPhi_eff;
