@@ -29,7 +29,9 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
     changeVoltageSystem,
     calculationResults,
     updateCableTypes,
-    updateProjectConfig
+    updateProjectConfig,
+    setFoisonnementCharges,
+    setFoisonnementProductions
   } = useNetworkStore();
 
   const handleExportPDF = async () => {
@@ -237,36 +239,41 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
+              {/* Foisonnement Sliders */}
+              <div className="flex items-center gap-4">
+                {/* Charges Slider */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
+                  <Slider
+                    value={[currentProject.foisonnementCharges]}
+                    onValueChange={(value) => setFoisonnementCharges(value[0])}
+                    max={100}
+                    min={0}
+                    step={1}
+                    className="w-32 slider-charges"
+                  />
+                </div>
+
+                {/* Productions Slider */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
+                  <Slider
+                    value={[currentProject.foisonnementProductions]}
+                    onValueChange={(value) => setFoisonnementProductions(value[0])}
+                    max={100}
+                    min={0}
+                    step={1}
+                    className="w-32 slider-productions"
+                  />
+                </div>
+              </div>
+
               {/* Phase Distribution Sliders */}
               {currentProject.loadModel === 'monophase_reparti' && (
                 <div className="flex items-center gap-4">
                   <div className="flex gap-4">
                     <PhaseDistributionSliders type="charges" title="Charges" />
                     <PhaseDistributionSliders type="productions" title="Productions" />
-                  </div>
-                </div>
-              )}
-
-              {/* Unbalance Controls - Only for monophase_reparti */}
-              {currentProject.loadModel === 'monophase_reparti' && (
-                <div className="flex items-center gap-3">
-                  <Label className="text-sm font-medium">
-                    Déséquilibre {currentProject.desequilibrePourcent || 0}%
-                  </Label>
-                  <div className="flex items-center gap-2 min-w-[180px]">
-                    <Progress 
-                      value={currentProject.desequilibrePourcent || 0} 
-                      max={30}
-                      className="flex-1 h-2"
-                    />
-                    <Slider
-                      value={[currentProject.desequilibrePourcent || 0]}
-                      onValueChange={(value) => updateProjectConfig({ desequilibrePourcent: value[0] })}
-                      max={30}
-                      min={0}
-                      step={1}
-                      className="w-20"
-                    />
                   </div>
                 </div>
               )}
