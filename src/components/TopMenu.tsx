@@ -8,6 +8,7 @@ import { FileText, Save, FolderOpen, Settings, Zap, FileDown } from "lucide-reac
 import { useNetworkStore } from "@/store/networkStore";
 import { PDFGenerator } from "@/utils/pdfGenerator";
 import { PhaseDistributionDisplay } from "@/components/PhaseDistributionDisplay";
+import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
 import { toast } from "sonner";
 
 interface TopMenuProps {
@@ -21,8 +22,6 @@ interface TopMenuProps {
 export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation }: TopMenuProps) => {
   const { 
     currentProject, 
-    setFoisonnementCharges, 
-    setFoisonnementProductions,
     showVoltages,
     setShowVoltages,
     selectedScenario,
@@ -238,34 +237,15 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
-              {/* Foisonnement Sliders - sous Modèle */}
-              <div className="flex items-center gap-4">
-                {/* Charges Slider */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
-                  <Slider
-                    value={[currentProject.foisonnementCharges]}
-                    onValueChange={(value) => setFoisonnementCharges(value[0])}
-                    max={100}
-                    min={0}
-                    step={1}
-                    className="w-32 slider-charges"
-                  />
+              {/* Phase Distribution Sliders */}
+              {currentProject.loadModel === 'monophase_reparti' && (
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-4">
+                    <PhaseDistributionSliders type="charges" title="Charges" />
+                    <PhaseDistributionSliders type="productions" title="Productions" />
+                  </div>
                 </div>
-
-                {/* Productions Slider */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
-                  <Slider
-                    value={[currentProject.foisonnementProductions]}
-                    onValueChange={(value) => setFoisonnementProductions(value[0])}
-                    max={100}
-                    min={0}
-                    step={1}
-                    className="w-32 slider-productions"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Unbalance Controls - Only for monophase_reparti */}
               {currentProject.loadModel === 'monophase_reparti' && (

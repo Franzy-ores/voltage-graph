@@ -58,16 +58,14 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
   };
 
   return (
-    <Card className="mb-4">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="flex flex-col gap-2 p-3 bg-white/5 rounded border border-white/10">
+      <Label className="text-xs font-medium text-primary-foreground">{title}</Label>
+      <div className="flex gap-3">
         {(['A', 'B', 'C'] as const).map((phase) => (
-          <div key={phase} className="space-y-2">
+          <div key={phase} className="flex flex-col gap-1 min-w-[60px]">
             <div className="flex justify-between items-center">
-              <Label className="text-xs">Phase {phase}</Label>
-              <span className="text-xs font-mono">{distribution[phase].toFixed(1)}%</span>
+              <Label className="text-xs text-primary-foreground/80">{phase}</Label>
+              <span className="text-xs font-mono text-primary-foreground">{distribution[phase].toFixed(1)}%</span>
             </div>
             <Slider
               value={[distribution[phase]]}
@@ -79,10 +77,7 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
             />
           </div>
         ))}
-        <div className="text-xs text-muted-foreground text-center">
-          Total: {(distribution.A + distribution.B + distribution.C).toFixed(1)}%
-        </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 };
