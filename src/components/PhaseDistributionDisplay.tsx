@@ -9,43 +9,44 @@ export const PhaseDistributionDisplay = () => {
     return null;
   }
 
-  // Utiliser la même logique de distribution dynamique que SimulationCalculator
+  // Utiliser les pourcentages de distribution manuelle configurés dans les sliders
   const distributeLoadsAndProductions = () => {
     const distributionTotals = { 
       charges: { A: 0, B: 0, C: 0 }, 
       productions: { A: 0, B: 0, C: 0 } 
     };
     
+    // Calculer les totaux de charges et productions
+    let totalCharges = 0;
+    let totalProductions = 0;
+    
     currentProject.nodes.forEach(node => {
-      // Répartir les charges de manière aléatoire (simulation de la distribution)
       if (node.clients && node.clients.length > 0) {
-        const phases = ['A', 'B', 'C'] as const;
         node.clients.forEach(client => {
-          const randomPhase = phases[Math.floor(Math.random() * 3)];
-          const power = (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
-          distributionTotals.charges[randomPhase] += power;
+          totalCharges += (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
         });
       }
       
-      // Répartir les productions selon la règle ≤5kVA = mono, >5kVA = tri
       if (node.productions && node.productions.length > 0) {
-        const phases = ['A', 'B', 'C'] as const;
         node.productions.forEach(production => {
-          const power = (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
-          if (power <= 5) {
-            // Monophasé - assigner à une phase aléatoire
-            const randomPhase = phases[Math.floor(Math.random() * 3)];
-            distributionTotals.productions[randomPhase] += power;
-          } else {
-            // Triphasé - répartir équitablement sur les trois phases
-            const powerPerPhase = power / 3;
-            distributionTotals.productions.A += powerPerPhase;
-            distributionTotals.productions.B += powerPerPhase;
-            distributionTotals.productions.C += powerPerPhase;
-          }
+          totalProductions += (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
         });
       }
     });
+    
+    // Appliquer les pourcentages de distribution manuelle
+    if (currentProject.manualPhaseDistribution) {
+      const chargesDist = currentProject.manualPhaseDistribution.charges;
+      const productionsDist = currentProject.manualPhaseDistribution.productions;
+      
+      distributionTotals.charges.A = totalCharges * (chargesDist.A / 100);
+      distributionTotals.charges.B = totalCharges * (chargesDist.B / 100);
+      distributionTotals.charges.C = totalCharges * (chargesDist.C / 100);
+      
+      distributionTotals.productions.A = totalProductions * (productionsDist.A / 100);
+      distributionTotals.productions.B = totalProductions * (productionsDist.B / 100);
+      distributionTotals.productions.C = totalProductions * (productionsDist.C / 100);
+    }
     
     return distributionTotals;
   };
