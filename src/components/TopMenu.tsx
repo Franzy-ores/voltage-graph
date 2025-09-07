@@ -210,23 +210,14 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 
                 // Pour monophasé 400V, afficher les tensions phase-neutre
                 if (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && currentProject.loadModel === 'monophase_reparti' && sourceMetrics) {
+                  // Les voltagesPerPhase sont multipliées par √3 dans le calcul, il faut les diviser pour avoir les tensions phase-neutre
+                  const phaseNeutralA = sourceMetrics.voltagesPerPhase.A / Math.sqrt(3);
+                  const phaseNeutralB = sourceMetrics.voltagesPerPhase.B / Math.sqrt(3);
+                  const phaseNeutralC = sourceMetrics.voltagesPerPhase.C / Math.sqrt(3);
+                  
                   return (
                     <>
-                      Jeu de barres: VA: {sourceMetrics.voltagesPerPhase.A.toFixed(1)}V - VB: {sourceMetrics.voltagesPerPhase.B.toFixed(1)}V - VC: {sourceMetrics.voltagesPerPhase.C.toFixed(1)}V - 
-                      {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
-                      {busbar.current_N !== undefined && (
-                        <> - I_N: {busbar.current_N.toFixed(1)}A</>
-                      )} - 
-                      ΔU: {typeof busbar.deltaU_V === 'number' ? 
-                        (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : 
-                        '0.00'}V
-                    </>
-                  );
-                } else {
-                  // Affichage normal pour les autres cas
-                  return (
-                    <>
-                      Jeu de barres: {typeof busbar.voltage_V === 'number' ? busbar.voltage_V.toFixed(1) : '0.0'}V - 
+                      Jeu de barres: VA: {phaseNeutralA.toFixed(1)}V - VB: {phaseNeutralB.toFixed(1)}V - VC: {phaseNeutralC.toFixed(1)}V - 
                       {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
                       {busbar.current_N !== undefined && (
                         <> - I_N: {busbar.current_N.toFixed(1)}A</>
