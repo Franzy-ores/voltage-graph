@@ -222,6 +222,7 @@ export interface SimulationResult extends CalculationResult {
   isSimulation: boolean;
   equipment?: SimulationEquipment;
   baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
+  convergenceStatus: 'converged' | 'not_converged';
 }
 
 export interface CalculationResult {

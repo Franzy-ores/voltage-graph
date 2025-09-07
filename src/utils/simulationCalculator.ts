@@ -28,6 +28,11 @@ export class SimulationCalculator extends ElectricalCalculator {
   private static readonly SIM_MAX_LOCAL_ITERATIONS = 50;
   private static readonly SIM_VOLTAGE_400V_THRESHOLD = 350;
   
+  // Tensions de référence pour la déconnexion
+  private static readonly PRODUCTION_DISCONNECT_VOLTAGE = 255;
+  // Tolérance de convergence pour les tensions entre itérations (en volts)
+  private static readonly CONVERGENCE_TOLERANCE_V = 0.01;
+  
   private simCosPhi: number;
   
   // Cache pour les matrices d'impédance
@@ -98,10 +103,11 @@ export class SimulationCalculator extends ElectricalCalculator {
     );
 
     return {
-      ...simulationResult,
+      ...simulationResult.result,
       isSimulation: true,
       equipment,
-      baselineResult
+      baselineResult,
+      convergenceStatus: simulationResult.convergenceStatus
     };
   }
 
@@ -112,7 +118,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     project: Project,
     scenario: CalculationScenario,
     equipment: SimulationEquipment
-  ): CalculationResult {
+  ): { result: CalculationResult, convergenceStatus: 'converged' | 'not_converged' } {
     // Cloner les données pour ne pas modifier l'original
     let modifiedNodes = [...project.nodes];
     let modifiedCables = [...project.cables];
@@ -157,7 +163,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
 
     // Utiliser l'algorithme BFS modifié avec équipements de simulation
-    return this.calculateScenarioWithEnhancedBFS(
+    const enhancedResult = this.runEnhancedBFS(
       modifiedNodes,
       modifiedCables,
       modifiedCableTypes,
@@ -170,51 +176,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.manualPhaseDistribution,
       equipment
     );
-  }
-
-  /**
-   * Algorithme BFS modifié avec intégration native des équipements de simulation
-   * et gestion du mode forcé
-   */
-  private calculateScenarioWithEnhancedBFS(
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
-    scenario: CalculationScenario,
-    foisonnementCharges: number,
-    foisonnementProductions: number,
-    transformerConfig: TransformerConfig | null,
-    loadModel: LoadModel,
-    desequilibrePourcent: number,
-    manualPhaseDistribution: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number}; constraints: {min:number;max:number;total:number} } | undefined,
-    equipment: SimulationEquipment
-  ): CalculationResult {
-    // Extraire les équipements actifs
-    const activeRegulators = equipment.regulators.filter(r => r.enabled);
-    const activeCompensators = equipment.neutralCompensators.filter(c => c.enabled);
-    
-    // Créer maps pour accès rapide
-    const regulatorByNode = new Map(activeRegulators.map(r => [r.nodeId, r]));
-    const compensatorByNode = new Map(activeCompensators.map(c => [c.nodeId, c]));
-    
-    // Si aucun équipement actif et pas en mode forcé, utiliser l'algorithme standard
-    if (activeRegulators.length === 0 && activeCompensators.length === 0 && scenario !== 'FORCÉ') {
-      return this.calculateScenario(
-        nodes, cables, cableTypes, scenario,
-        foisonnementCharges, foisonnementProductions, 
-        transformerConfig, loadModel, desequilibrePourcent,
-        manualPhaseDistribution
-      );
-    }
-
-    // Algorithme BFS modifié avec équipements
-    return this.runEnhancedBFS(
-      nodes, cables, cableTypes, scenario,
-      foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent,
-      manualPhaseDistribution,
-      regulatorByNode, compensatorByNode
-    );
+    return enhancedResult;
   }
 
   /**
@@ -319,8 +281,8 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * BFS modifié pour intégrer les équipements de simulation avec vraie convergence
-   * et recalcul des nœuds aval pour chaque régulateur
+   * BFS modifié pour intégrer les équipements de simulation avec boucle de convergence
+   * et déconnexion automatique des productions
    */
   private runEnhancedBFS(
     nodes: Node[],
@@ -333,14 +295,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     loadModel: LoadModel,
     desequilibrePourcent: number,
     manualPhaseDistribution: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number}; constraints: {min:number;max:number;total:number} } | undefined,
-    regulators: Map<string, VoltageRegulator>,
-    compensators: Map<string, NeutralCompensator>
-  ): CalculationResult {
+    equipment: SimulationEquipment
+  ): { result: CalculationResult, convergenceStatus: 'converged' | 'not_converged' } {
     
     const maxIterations = SimulationCalculator.SIM_MAX_ITERATIONS;
-    let converged = false;
+    let simulationConverged = false;
     let iteration = 0;
-    let maxVoltageDelta = 0;
     
     // Structures pour le graphe et les calculs
     const nodeById = new Map(nodes.map(n => [n.id, n]));
@@ -352,286 +312,379 @@ export class SimulationCalculator extends ElectricalCalculator {
     const compensatorStates = new Map<string, { S_virtual_kVA: number, IN_A: number, reductionPercent: number, isLimited: boolean }>();
     
     // Initialisation des états
-    for (const [nodeId, regulator] of regulators.entries()) {
-      regulatorStates.set(nodeId, { Q_kVAr: 0, V_target: regulator.targetVoltage_V, isLimited: false });
+    for (const [nodeId, regulator] of equipment.regulators.filter(r => r.enabled).map(r => [r.nodeId, r])) {
+      regulatorStates.set(nodeId, { Q_kVAr: 0, V_target: equipment.regulators.find(r => r.nodeId === nodeId)!.targetVoltage_V, isLimited: false });
     }
-    for (const [nodeId, _compensator] of compensators.entries()) {
+    for (const [nodeId, _compensator] of equipment.neutralCompensators.filter(c => c.enabled).map(c => [c.nodeId, c])) {
       compensatorStates.set(nodeId, { S_virtual_kVA: 0, IN_A: 0, reductionPercent: 0, isLimited: false });
     }
     
     // Tensions précédentes pour convergence
-    let previousVoltages = new Map<string, number>();
-    // Résultat courant de l'itération
+    let tensionsBefore: { nodeId: string; u1: number; u2: number; u3: number }[] = [];
     let currentResult: CalculationResult;
     
     // Générer la distribution dynamique des charges et productions par phase une seule fois
-    // Utiliser le cosPhi du projet (this.simCosPhi) pour les calculs P/Q
     const phaseDistribution = this.distributeLoadsAndProductionsPerPhase(nodes, this.simCosPhi, manualPhaseDistribution);
     
-    while (iteration < maxIterations && !converged) {
-      iteration++;
+    // Cloner les nodes pour pouvoir modifier les productions lors de la déconnexion
+    let workingNodes = nodes.map(node => ({
+      ...node,
+      productions: node.productions.map(prod => ({ ...prod }))
+    }));
+
+    // Calculer le desequilibrePourcent AVANT la boucle (mode FORCÉ)
+    if (scenario === 'FORCÉ') {
+      // Le desequilibrePourcent a déjà été calculé avant l'appel de cette méthode
+      console.log(`Mode FORCÉ: Démarrage simulation avec déséquilibre ${desequilibrePourcent.toFixed(2)}%`);
+    }
+
+    // Boucle de convergence avec déconnexion des productions
+    for (let i = 0; i < maxIterations; i++) {
+      iteration = i + 1;
       console.log(`🔄 Simulation iteration ${iteration}`);
       
-      // 1. Calculer le réseau avec les équipements actuels et la distribution dynamique
-      const modifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
+      // Exécuter le calcul de flux de puissance pour l'itération
+      const modifiedNodes = this.applyEquipmentToNodes(workingNodes, regulatorStates, compensatorStates);
       
-      // Intégrer la distribution par phase dans les nodes modifiés
       const nodesWithPhaseDistribution = modifiedNodes.map(node => {
         const distribution = phaseDistribution.get(node.id);
         if (distribution) {
-          return {
-            ...node,
-            phaseDistribution: distribution
-          };
+          return { ...node, phaseDistribution: distribution };
         }
         return node;
       });
       
-      // Utiliser foisonnements = 0 et desequilibrePourcent = 1 pour activer le mode par phase
-        currentResult = this.calculateScenario(
-          nodesWithPhaseDistribution, cables, cableTypes, scenario,
-          0, // foisonnementCharges = 0 pour utiliser la distribution exacte
-          0, // foisonnementProductions = 0 pour utiliser la distribution exacte
-          transformerConfig, loadModel, 1, // desequilibrePourcent = 1 pour activer le mode par phase
-          manualPhaseDistribution
-        );
-      
-      // Sauvegarder les tensions pour convergence
+      currentResult = this.calculateScenario(
+        nodesWithPhaseDistribution, cables, cableTypes, scenario,
+        0, // foisonnementCharges = 0 pour utiliser la distribution exacte
+        0, // foisonnementProductions = 0 pour utiliser la distribution exacte
+        transformerConfig, loadModel, 1, // desequilibrePourcent = 1 pour activer le mode par phase
+        manualPhaseDistribution
+      );
+
+      // Initialiser le drapeau pour la stabilité de la production
+      let productionDisconnectedThisIteration = false;
+
+      // Vérification de la tension et déconnexion des productions
       if (currentResult.nodeMetrics) {
         for (const nodeMetric of currentResult.nodeMetrics) {
-          previousVoltages.set(nodeMetric.nodeId, nodeMetric.V_phase_V);
-        }
-      }
-      
-      let equipmentChanged = false;
-      
-      // 2. Traiter les régulateurs avec sensibilité dV/dQ dynamique via ΔQ test
-      let maxQDelta = 0;
-      for (const [nodeId, regulator] of regulators.entries()) {
-        const node = nodeById.get(nodeId);
-        if (!node) continue;
+          const node = workingNodes.find(n => n.id === nodeMetric.nodeId);
+          if (node && node.productions.length > 0) {
+            // Identifier les productions à déconnecter
+            let maxVoltage = nodeMetric.V_phase_V;
+            
+            // Si on a les détails par phase, utiliser le maximum
+            if (currentResult.nodePhasorsPerPhase) {
+              const phasorsA = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === node.id && p.phase === 'A');
+              const phasorsB = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === node.id && p.phase === 'B');
+              const phasorsC = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === node.id && p.phase === 'C');
+              
+              if (phasorsA && phasorsB && phasorsC) {
+                maxVoltage = Math.max(phasorsA.V_phase_V, phasorsB.V_phase_V, phasorsC.V_phase_V);
+              }
+            }
 
-        const baseV_line = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
-        const targetV = regulator.targetVoltage_V;
-        const state = regulatorStates.get(nodeId)!;
-
-        // Construire un état test avec ΔQ = +1 kVAr
-        const deltaQtest = 1; // kVAr
-        const testRegulatorStates = new Map(regulatorStates);
-        const testState = { ...state, Q_kVAr: state.Q_kVAr + deltaQtest };
-        testRegulatorStates.set(nodeId, testState);
-
-        const testNodes = this.applyEquipmentToNodes(nodes, testRegulatorStates, compensatorStates);
-        
-        // Intégrer la distribution par phase dans les nodes de test
-        const testNodesWithPhaseDistribution = testNodes.map(node => {
-          const distribution = phaseDistribution.get(node.id);
-          if (distribution) {
-            return {
-              ...node,
-              phaseDistribution: distribution
-            };
+            if (maxVoltage > SimulationCalculator.PRODUCTION_DISCONNECT_VOLTAGE) {
+              console.log(`⚠️ Déconnexion production noeud ${node.id}: tension ${maxVoltage.toFixed(1)}V > ${SimulationCalculator.PRODUCTION_DISCONNECT_VOLTAGE}V`);
+              // Mettre la puissance de production à zéro pour le prochain cycle
+              node.productions.forEach(prod => prod.S_kVA = 0);
+              productionDisconnectedThisIteration = true;
+            }
           }
-          return node;
-        });
-        
-        const testResult = this.calculateScenario(
-          testNodesWithPhaseDistribution, cables, cableTypes, scenario,
-          0, // foisonnementCharges = 0 pour utiliser la distribution exacte
-          0, // foisonnementProductions = 0 pour utiliser la distribution exacte
-          transformerConfig, loadModel, 1, // desequilibrePourcent = 1 pour activer le mode par phase
-          manualPhaseDistribution
-        );
-        const testV_line = this.getNodeLineVoltageFromResult(testResult, node, nodes);
-
-        // Sensibilité numérique
-        let sensitivity = (testV_line - baseV_line) / deltaQtest; // V/kVAr
-        if (!isFinite(sensitivity) || Math.abs(sensitivity) < 1e-6) {
-          // Fallback minimal pour éviter division par zéro
-          sensitivity = 0.05; // V/kVAr
         }
-
-        // Correction de Q (damping pour stabilité)
-        const deltaV = targetV - baseV_line;
-        let deltaQ = deltaV / sensitivity; // kVAr nécessaires
-        // Limiter la variation par itération pour éviter la surcompensation
-        const maxStep = Math.max(2, regulator.maxPower_kVA * 0.25);
-        deltaQ = Math.max(-maxStep, Math.min(maxStep, deltaQ));
-
-        const newQ = Math.max(-regulator.maxPower_kVA, Math.min(regulator.maxPower_kVA, state.Q_kVAr + deltaQ));
-        const qChange = Math.abs(newQ - state.Q_kVAr);
-        if (qChange > 0.05) {
-          state.Q_kVAr = newQ;
-          state.isLimited = Math.abs(newQ) >= regulator.maxPower_kVA;
-          equipmentChanged = true;
-        }
-        if (qChange > maxQDelta) maxQDelta = qChange;
-
-        console.log(`📊 Régulateur ${nodeId}: Vbase=${baseV_line.toFixed(1)}V → Q=${state.Q_kVAr.toFixed(2)} kVAr (ΔQ=${deltaQ.toFixed(2)}), limited=${state.isLimited}`);
       }
-      
-      // 3. Traiter les compensateurs via modèle EQUI8 (sans charges virtuelles)
-      for (const [nodeId, compensator] of compensators.entries()) {
-        const currentState = compensatorStates.get(nodeId)!;
-        // On n'applique plus de charge virtuelle ici; l'effet EQUI8 sera appliqué après le calcul final
-        // Réinitialiser l'état de charge virtuelle si nécessaire
-        const hadNonZero = Math.abs(currentState.S_virtual_kVA) > 0.001 || Math.abs(currentState.IN_A) > 0.01 || Math.abs(currentState.reductionPercent) > 0.1 || currentState.isLimited;
-        currentState.S_virtual_kVA = 0;
-        currentState.IN_A = 0;
-        currentState.reductionPercent = 0;
-        currentState.isLimited = false;
-        // Sorties héritées à zéro (non utilisées par EQUI8)
-        compensator.currentIN_A = 0;
-        compensator.reductionPercent = 0;
-        compensator.compensationQ_kVAr = { A: 0, B: 0, C: 0 };
-        if (hadNonZero) equipmentChanged = true;
-      }
-      
-      // 4. Si équipements changés, recalculer le réseau complet
-      if (equipmentChanged) {
-        const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-        currentResult = this.calculateScenario(
-          finalModifiedNodes, cables, cableTypes, scenario,
-          foisonnementCharges, foisonnementProductions,
-          transformerConfig, loadModel, desequilibrePourcent,
-          manualPhaseDistribution
-        );
-      }
-      
-      // 5. Test de convergence (tension + stabilité Q)
-      maxVoltageDelta = 0;
-      if (currentResult.nodeMetrics) {
-        for (const nodeMetric of currentResult.nodeMetrics) {
-          const prevV = previousVoltages.get(nodeMetric.nodeId) || nodeMetric.V_phase_V;
-          const deltaV = Math.abs(nodeMetric.V_phase_V - prevV);
-          if (deltaV > maxVoltageDelta) {
-            maxVoltageDelta = deltaV;
+
+      // Vérifier la convergence des tensions
+      let tensionsStable = true;
+      if (i > 0) {
+        // Comparer avec les tensions de l'itération précédente
+        if (currentResult.nodeMetrics) {
+          for (const nodeMetric of currentResult.nodeMetrics) {
+            const previousTension = tensionsBefore.find(t => t.nodeId === nodeMetric.nodeId);
+            if (previousTension) {
+              let currentVoltages = { u1: nodeMetric.V_phase_V, u2: nodeMetric.V_phase_V, u3: nodeMetric.V_phase_V };
+              
+              // Si on a les détails par phase, les utiliser
+              if (currentResult.nodePhasorsPerPhase) {
+                const phasorsA = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'A');
+                const phasorsB = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'B');
+                const phasorsC = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'C');
+                
+                if (phasorsA && phasorsB && phasorsC) {
+                  currentVoltages = { u1: phasorsA.V_phase_V, u2: phasorsB.V_phase_V, u3: phasorsC.V_phase_V };
+                }
+              }
+
+              const deltaU1 = Math.abs(currentVoltages.u1 - previousTension.u1);
+              const deltaU2 = Math.abs(currentVoltages.u2 - previousTension.u2);
+              const deltaU3 = Math.abs(currentVoltages.u3 - previousTension.u3);
+              
+              if (deltaU1 > SimulationCalculator.CONVERGENCE_TOLERANCE_V || 
+                  deltaU2 > SimulationCalculator.CONVERGENCE_TOLERANCE_V || 
+                  deltaU3 > SimulationCalculator.CONVERGENCE_TOLERANCE_V) {
+                tensionsStable = false;
+                break;
+              }
+            }
           }
         }
       }
       
-      if (
-        maxVoltageDelta < SimulationCalculator.SIM_CONVERGENCE_TOLERANCE_PHASE_V &&
-        (typeof maxQDelta === 'number' ? maxQDelta : 0) < 0.1
-      ) {
-        converged = true;
-      }
-    }
-    
-    // 6. Calcul final avec états d'équipement figés pour garantir la cohérence
-    const finalModifiedNodes = this.applyEquipmentToNodes(nodes, regulatorStates, compensatorStates);
-    currentResult = this.calculateScenario(
-      finalModifiedNodes, cables, cableTypes, scenario,
-      foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent,
-      manualPhaseDistribution
-    );
-
-    // 6.b Appliquer le modèle EQUI8 aux nœuds équipés
-    for (const [nodeId, compensator] of compensators.entries()) {
-      if (!compensator.enabled) continue;
-      // Récupérer les tensions initiales par phase
-      let initial: number[] = [230, 230, 230];
-      const perPhaseMetrics = currentResult.nodeMetricsPerPhase?.find(m => m.nodeId === nodeId);
-      if (perPhaseMetrics) {
-        initial = [
-          perPhaseMetrics.voltagesPerPhase.A,
-          perPhaseMetrics.voltagesPerPhase.B,
-          perPhaseMetrics.voltagesPerPhase.C,
-        ];
-      } else {
-        const phasors = currentResult.nodePhasorsPerPhase?.filter(p => p.nodeId === nodeId);
-        if (phasors && phasors.length >= 3) {
-          const a = phasors.find(p => p.phase === 'A')?.V_phase_V ?? 230;
-          const b = phasors.find(p => p.phase === 'B')?.V_phase_V ?? a;
-          const c = phasors.find(p => p.phase === 'C')?.V_phase_V ?? a;
-          initial = [a, b, c];
-        } else {
-          const metric = currentResult.nodeMetrics?.find(m => m.nodeId === nodeId);
-          if (metric) initial = [metric.V_phase_V, metric.V_phase_V, metric.V_phase_V];
-        }
-      }
-      const Zp = Math.max(1e-9, compensator.phaseImpedance ?? compensator.zPhase_Ohm ?? 1e-9);
-      const [uA, uB, uC] = this.calculateEqui8Effect(initial, Zp);
-
-      // Mettre à jour les métriques par phase
-      if (currentResult.nodeMetricsPerPhase) {
-        const idx = currentResult.nodeMetricsPerPhase.findIndex(m => m.nodeId === nodeId);
-        if (idx >= 0) {
-          currentResult.nodeMetricsPerPhase[idx] = {
-            ...currentResult.nodeMetricsPerPhase[idx],
-            voltagesPerPhase: { A: uA, B: uB, C: uC },
-          };
-        } else {
-          currentResult.nodeMetricsPerPhase.push({
-            nodeId,
-            voltagesPerPhase: { A: uA, B: uB, C: uC },
-            voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
-          });
-        }
-      } else {
-        currentResult.nodeMetricsPerPhase = [{
-          nodeId,
-          voltagesPerPhase: { A: uA, B: uB, C: uC },
-          voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
-        }];
-      }
-
-      // Mettre à jour les phasors s'ils existent
-      if (currentResult.nodePhasorsPerPhase) {
-        const updatePhase = (phase: 'A' | 'B' | 'C', mag: number) => {
-          const p = currentResult.nodePhasorsPerPhase!.find(pp => pp.nodeId === nodeId && pp.phase === phase);
-          if (p) p.V_phase_V = mag;
-        };
-        updatePhase('A', uA);
-        updatePhase('B', uB);
-        updatePhase('C', uC);
-      }
-
-      // Mettre à jour la métrique agrégée si présente (moyenne des phases)
+      // Sauvegarder les tensions pour la prochaine itération
+      tensionsBefore = [];
       if (currentResult.nodeMetrics) {
-        const midx = currentResult.nodeMetrics.findIndex(m => m.nodeId === nodeId);
-        if (midx >= 0) {
-          currentResult.nodeMetrics[midx] = {
-            ...currentResult.nodeMetrics[midx],
-            V_phase_V: (uA + uB + uC) / 3,
-          };
+        for (const nodeMetric of currentResult.nodeMetrics) {
+          let voltages = { u1: nodeMetric.V_phase_V, u2: nodeMetric.V_phase_V, u3: nodeMetric.V_phase_V };
+          
+          if (currentResult.nodePhasorsPerPhase) {
+            const phasorsA = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'A');
+            const phasorsB = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'B');
+            const phasorsC = currentResult.nodePhasorsPerPhase.find(p => p.nodeId === nodeMetric.nodeId && p.phase === 'C');
+            
+            if (phasorsA && phasorsB && phasorsC) {
+              voltages = { u1: phasorsA.V_phase_V, u2: phasorsB.V_phase_V, u3: phasorsC.V_phase_V };
+            }
+          }
+          
+          tensionsBefore.push({ nodeId: nodeMetric.nodeId, ...voltages });
         }
       }
 
-      // Stocker dans l'équipement pour inspection
-      compensator.u1p_V = uA;
-      compensator.u2p_V = uB;
-      compensator.u3p_V = uC;
+      // Conditions de sortie de la boucle
+      if (tensionsStable && !productionDisconnectedThisIteration) {
+        simulationConverged = true;
+        console.log(`✅ Simulation convergée à l'itération ${iteration}`);
+        break;
+      }
 
-      // 🔄 CORRECTION: Propager les nouvelles tensions aux nœuds en aval
-      this.propagateVoltagesDownstream(nodeId, { A: uA, B: uB, C: uC }, nodes, cables, cableTypes, currentResult);
+      // Si on n'est pas encore convergé, traiter les équipements pour l'itération suivante
+      if (i < maxIterations - 1) {
+        this.processEquipmentIteration(workingNodes, cables, cableTypes, scenario, transformerConfig, loadModel, manualPhaseDistribution, equipment.regulators.reduce((m, r) => { if (r.enabled) m.set(r.nodeId, r); return m; }, new Map()), equipment.neutralCompensators.reduce((m, c) => { if (c.enabled) m.set(c.nodeId, c); return m; }, new Map()), regulatorStates, compensatorStates, phaseDistribution, currentResult, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
+      }
     }
 
-    // 7. Mise à jour des résultats dans les équipements originaux
-    this.updateEquipmentResults(regulators, regulatorStates, compensators, compensatorStates);
-    
-    if (!converged) {
-      console.warn(`⚠️ Simulation BFS non convergé après ${maxIterations} itérations (δV max = ${maxVoltageDelta.toFixed(3)}V)`);
+    if (!simulationConverged) {
+      console.warn(`⚠️ Simulation non convergée après ${maxIterations} itérations`);
     } else {
-      console.log(`✅ Simulation BFS convergé en ${iteration} itérations`);
+      console.log(`✅ Simulation convergée en ${iteration} itérations`);
     }
 
-    // Mettre à jour la tension mesurée aux nœuds des régulateurs (affichage) avec le dernier résultat
-    for (const [nodeId, regulator] of regulators.entries()) {
-      const node = nodes.find(n => n.id === nodeId);
-      if (node) {
-        regulator.currentVoltage_V = this.getNodeLineVoltageFromResult(currentResult, node, nodes);
-      }
-    }
+    // Appliquer les effets des compensateurs et finaliser
+    this.finalizeSimulationResult(workingNodes, cables, cableTypes, equipment.neutralCompensators.reduce((m, c) => { if (c.enabled) m.set(c.nodeId, c); return m; }, new Map()), equipment.regulators.reduce((m, r) => { if (r.enabled) m.set(r.nodeId, r); return m; }, new Map()), regulatorStates, compensatorStates, currentResult);
 
-    // Renvoyer directement le résultat de la dernière itération
-    return currentResult;
+    return {
+      result: currentResult,
+      convergenceStatus: simulationConverged ? 'converged' : 'not_converged'
+    };
   }
 
-  /**
-   * Propage les nouvelles tensions d'un nœud compensateur vers les nœuds en aval
-   */
+  private processEquipmentIteration(
+    workingNodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[],
+    scenario: CalculationScenario,
+    transformerConfig: TransformerConfig | null,
+    loadModel: LoadModel,
+    manualPhaseDistribution: any,
+    regulators: Map<string, VoltageRegulator>,
+    compensators: Map<string, NeutralCompensator>,
+    regulatorStates: Map<string, any>,
+    compensatorStates: Map<string, any>,
+    phaseDistribution: Map<string, any>,
+    currentResult: CalculationResult,
+    foisonnementCharges: number,
+    foisonnementProductions: number,
+    desequilibrePourcent: number
+  ) {
+    let equipmentChanged = false;
+    
+    // Traiter les régulateurs
+    let maxQDelta = 0;
+    for (const [nodeId, regulator] of regulators.entries()) {
+      const node = workingNodes.find(n => n.id === nodeId);
+      if (!node) continue;
+
+      const baseV_line = this.getNodeLineVoltageFromResult(currentResult, node, workingNodes);
+      const targetV = regulator.targetVoltage_V;
+      const state = regulatorStates.get(nodeId)!;
+
+      // Test de sensibilité avec ΔQ = +1 kVAr
+      const deltaQtest = 1;
+      const testRegulatorStates = new Map(regulatorStates);
+      const testState = { ...state, Q_kVAr: state.Q_kVAr + deltaQtest };
+      testRegulatorStates.set(nodeId, testState);
+
+      const testNodes = this.applyEquipmentToNodes(workingNodes, testRegulatorStates, compensatorStates);
+      const testNodesWithPhaseDistribution = testNodes.map(node => {
+        const distribution = phaseDistribution.get(node.id);
+        if (distribution) {
+          return { ...node, phaseDistribution: distribution };
+        }
+        return node;
+      });
+      
+      const testResult = this.calculateScenario(
+        testNodesWithPhaseDistribution, cables, cableTypes, scenario,
+        0, 0, transformerConfig, loadModel, 1, manualPhaseDistribution
+      );
+      const testV_line = this.getNodeLineVoltageFromResult(testResult, node, workingNodes);
+
+      // Calcul de sensibilité
+      let sensitivity = (testV_line - baseV_line) / deltaQtest;
+      if (!isFinite(sensitivity) || Math.abs(sensitivity) < 1e-6) {
+        sensitivity = 0.05;
+      }
+
+      // Correction de Q
+      const deltaV = targetV - baseV_line;
+      let deltaQ = deltaV / sensitivity;
+      const maxStep = Math.max(2, regulator.maxPower_kVA * 0.25);
+      deltaQ = Math.max(-maxStep, Math.min(maxStep, deltaQ));
+
+      const newQ = Math.max(-regulator.maxPower_kVA, Math.min(regulator.maxPower_kVA, state.Q_kVAr + deltaQ));
+      const qChange = Math.abs(newQ - state.Q_kVAr);
+      if (qChange > 0.05) {
+        state.Q_kVAr = newQ;
+        state.isLimited = Math.abs(newQ) >= regulator.maxPower_kVA;
+        equipmentChanged = true;
+      }
+      if (qChange > maxQDelta) maxQDelta = qChange;
+    }
+    
+    // Traiter les compensateurs
+    for (const [nodeId, compensator] of compensators.entries()) {
+      const currentState = compensatorStates.get(nodeId)!;
+      const hadNonZero = Math.abs(currentState.S_virtual_kVA) > 0.001;
+      currentState.S_virtual_kVA = 0;
+      currentState.IN_A = 0;
+      currentState.reductionPercent = 0;
+      currentState.isLimited = false;
+      if (hadNonZero) equipmentChanged = true;
+    }
+    
+    // Recalcul si équipements changés
+    if (equipmentChanged) {
+      const finalModifiedNodes = this.applyEquipmentToNodes(workingNodes, regulatorStates, compensatorStates);
+      // Note: currentResult sera mis à jour dans la boucle principale
+    }
+  }
+
+  private finalizeSimulationResult(
+    workingNodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[],
+    compensators: Map<string, NeutralCompensator>,
+    regulators: Map<string, VoltageRegulator>,
+    regulatorStates: Map<string, any>,
+    compensatorStates: Map<string, any>,
+    currentResult: CalculationResult
+  ) {
+    // Appliquer les effets des compensateurs EQUI8
+    for (const [nodeId, compensator] of compensators.entries()) {
+      if (compensator.enabled && currentResult.nodeMetrics) {
+        const nodeMetric = currentResult.nodeMetrics.find(m => m.nodeId === nodeId);
+        if (!nodeMetric) continue;
+
+        const { uA, uB, uC } = this.calculateEqui8Effect(nodeMetric, compensator);
+
+        // Mettre à jour les résultats
+        if (currentResult.nodePhasorsPerPhase) {
+          const updatePhase = (phase: 'A' | 'B' | 'C', mag: number) => {
+            const p = currentResult.nodePhasorsPerPhase!.find(pp => pp.nodeId === nodeId && pp.phase === phase);
+            if (p) p.V_phase_V = mag;
+          };
+          updatePhase('A', uA);
+          updatePhase('B', uB);
+          updatePhase('C', uC);
+        }
+
+        if (currentResult.nodeMetrics) {
+          const midx = currentResult.nodeMetrics.findIndex(m => m.nodeId === nodeId);
+          if (midx >= 0) {
+            currentResult.nodeMetrics[midx] = {
+              ...currentResult.nodeMetrics[midx],
+              V_phase_V: (uA + uB + uC) / 3,
+            };
+          }
+        }
+
+        compensator.u1p_V = uA;
+        compensator.u2p_V = uB;
+        compensator.u3p_V = uC;
+
+        this.propagateVoltagesDownstream(nodeId, { A: uA, B: uB, C: uC }, workingNodes, cables, cableTypes, currentResult);
+      }
+    }
+
+    // Mise à jour des résultats dans les équipements
+    this.updateEquipmentResults(regulators, regulatorStates, compensators, compensatorStates);
+
+    // Mise à jour des tensions mesurées pour les régulateurs
+    for (const [nodeId, regulator] of regulators.entries()) {
+      const node = workingNodes.find(n => n.id === nodeId);
+      if (node) {
+        regulator.currentVoltage_V = this.getNodeLineVoltageFromResult(currentResult, node, workingNodes);
+      }
+    }
+  }
+
+  private buildAdjacencyMap(nodes: Node[], cables: Cable[]): Map<string, string[]> {
+    const adjacency = new Map<string, string[]>();
+    
+    // Initialiser tous les nœuds
+    nodes.forEach(node => {
+      adjacency.set(node.id, []);
+    });
+    
+    // Ajouter les connexions
+    cables.forEach(cable => {
+      const neighbors1 = adjacency.get(cable.nodeAId) || [];
+      const neighbors2 = adjacency.get(cable.nodeBId) || [];
+      
+      neighbors1.push(cable.nodeBId);
+      neighbors2.push(cable.nodeAId);
+      
+      adjacency.set(cable.nodeAId, neighbors1);
+      adjacency.set(cable.nodeBId, neighbors2);
+    });
+    
+    return adjacency;
+  }
+
+  private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>): Map<string, { parent: string | null; children: string[] }> {
+    const treeStructure = new Map<string, { parent: string | null; children: string[] }>();
+    
+    // Trouver le nœud racine (source)
+    const rootNode = nodes.find(n => n.isSource) || nodes[0];
+    if (!rootNode) return treeStructure;
+    
+    // BFS pour construire l'arbre
+    const visited = new Set<string>();
+    const queue: { nodeId: string, parent: string | null }[] = [];
+    
+    queue.push({ nodeId: rootNode.id, parent: null });
+    visited.add(rootNode.id);
+    
+    while (queue.length > 0) {
+      const { nodeId, parent } = queue.shift()!;
+      
+      const children: string[] = [];
+      const neighbors = adjacency.get(nodeId) || [];
+      
+      for (const neighborId of neighbors) {
+        if (!visited.has(neighborId)) {
+          visited.add(neighborId);
+          children.push(neighborId);
+          queue.push({ nodeId: neighborId, parent: nodeId });
+        }
+      }
+      
+      treeStructure.set(nodeId, { parent, children });
+    }
+    
+    return treeStructure;
+  }
+
   private propagateVoltagesDownstream(
     sourceNodeId: string, 
     sourceVoltages: { A: number; B: number; C: number },
@@ -692,9 +745,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
   }
 
-  /**
-   * Calcule les tensions en aval d'un câble avec chutes de tension
-   */
   private calculateDownstreamVoltages(
     upstreamVoltages: { A: number; B: number; C: number },
     cable: Cable,
@@ -736,9 +786,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     };
   }
 
-  /**
-   * Met à jour les tensions d'un nœud dans les résultats
-   */
   private updateNodeVoltagesInResult(
     nodeId: string, 
     voltages: { A: number; B: number; C: number }, 
@@ -784,9 +831,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
   }
 
-  /**
-   * Applique les équipements aux nœuds pour créer des nœuds modifiés
-   */
   private applyEquipmentToNodes(
     nodes: Node[],
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
@@ -835,9 +879,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     });
   }
 
-  /**
-   * Met à jour les résultats dans les équipements originaux
-   */
   private updateEquipmentResults(
     regulators: Map<string, VoltageRegulator>,
     regulatorStates: Map<string, { Q_kVAr: number, V_target: number, isLimited: boolean }>,
@@ -864,9 +905,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
   }
 
-  /**
-   * Récupère la tension ligne d'un nœud à partir du résultat de calcul
-   */
   private getNodeLineVoltageFromResult(result: CalculationResult, node: Node, allNodes: Node[]): number {
     // Chercher d'abord dans les métriques par phase
     const perPhaseMetric = result.nodeMetricsPerPhase?.find(m => m.nodeId === node.id);
@@ -891,74 +929,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     return 400; // Valeur par défaut
   }
 
-  /**
-   * Construit la carte d'adjacence du graphe
-   */
-  private buildAdjacencyMap(nodes: Node[], cables: Cable[]): Map<string, string[]> {
-    const adjacency = new Map<string, string[]>();
-    
-    // Initialiser avec tous les nœuds
-    for (const node of nodes) {
-      adjacency.set(node.id, []);
+  private calculateEqui8Effect(initialVoltages: number | { V_phase_V: number }, compensator: NeutralCompensator): { uA: number; uB: number; uC: number } {
+    let u1: number, u2: number, u3: number;
+    if (typeof initialVoltages === 'number') {
+      u1 = u2 = u3 = initialVoltages;
+    } else if ('V_phase_V' in initialVoltages) {
+      u1 = u2 = u3 = initialVoltages.V_phase_V;
+    } else {
+      u1 = u2 = u3 = 230;
     }
-    
-    // Ajouter les connexions
-    for (const cable of cables) {
-      const neighborsA = adjacency.get(cable.nodeAId) || [];
-      const neighborsB = adjacency.get(cable.nodeBId) || [];
-      
-      neighborsA.push(cable.nodeBId);
-      neighborsB.push(cable.nodeAId);
-      
-      adjacency.set(cable.nodeAId, neighborsA);
-      adjacency.set(cable.nodeBId, neighborsB);
-    }
-    
-    return adjacency;
-  }
-
-  /**
-   * Construit la structure d'arbre du réseau
-   */
-  private buildTreeStructure(nodes: Node[], cables: Cable[], adjacency: Map<string, string[]>): Map<string, { parent: string | null, children: string[] }> {
-    const treeStructure = new Map<string, { parent: string | null, children: string[] }>();
-    
-    // Trouver le nœud racine (source)
-    const rootNode = nodes.find(n => n.isSource) || nodes[0];
-    if (!rootNode) return treeStructure;
-    
-    // BFS pour construire l'arbre
-    const visited = new Set<string>();
-    const queue: { nodeId: string, parent: string | null }[] = [];
-    
-    queue.push({ nodeId: rootNode.id, parent: null });
-    visited.add(rootNode.id);
-    
-    while (queue.length > 0) {
-      const { nodeId, parent } = queue.shift()!;
-      
-      const children: string[] = [];
-      const neighbors = adjacency.get(nodeId) || [];
-      
-      for (const neighborId of neighbors) {
-        if (!visited.has(neighborId)) {
-          visited.add(neighborId);
-          children.push(neighborId);
-          queue.push({ nodeId: neighborId, parent: nodeId });
-        }
-      }
-      
-      treeStructure.set(nodeId, { parent, children });
-    }
-    
-    return treeStructure;
-  }
-
-  /**
-   * Calcule l'effet EQUI8 sur les tensions par phase
-   */
-  private calculateEqui8Effect(initialVoltages: number[], zPhase_Ohm: number): number[] {
-    const [u1, u2, u3] = initialVoltages;
     
     // Calcul du courant de neutre selon le modèle EQUI8
     const uMoy = (u1 + u2 + u3) / 3;
@@ -966,22 +945,21 @@ export class SimulationCalculator extends ElectricalCalculator {
     const deltaU2 = u2 - uMoy;
     const deltaU3 = u3 - uMoy;
     
+    const Zp = Math.max(1e-9, compensator.phaseImpedance ?? compensator.zPhase_Ohm ?? 1e-9);
+    
     // Courant de neutre (somme vectorielle des déséquilibres)
-    const iNeutre = Math.sqrt(deltaU1 * deltaU1 + deltaU2 * deltaU2 + deltaU3 * deltaU3) / (3 * zPhase_Ohm);
+    const iNeutre = Math.sqrt(deltaU1 * deltaU1 + deltaU2 * deltaU2 + deltaU3 * deltaU3) / (3 * Zp);
     
     // Correction des tensions (effet de rééquilibrage)
-    const correctionFactor = Math.min(1, iNeutre * zPhase_Ohm / (uMoy * 0.1)); // Limitation à 10% de correction
+    const correctionFactor = Math.min(1, iNeutre * Zp / (uMoy * 0.1)); // Limitation à 10% de correction
     
     const u1Corrected = u1 - deltaU1 * correctionFactor * 0.8; // 80% d'efficacité
     const u2Corrected = u2 - deltaU2 * correctionFactor * 0.8;
     const u3Corrected = u3 - deltaU3 * correctionFactor * 0.8;
     
-    return [u1Corrected, u2Corrected, u3Corrected];
+    return { uA: u1Corrected, uB: u2Corrected, uC: u3Corrected };
   }
 
-  /**
-   * Crée un régulateur par défaut
-   */
   createDefaultRegulator(nodeId: string, voltageSystem?: VoltageSystem): VoltageRegulator {
     return {
       id: `reg_${nodeId}`,
@@ -996,9 +974,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     };
   }
 
-  /**
-   * Propose un renforcement complet du circuit
-   */
   proposeFullCircuitReinforcement(project: Project, result: CalculationResult, threshold: number = 8.0): CableUpgrade[] {
     const upgrades: CableUpgrade[] = [];
     
