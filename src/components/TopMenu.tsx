@@ -202,14 +202,42 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
           {/* Second Row: Virtual Busbar Info (if exists) */}
           {calculationResults[selectedScenario]?.virtualBusbar && (
             <div className="text-xs text-primary-foreground/90 font-medium bg-white/5 px-3 py-1 rounded">
-              Jeu de barres: {typeof calculationResults[selectedScenario]!.virtualBusbar!.voltage_V === 'number' ? calculationResults[selectedScenario]!.virtualBusbar!.voltage_V.toFixed(1) : '0.0'}V - 
-              {typeof calculationResults[selectedScenario]!.virtualBusbar!.current_A === 'number' ? Math.abs(calculationResults[selectedScenario]!.virtualBusbar!.current_A).toFixed(1) : '0.0'}A
-              {calculationResults[selectedScenario]!.virtualBusbar!.current_N !== undefined && (
-                <> - I_N: {calculationResults[selectedScenario]!.virtualBusbar!.current_N.toFixed(1)}A</>
-              )} - 
-              ΔU: {typeof calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V === 'number' ? 
-                (calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V >= 0 ? '+' : '') + calculationResults[selectedScenario]!.virtualBusbar!.deltaU_V.toFixed(2) : 
-                '0.00'}V
+              {(() => {
+                const result = calculationResults[selectedScenario]!;
+                const busbar = result.virtualBusbar!;
+                const sourceNode = currentProject.nodes.find(node => node.isSource);
+                const sourceMetrics = sourceNode && result.nodeMetricsPerPhase?.find(m => m.nodeId === sourceNode.id);
+                
+                // Pour monophasé 400V, afficher les tensions phase-neutre
+                if (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && currentProject.loadModel === 'monophase_reparti' && sourceMetrics) {
+                  return (
+                    <>
+                      Jeu de barres: VA: {sourceMetrics.voltagesPerPhase.A.toFixed(1)}V - VB: {sourceMetrics.voltagesPerPhase.B.toFixed(1)}V - VC: {sourceMetrics.voltagesPerPhase.C.toFixed(1)}V - 
+                      {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
+                      {busbar.current_N !== undefined && (
+                        <> - I_N: {busbar.current_N.toFixed(1)}A</>
+                      )} - 
+                      ΔU: {typeof busbar.deltaU_V === 'number' ? 
+                        (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : 
+                        '0.00'}V
+                    </>
+                  );
+                } else {
+                  // Affichage normal pour les autres cas
+                  return (
+                    <>
+                      Jeu de barres: {typeof busbar.voltage_V === 'number' ? busbar.voltage_V.toFixed(1) : '0.0'}V - 
+                      {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
+                      {busbar.current_N !== undefined && (
+                        <> - I_N: {busbar.current_N.toFixed(1)}A</>
+                      )} - 
+                      ΔU: {typeof busbar.deltaU_V === 'number' ? 
+                        (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : 
+                        '0.00'}V
+                    </>
+                  );
+                }
+              })()}
             </div>
           )}
 
