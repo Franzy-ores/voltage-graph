@@ -126,6 +126,14 @@ export interface Project {
       U3: number;
     };
     measurementNodeId: string;
+    // Calibration: tension cible (nuit). 0 => pas de calibration, utiliser le foisonnement manuel
+    targetVoltage?: number;
+    // Tensions de jour pour la répartition des phases (optionnel)
+    dayVoltages?: {
+      U1: number;
+      U2: number;
+      U3: number;
+    };
   };
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
@@ -222,6 +230,7 @@ export interface SimulationResult extends CalculationResult {
   isSimulation: boolean;
   equipment?: SimulationEquipment;
   baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
+  convergenceStatus?: 'converged' | 'not_converged';
 }
 
 export interface CalculationResult {

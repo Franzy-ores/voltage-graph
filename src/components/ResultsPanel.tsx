@@ -380,13 +380,51 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
           </CardContent>
         </Card>
 
-        {/* Scenario Selection */}
+        {/* Scenario Selection & Convergence Status */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Scénario Actuel</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             <p className="text-sm font-medium">{formatScenarioName(selectedScenario)}</p>
+            
+            {/* Affichage du statut de convergence pour le mode FORCÉ */}
+            {selectedScenario === 'FORCÉ' && currentResult && 'convergenceStatus' in currentResult && currentResult.convergenceStatus && (
+              <div className="space-y-2">
+                <div className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
+                  currentResult.convergenceStatus === 'converged' 
+                    ? 'bg-green-100 text-green-800 border border-green-200' 
+                    : 'bg-red-100 text-red-800 border border-red-200'
+                }`}>
+                  {currentResult.convergenceStatus === 'converged' ? (
+                    <>
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span>Simulation du réseau stabilisée</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                      <span>ATTENTION : Simulation non convergée - Instabilité potentielle</span>
+                    </>
+                  )}
+                </div>
+                
+                {/* Bouton de sauvegarde si convergé */}
+                {currentResult.convergenceStatus === 'converged' && (
+                  <button
+                    onClick={() => {
+                      if (confirm('Sauvegarder la répartition des charges et productions utilisées dans cette simulation dans la configuration du projet ?')) {
+                        // Fonction de sauvegarde à implémenter
+                        alert('Fonctionnalité de sauvegarde à implémenter');
+                      }
+                    }}
+                    className="w-full text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded px-2 py-1 transition-colors"
+                  >
+                    💾 Sauvegarder la configuration simulée
+                  </button>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

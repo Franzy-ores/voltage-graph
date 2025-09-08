@@ -22,7 +22,11 @@ export const ForcedModePanel = () => {
     U1: currentProject.forcedModeConfig?.measuredVoltages.U1 || 225,
     U2: currentProject.forcedModeConfig?.measuredVoltages.U2 || 230,
     U3: currentProject.forcedModeConfig?.measuredVoltages.U3 || 228,
-    measurementNodeId: currentProject.forcedModeConfig?.measurementNodeId || ""
+    measurementNodeId: currentProject.forcedModeConfig?.measurementNodeId || "",
+    targetVoltage: currentProject.forcedModeConfig?.targetVoltage || 0,
+    dayU1: currentProject.forcedModeConfig?.dayVoltages?.U1 || 225,
+    dayU2: currentProject.forcedModeConfig?.dayVoltages?.U2 || 230,
+    dayU3: currentProject.forcedModeConfig?.dayVoltages?.U3 || 228
   });
 
   // Calculer automatiquement le déséquilibre
@@ -52,7 +56,13 @@ export const ForcedModePanel = () => {
           U2: localConfig.U2,
           U3: localConfig.U3
         },
-        measurementNodeId: localConfig.measurementNodeId
+        measurementNodeId: localConfig.measurementNodeId,
+        targetVoltage: localConfig.targetVoltage > 0 ? localConfig.targetVoltage : undefined,
+        dayVoltages: {
+          U1: localConfig.dayU1,
+          U2: localConfig.dayU2,
+          U3: localConfig.dayU3
+        }
       },
       desequilibrePourcent: calculatedImbalance
     });
@@ -103,6 +113,67 @@ export const ForcedModePanel = () => {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        {/* Phase 1: Calibration (tension cible) */}
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">Phase 1 - Calibration du foisonnement (nuit)</Label>
+          <div>
+            <Label className="text-xs text-muted-foreground">Tension cible (V) - 0 = pas de calibration</Label>
+            <Input
+              type="number"
+              value={localConfig.targetVoltage}
+              onChange={(e) => setLocalConfig({ ...localConfig, targetVoltage: Number(e.target.value) })}
+              className="h-8"
+              disabled={!isForcedMode}
+              min={0}
+              max={250}
+              placeholder="0 pour utiliser le foisonnement manuel"
+            />
+          </div>
+        </div>
+
+        {/* Phase 2: Tensions de jour */}
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">Phase 2 - Tensions de jour pour répartition des phases</Label>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">U1 jour (V)</Label>
+              <Input
+                type="number"
+                value={localConfig.dayU1}
+                onChange={(e) => setLocalConfig({ ...localConfig, dayU1: Number(e.target.value) })}
+                className="h-8"
+                disabled={!isForcedMode}
+                min={180}
+                max={250}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">U2 jour (V)</Label>
+              <Input
+                type="number"
+                value={localConfig.dayU2}
+                onChange={(e) => setLocalConfig({ ...localConfig, dayU2: Number(e.target.value) })}
+                className="h-8"
+                disabled={!isForcedMode}
+                min={180}
+                max={250}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">U3 jour (V)</Label>
+              <Input
+                type="number"
+                value={localConfig.dayU3}
+                onChange={(e) => setLocalConfig({ ...localConfig, dayU3: Number(e.target.value) })}
+                className="h-8"
+                disabled={!isForcedMode}
+                min={180}
+                max={250}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Tensions mesurées */}
