@@ -1036,9 +1036,10 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       return;
     }
 
-    // Utiliser le calculateur pour créer le régulateur avec le voltageSystem du projet
+    // Utiliser le calculateur pour créer le régulateur avec la tension du transformateur
     const calculator = new SimulationCalculator();
-    const newRegulator = calculator.createDefaultRegulator(nodeId, currentProject.voltageSystem);
+    const sourceVoltage = currentProject.transformerConfig.nominalVoltage_V;
+    const newRegulator = calculator.createDefaultRegulator(nodeId, sourceVoltage);
 
     set({
       simulationEquipment: {
@@ -1167,8 +1168,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     
     // Optimisation par circuit en un seul passage avec seuil paramétrable (par défaut 8%)
     const upgrades = calculator.proposeFullCircuitReinforcement(
-      currentProject,
-      result,
+      currentProject.cables,
+      defaultCableTypes,
       threshold ?? 8.0 // Seuil paramétrable pour la chute de tension
     );
 
