@@ -1,11 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalculationResult, CalculationScenario, VirtualBusbar } from "@/types/network";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNetworkStore } from '@/store/networkStore';
 import { jsPDF } from 'jspdf';
 import { getConnectedNodes, getConnectedCables } from '@/utils/networkConnectivity';
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
+import { CheckCircle, AlertCircle } from 'lucide-react';
 
 interface ResultsPanelProps {
   results: {
@@ -390,38 +392,72 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             
             {/* Affichage du statut de convergence pour le mode FORCÉ */}
             {selectedScenario === 'FORCÉ' && currentResult && 'convergenceStatus' in currentResult && currentResult.convergenceStatus && (
-              <div className="space-y-2">
-                <div className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
-                  currentResult.convergenceStatus === 'converged' 
-                    ? 'bg-green-100 text-green-800 border border-green-200' 
-                    : 'bg-red-100 text-red-800 border border-red-200'
-                }`}>
-                  {currentResult.convergenceStatus === 'converged' ? (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span>Simulation du réseau stabilisée</span>
-                    </>
+              <div className={`mb-4 p-3 rounded-md ${
+                (typeof currentResult.convergenceStatus === 'object' 
+                  ? (currentResult.convergenceStatus as ConvergenceStatus).converged 
+                  : currentResult.convergenceStatus === 'converged')
+                  ? 'bg-green-50 border border-green-200' 
+                  : 'bg-red-50 border border-red-200'
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  {(typeof currentResult.convergenceStatus === 'object' 
+                    ? (currentResult.convergenceStatus as ConvergenceStatus).converged 
+                    : currentResult.convergenceStatus === 'converged') ? (
+                    <CheckCircle className="h-4 w-4 text-green-600" />
                   ) : (
-                    <>
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span>ATTENTION : Simulation non convergée - Instabilité potentielle</span>
-                    </>
+                    <AlertCircle className="h-4 w-4 text-red-600" />
                   )}
+                  <span className={`text-sm font-medium ${
+                    (typeof currentResult.convergenceStatus === 'object' 
+                      ? (currentResult.convergenceStatus as ConvergenceStatus).converged 
+                      : currentResult.convergenceStatus === 'converged') ? 'text-green-800' : 'text-red-800'
+                  }`}>
+                    {typeof currentResult.convergenceStatus === 'object'
+                      ? ((currentResult.convergenceStatus as ConvergenceStatus).converged 
+                          ? `✅ Convergence atteinte en ${(currentResult.convergenceStatus as ConvergenceStatus).iterations} itérations`
+                          : `❌ Échec de convergence après ${(currentResult.convergenceStatus as ConvergenceStatus).iterations} itérations`)
+                      : (currentResult.convergenceStatus === 'converged'
+                          ? '✅ Simulation du réseau stabilisée'
+                          : '❌ ATTENTION : Simulation non convergée - Instabilité potentielle')
+                    }
+                  </span>
                 </div>
                 
+                {typeof currentResult.convergenceStatus === 'object' && (currentResult.convergenceStatus as ConvergenceStatus).message && (
+                  <div className={`text-xs p-2 rounded bg-white/50 ${
+                    (currentResult.convergenceStatus as ConvergenceStatus).converged ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    <strong>Détails:</strong> {(currentResult.convergenceStatus as ConvergenceStatus).message}
+                  </div>
+                )}
+                
                 {/* Bouton de sauvegarde si convergé */}
-                {currentResult.convergenceStatus === 'converged' && (
-                  <button
+                {(typeof currentResult.convergenceStatus === 'object' 
+                  ? (currentResult.convergenceStatus as ConvergenceStatus).converged 
+                  : currentResult.convergenceStatus === 'converged') && (
+                  <Button 
+                    size="sm" 
+                    className="mt-2"
                     onClick={() => {
                       if (confirm('Sauvegarder la répartition des charges et productions utilisées dans cette simulation dans la configuration du projet ?')) {
                         // Fonction de sauvegarde à implémenter
+                        console.log('Sauvegarde des résultats convergés');
                         alert('Fonctionnalité de sauvegarde à implémenter');
                       }
                     }}
-                    className="w-full text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded px-2 py-1 transition-colors"
                   >
-                    💾 Sauvegarder la configuration simulée
-                  </button>
+                    Sauvegarder les résultats
+                  </Button>
+                )}
+                
+                {/* Affichage des détails de convergence en mode forcé */}
+                {selectedScenario === 'FORCÉ' && typeof currentResult.convergenceStatus === 'object' && (currentResult.convergenceStatus as ConvergenceStatus).details && (
+                  <div className="mt-2 text-xs space-y-1">
+                    <div><strong>Foisonnement calibré:</strong> {(currentResult.convergenceStatus as ConvergenceStatus).details?.calibratedDiversityFactor || 'N/A'}%</div>
+                    {(currentResult.convergenceStatus as ConvergenceStatus).details?.disconnectedProductions && (
+                      <div><strong>Productions déconnectées:</strong> {(currentResult.convergenceStatus as ConvergenceStatus).details?.disconnectedProductions} unités</div>
+                    )}
+                  </div>
                 )}
               </div>
             )}

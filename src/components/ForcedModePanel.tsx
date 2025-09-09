@@ -115,63 +115,21 @@ export const ForcedModePanel = () => {
           </Select>
         </div>
 
-        {/* Phase 1: Calibration (tension cible) */}
+        {/* Phase 2: Tensions de jour (lecture seule) */}
         <div className="space-y-2">
-          <Label className="text-xs font-medium">Phase 1 - Calibration du foisonnement (nuit)</Label>
-          <div>
-            <Label className="text-xs text-muted-foreground">Tension cible (V) - 0 = pas de calibration</Label>
-            <Input
-              type="number"
-              value={localConfig.targetVoltage}
-              onChange={(e) => setLocalConfig({ ...localConfig, targetVoltage: Number(e.target.value) })}
-              className="h-8"
-              disabled={!isForcedMode}
-              min={0}
-              max={250}
-              placeholder="0 pour utiliser le foisonnement manuel"
-            />
-          </div>
-        </div>
-
-        {/* Phase 2: Tensions de jour */}
-        <div className="space-y-2">
-          <Label className="text-xs font-medium">Phase 2 - Tensions de jour pour répartition des phases</Label>
+          <Label className="text-xs font-medium">Tensions de jour (information)</Label>
           <div className="grid grid-cols-3 gap-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">U1 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU1}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU1: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
+            <div className="bg-muted/50 p-2 rounded">
+              <Label className="text-xs text-muted-foreground">U1 jour</Label>
+              <div className="font-mono text-sm">{localConfig.dayU1} V</div>
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">U2 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU2}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU2: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
+            <div className="bg-muted/50 p-2 rounded">
+              <Label className="text-xs text-muted-foreground">U2 jour</Label>
+              <div className="font-mono text-sm">{localConfig.dayU2} V</div>
             </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">U3 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU3}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU3: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
+            <div className="bg-muted/50 p-2 rounded">
+              <Label className="text-xs text-muted-foreground">U3 jour</Label>
+              <div className="font-mono text-sm">{localConfig.dayU3} V</div>
             </div>
           </div>
         </div>

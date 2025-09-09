@@ -296,35 +296,45 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       console.log('⚠️ Projet sans transformerConfig, ajout de la config par défaut');
       project.transformerConfig = createDefaultTransformerConfig(project.voltageSystem || "TÉTRAPHASÉ_400V");
     }
+    
+    // S'assurer que les propriétés manquantes sont définies
+    if (!project.manualPhaseDistribution) {
+      project.manualPhaseDistribution = {
+        charges: { A: 33.33, B: 33.33, C: 33.34 },
+        productions: { A: 33.33, B: 33.33, C: 33.34 },
+        constraints: { min: -20, max: 20, total: 100 }
+      };
+    }
+    
     // Calculer les bounds géographiques si pas encore définis
     if (!project.geographicBounds && project.nodes.length > 0) {
       project.geographicBounds = calculateProjectBounds(project.nodes);
     }
 
-    // Vérifier si les types de câbles sont à jour
-    if (project.cableTypes.length !== defaultCableTypes.length) {
-      console.log(`Mise à jour des types de câbles: ${project.cableTypes.length} -> ${defaultCableTypes.length}`);
-      project.cableTypes = [...defaultCableTypes];
-      toast.info(`Types de câbles mis à jour: ${defaultCableTypes.length} types disponibles`);
-    }
+    set((state) => ({
+      ...state,
+      currentProject: {
+        ...project,
+        cableTypes: [...defaultCableTypes, ...(project.cableTypes || [])]
+      },
+      // Réinitialiser les résultats pour forcer un recalcul
+      calculationResults: {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null,
+        FORCÉ: null
+      },
+      simulationResults: {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null,
+        FORCÉ: null
+      }
+    }));
 
-    console.log('🔄 Setting state with project:', project.name);
-    set({ 
-      currentProject: project,
-      selectedNodeId: null,
-      selectedCableId: null,
-      selectedTool: 'select', // Forcer le retour à l'outil de sélection
-      editPanelOpen: false,
-      editTarget: null
-    });
-    console.log('✅ State updated successfully');
-    
-    // Recalculer immédiatement
-    console.log('🔄 Triggering calculations...');
+    // Déclencher le recalcul de tous les scénarios
     get().updateAllCalculations();
-    console.log('✅ Calculations triggered');
     
-    // Déclencher le zoom sur le projet chargé après un court délai
     setTimeout(() => {
       console.log('🔄 Triggering zoom to project bounds');
       const event = new CustomEvent('zoomToProject', { 
