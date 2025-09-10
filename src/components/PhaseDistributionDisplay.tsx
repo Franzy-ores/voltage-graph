@@ -3,9 +3,9 @@ import { Label } from "@/components/ui/label";
 import { useNetworkStore } from "@/store/networkStore";
 
 export const PhaseDistributionDisplay = () => {
-  const { currentProject, calculationResults, selectedScenario } = useNetworkStore();
+  const { currentProject } = useNetworkStore();
   
-  if (!currentProject || currentProject.loadModel !== 'monophase_reparti' || !calculationResults[selectedScenario]) {
+  if (!currentProject || currentProject.loadModel !== 'monophase_reparti') {
     return null;
   }
 

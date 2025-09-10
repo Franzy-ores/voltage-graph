@@ -389,40 +389,67 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             <p className="text-sm font-medium">{formatScenarioName(selectedScenario)}</p>
             
             {/* Affichage du statut de convergence pour le mode FORCÉ */}
-            {selectedScenario === 'FORCÉ' && currentResult && 'convergenceStatus' in currentResult && currentResult.convergenceStatus && (
+            {selectedScenario === 'FORCÉ' && (
               <div className="space-y-2">
-                <div className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
-                  currentResult.convergenceStatus === 'converged' 
-                    ? 'bg-green-100 text-green-800 border border-green-200' 
-                    : 'bg-red-100 text-red-800 border border-red-200'
-                }`}>
-                  {currentResult.convergenceStatus === 'converged' ? (
-                    <>
-                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                      <span>Simulation du réseau stabilisée</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                      <span>ATTENTION : Simulation non convergée - Instabilité potentielle</span>
-                    </>
-                  )}
-                </div>
+                {(() => {
+                  // Vérifier d'abord dans simulationResults
+                  const { simulationResults } = useNetworkStore();
+                  const simResult = simulationResults[selectedScenario];
+                  const convergenceStatus = simResult?.convergenceStatus || (currentResult as any)?.convergenceStatus;
+                  
+                  if (convergenceStatus) {
+                    return (
+                      <div className={`text-xs px-2 py-1 rounded flex items-center gap-2 ${
+                        convergenceStatus === 'converged' 
+                          ? 'bg-green-100 text-green-800 border border-green-200' 
+                          : 'bg-red-100 text-red-800 border border-red-200'
+                      }`}>
+                        {convergenceStatus === 'converged' ? (
+                          <>
+                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                            <span>Simulation du réseau convergée</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                            <span>⚠️ Simulation non convergente - Réseau instable</span>
+                          </>
+                        )}
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="text-xs px-2 py-1 rounded flex items-center gap-2 bg-gray-100 text-gray-600 border border-gray-200">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                        <span>Mode forcé configuré - Cliquez sur "Appliquer" pour simuler</span>
+                      </div>
+                    );
+                  }
+                })()}
                 
                 {/* Bouton de sauvegarde si convergé */}
-                {currentResult.convergenceStatus === 'converged' && (
-                  <button
-                    onClick={() => {
-                      if (confirm('Sauvegarder la répartition des charges et productions utilisées dans cette simulation dans la configuration du projet ?')) {
-                        // Fonction de sauvegarde à implémenter
-                        alert('Fonctionnalité de sauvegarde à implémenter');
-                      }
-                    }}
-                    className="w-full text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded px-2 py-1 transition-colors"
-                  >
-                    💾 Sauvegarder la configuration simulée
-                  </button>
-                )}
+                {(() => {
+                  const { simulationResults } = useNetworkStore();
+                  const simResult = simulationResults[selectedScenario];
+                  const convergenceStatus = simResult?.convergenceStatus || (currentResult as any)?.convergenceStatus;
+                  
+                  if (convergenceStatus === 'converged') {
+                    return (
+                      <button
+                        onClick={() => {
+                          if (confirm('Sauvegarder la répartition des charges et productions utilisées dans cette simulation dans la configuration du projet ?')) {
+                            // Fonction de sauvegarde à implémenter
+                            alert('Fonctionnalité de sauvegarde à implémenter');
+                          }
+                        }}
+                        className="w-full text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded px-2 py-1 transition-colors"
+                      >
+                        💾 Sauvegarder la configuration simulée
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
           </CardContent>

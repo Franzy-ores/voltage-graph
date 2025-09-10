@@ -13,7 +13,8 @@ export const ForcedModePanel = () => {
     currentProject,
     selectedScenario,
     updateProjectConfig,
-    runSimulation
+    runSimulation,
+    updateAllCalculations
   } = useNetworkStore();
 
   if (!currentProject) return null;
@@ -67,7 +68,8 @@ export const ForcedModePanel = () => {
       desequilibrePourcent: calculatedImbalance
     });
 
-    // Déclencher la simulation
+    // Déclencher les calculs normaux ET la simulation
+    updateAllCalculations();
     runSimulation();
   };
 

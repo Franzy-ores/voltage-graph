@@ -820,18 +820,48 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      FORCÉ: calculator.calculateScenario(
-        currentProject.nodes, 
-        currentProject.cables, 
-        currentProject.cableTypes, 
-        'FORCÉ',
-        currentProject.foisonnementCharges,
-        currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
-        currentProject.manualPhaseDistribution
-      )
+      FORCÉ: (() => {
+        // Pour le mode FORCÉ, utiliser la simulation avec convergence
+        if (currentProject.forcedModeConfig) {
+          try {
+            const simCalculator = new SimulationCalculator(currentProject.cosPhi);
+            const simResult = simCalculator.calculateWithSimulation(
+              currentProject,
+              'FORCÉ',
+              { regulators: [], neutralCompensators: [], cableUpgrades: [] }
+            );
+            return simResult.baselineResult || simResult;
+          } catch (error) {
+            console.error('Erreur simulation mode FORCÉ:', error);
+            // Fallback vers calcul standard
+            return calculator.calculateScenario(
+              currentProject.nodes, 
+              currentProject.cables, 
+              currentProject.cableTypes, 
+              'FORCÉ',
+              currentProject.foisonnementCharges,
+              currentProject.foisonnementProductions,
+              currentProject.transformerConfig,
+              currentProject.loadModel ?? 'polyphase_equilibre',
+              currentProject.desequilibrePourcent ?? 0,
+              currentProject.manualPhaseDistribution
+            );
+          }
+        } else {
+          return calculator.calculateScenario(
+            currentProject.nodes, 
+            currentProject.cables, 
+            currentProject.cableTypes, 
+            'FORCÉ',
+            currentProject.foisonnementCharges,
+            currentProject.foisonnementProductions,
+            currentProject.transformerConfig,
+            currentProject.loadModel ?? 'polyphase_equilibre',
+            currentProject.desequilibrePourcent ?? 0,
+            currentProject.manualPhaseDistribution
+          );
+        }
+      })()
     };
 
     set({ calculationResults: results });
