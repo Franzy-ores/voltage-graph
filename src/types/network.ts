@@ -226,21 +226,11 @@ export interface SimulationEquipment {
   cableUpgrades: CableUpgrade[];
 }
 
-export interface ConvergenceStatus {
-  converged: boolean;
-  iterations: number;
-  message?: string;
-  details?: {
-    calibratedDiversityFactor?: number;
-    disconnectedProductions?: number;
-  };
-}
-
 export interface SimulationResult extends CalculationResult {
   isSimulation: boolean;
   equipment?: SimulationEquipment;
   baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
-  convergenceStatus?: ConvergenceStatus | 'converged' | 'not_converged';
+  convergenceStatus?: 'converged' | 'not_converged';
 }
 
 export interface CalculationResult {
