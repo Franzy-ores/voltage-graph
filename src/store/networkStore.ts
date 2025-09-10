@@ -278,12 +278,27 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       currentProject: project,
       selectedNodeId: null,
       selectedCableId: null,
+      selectedTool: 'select',
       editPanelOpen: false,
+      editTarget: null,
+      showVoltages: false,
+      simulationMode: false,
       calculationResults: {
         PRÉLÈVEMENT: null,
         MIXTE: null,
         PRODUCTION: null,
         FORCÉ: null
+      },
+      simulationResults: {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null,
+        FORCÉ: null
+      },
+      simulationEquipment: {
+        regulators: [],
+        neutralCompensators: [],
+        cableUpgrades: []
       }
     });
   },
@@ -296,6 +311,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       console.log('⚠️ Projet sans transformerConfig, ajout de la config par défaut');
       project.transformerConfig = createDefaultTransformerConfig(project.voltageSystem || "TÉTRAPHASÉ_400V");
     }
+
+    // Assurer que manualPhaseDistribution existe
+    if (!project.manualPhaseDistribution) {
+      console.log('⚠️ Projet sans manualPhaseDistribution, ajout de la config par défaut');
+      project.manualPhaseDistribution = {
+        charges: { A: 33.33, B: 33.33, C: 33.34 },
+        productions: { A: 33.33, B: 33.33, C: 33.34 },
+        constraints: { min: -20, max: 20, total: 100 }
+      };
+    }
+
     // Calculer les bounds géographiques si pas encore définis
     if (!project.geographicBounds && project.nodes.length > 0) {
       project.geographicBounds = calculateProjectBounds(project.nodes);
@@ -313,9 +339,28 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       currentProject: project,
       selectedNodeId: null,
       selectedCableId: null,
-      selectedTool: 'select', // Forcer le retour à l'outil de sélection
+      selectedTool: 'select',
       editPanelOpen: false,
-      editTarget: null
+      editTarget: null,
+      showVoltages: false,
+      simulationMode: false,
+      calculationResults: {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null,
+        FORCÉ: null
+      },
+      simulationResults: {
+        PRÉLÈVEMENT: null,
+        MIXTE: null,
+        PRODUCTION: null,
+        FORCÉ: null
+      },
+      simulationEquipment: {
+        regulators: [],
+        neutralCompensators: [],
+        cableUpgrades: []
+      }
     });
     console.log('✅ State updated successfully');
     
