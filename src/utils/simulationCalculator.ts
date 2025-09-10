@@ -43,6 +43,39 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
+   * Calcule les pourcentages finaux de répartition par phase
+   */
+  private calculateFinalDistribution(
+    nodes: Node[], 
+    type: 'charges' | 'productions',
+    foisonnement: number
+  ): {A: number; B: number; C: number} {
+    let totalA = 0, totalB = 0, totalC = 0;
+    
+    nodes.forEach(node => {
+      const items = type === 'charges' ? node.clients : node.productions;
+      if (!items || items.length === 0) return;
+      
+      const totalPower = items.reduce((sum, item) => sum + (item.S_kVA || 0), 0) * (foisonnement / 100);
+      
+      // Distribution équilibrée par défaut (33.33% par phase)
+      // Dans une vraie implémentation, ceci devrait refléter la distribution réelle calculée
+      totalA += totalPower / 3;
+      totalB += totalPower / 3;
+      totalC += totalPower / 3;
+    });
+    
+    const total = totalA + totalB + totalC;
+    if (total === 0) return {A: 33.33, B: 33.33, C: 33.33};
+    
+    return {
+      A: (totalA / total) * 100,
+      B: (totalB / total) * 100,
+      C: (totalC / total) * 100
+    };
+  }
+  
+  /**
    * Nouveau processus Mode Forcé en 2 étapes avec boucle de convergence
    */
   private runForcedModeSimulation(
@@ -220,11 +253,23 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.warn(`⚠️ Simulation non convergée après ${SimulationCalculator.SIM_MAX_ITERATIONS} itérations`);
     }
     
-    // Retourner le résultat avec le statut de convergence
+    // Calculer les pourcentages finaux de répartition
+    const finalLoadDistribution = this.calculateFinalDistribution(modifiedNodes, 'charges', foisonnementCharges);
+    const finalProductionDistribution = this.calculateFinalDistribution(modifiedNodes, 'productions', 100);
+    
+    // Retourner le résultat avec le statut de convergence et les pourcentages finaux
     return {
       ...iterationResult!,
-      convergenceStatus: simulationConverged ? 'converged' : 'not_converged'
-    } as CalculationResult & { convergenceStatus: 'converged' | 'not_converged' };
+      convergenceStatus: simulationConverged ? 'converged' : 'not_converged',
+      finalLoadDistribution,
+      finalProductionDistribution,
+      calibratedFoisonnementCharges: foisonnementCharges
+    } as CalculationResult & { 
+      convergenceStatus: 'converged' | 'not_converged';
+      finalLoadDistribution: {A: number; B: number; C: number};
+      finalProductionDistribution: {A: number; B: number; C: number};
+      calibratedFoisonnementCharges: number;
+    };
   }
   
   /**

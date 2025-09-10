@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import { useNetworkStore } from "@/store/networkStore";
-import { Zap, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Zap, AlertTriangle, CheckCircle2, Save, Calculator } from "lucide-react";
 
 export const ForcedModePanel = () => {
   const {
@@ -14,7 +15,8 @@ export const ForcedModePanel = () => {
     selectedScenario,
     updateProjectConfig,
     runSimulation,
-    updateAllCalculations
+    updateAllCalculations,
+    simulationResults
   } = useNetworkStore();
 
   if (!currentProject) return null;
@@ -29,6 +31,9 @@ export const ForcedModePanel = () => {
     dayU2: currentProject.forcedModeConfig?.dayVoltages?.U2 || 230,
     dayU3: currentProject.forcedModeConfig?.dayVoltages?.U3 || 228
   });
+
+  // État local pour stocker les résultats de simulation
+  const [simulationResults_local, setSimulationResults_local] = useState<any>(null);
 
   // Calculer automatiquement le déséquilibre
   const calculateImbalancePercent = () => {
@@ -46,7 +51,7 @@ export const ForcedModePanel = () => {
   const nonSourceNodes = currentProject.nodes.filter(n => !n.isSource);
   const imbalancePercent = calculateImbalancePercent();
 
-  const applyForcedMode = () => {
+  const runForcedSimulation = async () => {
     const calculatedImbalance = calculateImbalancePercent();
     
     // Mettre à jour la configuration du projet
@@ -71,6 +76,31 @@ export const ForcedModePanel = () => {
     // Déclencher les calculs normaux ET la simulation
     updateAllCalculations();
     runSimulation();
+    
+    // Récupérer les résultats après simulation
+    setTimeout(() => {
+      const simResult = simulationResults['FORCÉ'];
+      if (simResult) {
+        setSimulationResults_local(simResult);
+      }
+    }, 100);
+  };
+
+  const saveSimulationResults = () => {
+    if (!simulationResults_local) return;
+    
+    // Sauvegarder les pourcentages finaux dans le projet
+    updateProjectConfig({
+      manualPhaseDistribution: {
+        charges: simulationResults_local.finalLoadDistribution || {A: 33.33, B: 33.33, C: 33.33},
+        productions: simulationResults_local.finalProductionDistribution || {A: 33.33, B: 33.33, C: 33.33},
+        constraints: {min: 10, max: 80, total: 100}
+      },
+      foisonnementCharges: simulationResults_local.calibratedFoisonnementCharges || currentProject.foisonnementCharges
+    });
+    
+    // Réinitialiser les résultats locaux après sauvegarde
+    setSimulationResults_local(null);
   };
 
   return (
@@ -245,15 +275,103 @@ export const ForcedModePanel = () => {
           </div>
         </div>
 
-        {/* Action */}
-        {isForcedMode && (
+        {/* Résultats de simulation */}
+        {simulationResults_local && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-blue-500" />
+                <Label className="text-sm font-medium">Résultats de la simulation</Label>
+              </div>
+              
+              {/* Statut de convergence */}
+              <div className={`p-3 rounded-md flex items-center gap-2 ${
+                simulationResults_local.convergenceStatus === 'converged' 
+                  ? 'bg-green-50 text-green-700' 
+                  : 'bg-red-50 text-red-700'
+              }`}>
+                {simulationResults_local.convergenceStatus === 'converged' ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4" />
+                    <span className="text-sm font-medium">Simulation du réseau stabilisée</span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="h-4 w-4" />
+                    <span className="text-sm font-medium">ATTENTION : Le simulateur n'a pas réussi à converger</span>
+                  </>
+                )}
+              </div>
+
+              {/* Répartition finale des charges */}
+              {simulationResults_local.finalLoadDistribution && (
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <div className="text-xs font-medium mb-2">Répartition finale des charges :</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>Phase A: {simulationResults_local.finalLoadDistribution.A.toFixed(1)}%</div>
+                    <div>Phase B: {simulationResults_local.finalLoadDistribution.B.toFixed(1)}%</div>
+                    <div>Phase C: {simulationResults_local.finalLoadDistribution.C.toFixed(1)}%</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Répartition finale des productions */}
+              {simulationResults_local.finalProductionDistribution && (
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <div className="text-xs font-medium mb-2">Répartition finale des productions :</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>Phase A: {simulationResults_local.finalProductionDistribution.A.toFixed(1)}%</div>
+                    <div>Phase B: {simulationResults_local.finalProductionDistribution.B.toFixed(1)}%</div>
+                    <div>Phase C: {simulationResults_local.finalProductionDistribution.C.toFixed(1)}%</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Foisonnement calibré */}
+              {simulationResults_local.calibratedFoisonnementCharges && (
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <div className="text-xs font-medium mb-1">Foisonnement calibré :</div>
+                  <div className="text-xs">{simulationResults_local.calibratedFoisonnementCharges.toFixed(1)}%</div>
+                </div>
+              )}
+
+              {/* Bouton de sauvegarde */}
+              {simulationResults_local.convergenceStatus === 'converged' && (
+                <Button
+                  onClick={saveSimulationResults}
+                  className="w-full"
+                  variant="default"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Sauvegarder les résultats dans le projet
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* Action de simulation */}
+        {isForcedMode && !simulationResults_local && (
           <Button
-            onClick={applyForcedMode}
+            onClick={runForcedSimulation}
             className="w-full"
             disabled={!localConfig.measurementNodeId || nonSourceNodes.length === 0}
           >
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            Appliquer le mode forcé
+            <Calculator className="h-4 w-4 mr-2" />
+            Lancer la simulation
+          </Button>
+        )}
+
+        {/* Nouvelle simulation */}
+        {isForcedMode && simulationResults_local && (
+          <Button
+            onClick={() => setSimulationResults_local(null)}
+            className="w-full"
+            variant="outline"
+          >
+            <Calculator className="h-4 w-4 mr-2" />
+            Nouvelle simulation
           </Button>
         )}
       </CardContent>
