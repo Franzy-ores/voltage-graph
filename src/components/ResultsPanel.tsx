@@ -15,7 +15,7 @@ interface ResultsPanelProps {
 }
 
 export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
-  const { currentProject } = useNetworkStore();
+  const { currentProject, simulationResults } = useNetworkStore();
   
   const currentResult = results[selectedScenario];
 
@@ -392,8 +392,7 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             {selectedScenario === 'FORCÉ' && (
               <div className="space-y-2">
                 {(() => {
-                  // Vérifier d'abord dans simulationResults
-                  const { simulationResults } = useNetworkStore();
+                  // Utiliser simulationResults déjà récupéré en haut du composant
                   const simResult = simulationResults[selectedScenario];
                   const convergenceStatus = simResult?.convergenceStatus || (currentResult as any)?.convergenceStatus;
                   
