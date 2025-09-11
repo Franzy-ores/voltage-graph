@@ -19,8 +19,6 @@ export const ForcedModePanel = () => {
     simulationResults
   } = useNetworkStore();
 
-  if (!currentProject) return null;
-
   const [localConfig, setLocalConfig] = useState({
     U1: currentProject.forcedModeConfig?.measuredVoltages.U1 || 225,
     U2: currentProject.forcedModeConfig?.measuredVoltages.U2 || 230,
@@ -34,6 +32,9 @@ export const ForcedModePanel = () => {
 
   // État local pour stocker les résultats de simulation
   const [simulationResults_local, setSimulationResults_local] = useState<any>(null);
+
+  // Early return after hooks
+  if (!currentProject) return null;
 
   // Calculer automatiquement le déséquilibre
   const calculateImbalancePercent = () => {
