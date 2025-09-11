@@ -432,7 +432,6 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                 
                 {/* Bouton de sauvegarde si convergé */}
                 {(() => {
-                  const { simulationResults } = useNetworkStore();
                   const simResult = simulationResults[selectedScenario];
                   const convergenceStatus = simResult?.convergenceStatus || (currentResult as any)?.convergenceStatus;
                   
