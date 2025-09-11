@@ -128,12 +128,6 @@ export interface Project {
     measurementNodeId: string;
     // Calibration: tension cible (nuit). 0 => pas de calibration, utiliser le foisonnement manuel
     targetVoltage?: number;
-    // Tensions de jour pour la répartition des phases (optionnel)
-    dayVoltages?: {
-      U1: number;
-      U2: number;
-      U3: number;
-    };
   };
   geographicBounds?: { // coordonnées géographiques du projet
     north: number;
@@ -253,6 +247,11 @@ export interface CalculationResult {
   }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
+  // Propriétés spécifiques au mode forcé
+  convergenceStatus?: 'converged' | 'not_converged';
+  finalLoadDistribution?: { A: number; B: number; C: number };
+  finalProductionDistribution?: { A: number; B: number; C: number };
+  calibratedFoisonnementCharges?: number;
 }
 
 export interface NetworkState {

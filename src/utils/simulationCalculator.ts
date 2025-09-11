@@ -43,13 +43,22 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
-   * Calcule les pourcentages finaux de répartition par phase
+   * Calcule les pourcentages finaux de répartition par phase basés sur la distribution réelle
    */
   private calculateFinalDistribution(
     nodes: Node[], 
     type: 'charges' | 'productions',
-    foisonnement: number
+    foisonnement: number,
+    manualDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
   ): {A: number; B: number; C: number} {
+    
+    // Si une distribution manuelle est définie, l'utiliser
+    if (manualDistribution) {
+      const distribution = type === 'charges' ? manualDistribution.charges : manualDistribution.productions;
+      return distribution;
+    }
+    
+    // Sinon, calculer à partir de la répartition réelle des nœuds
     let totalA = 0, totalB = 0, totalC = 0;
     
     nodes.forEach(node => {
@@ -58,8 +67,10 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       const totalPower = items.reduce((sum, item) => sum + (item.S_kVA || 0), 0) * (foisonnement / 100);
       
-      // Distribution équilibrée par défaut (33.33% par phase)
-      // Dans une vraie implémentation, ceci devrait refléter la distribution réelle calculée
+      // Pour une vraie distribution, ici on devrait récupérer la répartition phase réelle
+      // calculée par l'algorithme de flux de puissance.
+      // Pour l'instant, distribution équilibrée mais cela devrait être amélioré
+      // en récupérant les données des phases A, B, C calculées
       totalA += totalPower / 3;
       totalB += totalPower / 3;
       totalC += totalPower / 3;
@@ -85,7 +96,17 @@ export class SimulationCalculator extends ElectricalCalculator {
   ): CalculationResult {
     const config = project.forcedModeConfig!;
     const sourceNode = project.nodes.find(n => n.isSource);
-    const sourceVoltage = sourceNode?.tensionCible || (project.voltageSystem === 'TÉTRAPHASÉ_400V' ? 400 : 230);
+    
+    // Gestion correcte de la tension de référence selon le système de tension
+    let sourceVoltage = sourceNode?.tensionCible || 230;
+    if (project.voltageSystem === 'TÉTRAPHASÉ_400V') {
+      // En 400V, si targetVoltage est donnée en phase-neutre (230V), la référence reste à 400V pour le calcul
+      sourceVoltage = sourceNode?.tensionCible || 400;
+      // Si la tension cible est donnée en phase-neutre, on l'utilise directement pour la calibration
+      if (config.targetVoltage && config.targetVoltage <= 250) {
+        // Tension cible en phase-neutre, on garde cette valeur pour la calibration
+      }
+    }
     
     let foisonnementCharges = project.foisonnementCharges;
     let simulationConverged = false;
@@ -148,9 +169,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     // === PHASE 2: SIMULATION DE JOUR AVEC BOUCLE DE CONVERGENCE ===
     console.log('📊 Phase 2: Simulation de jour avec déséquilibre et boucle de convergence');
     
-    // Calculer le déséquilibre à partir des tensions de jour
-    const dayVoltages = config.dayVoltages || config.measuredVoltages;
-    const { U1, U2, U3 } = dayVoltages;
+    // Utiliser les tensions mesurées pour calculer le déséquilibre (unification des champs)
+    const { U1, U2, U3 } = config.measuredVoltages;
     const U_moy = (U1 + U2 + U3) / 3;
     const U_dev_max = Math.max(
       Math.abs(U1 - U_moy),
@@ -254,8 +274,18 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
     
     // Calculer les pourcentages finaux de répartition
-    const finalLoadDistribution = this.calculateFinalDistribution(modifiedNodes, 'charges', foisonnementCharges);
-    const finalProductionDistribution = this.calculateFinalDistribution(modifiedNodes, 'productions', 100);
+    const finalLoadDistribution = this.calculateFinalDistribution(
+      modifiedNodes, 
+      'charges', 
+      foisonnementCharges, 
+      project.manualPhaseDistribution
+    );
+    const finalProductionDistribution = this.calculateFinalDistribution(
+      modifiedNodes, 
+      'productions', 
+      100, 
+      project.manualPhaseDistribution
+    );
     
     // Retourner le résultat avec le statut de convergence et les pourcentages finaux
     return {
@@ -264,11 +294,6 @@ export class SimulationCalculator extends ElectricalCalculator {
       finalLoadDistribution,
       finalProductionDistribution,
       calibratedFoisonnementCharges: foisonnementCharges
-    } as CalculationResult & { 
-      convergenceStatus: 'converged' | 'not_converged';
-      finalLoadDistribution: {A: number; B: number; C: number};
-      finalProductionDistribution: {A: number; B: number; C: number};
-      calibratedFoisonnementCharges: number;
     };
   }
   

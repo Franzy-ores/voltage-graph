@@ -24,10 +24,7 @@ export const ForcedModePanel = () => {
     U2: currentProject.forcedModeConfig?.measuredVoltages.U2 || 230,
     U3: currentProject.forcedModeConfig?.measuredVoltages.U3 || 228,
     measurementNodeId: currentProject.forcedModeConfig?.measurementNodeId || "",
-    targetVoltage: currentProject.forcedModeConfig?.targetVoltage || 0,
-    dayU1: currentProject.forcedModeConfig?.dayVoltages?.U1 || 225,
-    dayU2: currentProject.forcedModeConfig?.dayVoltages?.U2 || 230,
-    dayU3: currentProject.forcedModeConfig?.dayVoltages?.U3 || 228
+    targetVoltage: currentProject.forcedModeConfig?.targetVoltage || 0
   });
 
   // État local pour stocker les résultats de simulation
@@ -64,12 +61,7 @@ export const ForcedModePanel = () => {
           U3: localConfig.U3
         },
         measurementNodeId: localConfig.measurementNodeId,
-        targetVoltage: localConfig.targetVoltage > 0 ? localConfig.targetVoltage : undefined,
-        dayVoltages: {
-          U1: localConfig.dayU1,
-          U2: localConfig.dayU2,
-          U3: localConfig.dayU3
-        }
+        targetVoltage: localConfig.targetVoltage > 0 ? localConfig.targetVoltage : undefined
       },
       desequilibrePourcent: calculatedImbalance
     });
@@ -84,7 +76,7 @@ export const ForcedModePanel = () => {
       if (simResult) {
         setSimulationResults_local(simResult);
       }
-    }, 100);
+    }, 200);
   };
 
   const saveSimulationResults = () => {
@@ -115,7 +107,7 @@ export const ForcedModePanel = () => {
           </Badge>
         </div>
         <CardDescription>
-          Saisissez 3 mesures de tension réelles pour ajuster automatiquement le déséquilibre
+          Calibrez le réseau en utilisant des mesures réelles de tension sur 3 phases
         </CardDescription>
       </CardHeader>
       
@@ -166,52 +158,9 @@ export const ForcedModePanel = () => {
           </div>
         </div>
 
-        {/* Phase 2: Tensions de jour */}
+        {/* Phase 2: Tensions mesurées pour répartition des phases */}
         <div className="space-y-2">
-          <Label className="text-xs font-medium">Phase 2 - Tensions de jour pour répartition des phases</Label>
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <Label className="text-xs text-muted-foreground">U1 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU1}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU1: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">U2 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU2}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU2: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">U3 jour (V)</Label>
-              <Input
-                type="number"
-                value={localConfig.dayU3}
-                onChange={(e) => setLocalConfig({ ...localConfig, dayU3: Number(e.target.value) })}
-                className="h-8"
-                disabled={!isForcedMode}
-                min={180}
-                max={250}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Tensions mesurées */}
-        <div>
-          <Label className="text-xs font-medium mb-2 block">Tensions mesurées (V)</Label>
+          <Label className="text-xs font-medium">Tensions mesurées pour déséquilibre (V)</Label>
           <div className="grid grid-cols-3 gap-2">
             <div>
               <Label className="text-xs text-muted-foreground">U1 (V)</Label>
