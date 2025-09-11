@@ -704,6 +704,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   updateAllCalculations: () => {
     const { currentProject } = get();
     if (!currentProject) return;
+    
+    // Don't calculate if no cables are present
+    if (!currentProject.cables || currentProject.cables.length === 0) {
+      console.log('⚠️ No cables present, skipping calculations');
+      return;
+    }
 
     const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
