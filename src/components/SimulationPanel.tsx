@@ -380,6 +380,9 @@ export const SimulationPanel = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
+          {/* Panel Mode Forcé */}
+          <ForcedModePanel />
+          
           <Tabs defaultValue="regulators" className="w-full">
             <TabsList className="grid w-full grid-cols-5 text-xs">
               <TabsTrigger value="forced" className="text-xs">

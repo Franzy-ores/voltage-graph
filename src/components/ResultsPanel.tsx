@@ -6,7 +6,7 @@ import { useNetworkStore } from '@/store/networkStore';
 import { jsPDF } from 'jspdf';
 import { getConnectedNodes, getConnectedCables } from '@/utils/networkConnectivity';
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
-import { ForcedModePanel } from "@/components/ForcedModePanel";
+
 
 interface ResultsPanelProps {
   results: {
@@ -255,8 +255,6 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   return (
     <div className="w-80 bg-card border-l border-border overflow-y-auto">
       <div className="p-4 space-y-4">
-        {/* Mode Forcé Panel - affiché uniquement pour le scénario FORCÉ */}
-        {selectedScenario === 'FORCÉ' && <ForcedModePanel />}
         
         {/* Global Summary */}
         <Card>
