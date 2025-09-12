@@ -162,6 +162,15 @@ export class SimulationCalculator extends ElectricalCalculator {
       if (!calibrationConverged) {
         console.warn(`⚠️ Calibration non convergée après ${maxCalibrationIter} itérations`);
       }
+      
+      // MISE À JOUR IMMÉDIATE DU PROJET AVEC LE FOISONNEMENT CALIBRÉ
+      console.log(`🔄 Mise à jour immédiate du foisonnement: ${foisonnementCharges}%`);
+      // Créer un événement personnalisé pour mettre à jour le store immédiatement
+      const updateEvent = new CustomEvent('updateProjectFoisonnement', { 
+        detail: { foisonnementCharges } 
+      });
+      window.dispatchEvent(updateEvent);
+      
     } else {
       console.log('📊 Phase 1: Utilisation du foisonnement manuel (pas de calibration)');
     }
@@ -188,7 +197,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // Boucle de convergence intelligente avec ajustement des phases
     const maxConvergenceIter = 30;
-    const convergenceTolerance = 0.5; // ±0.5V
+    const convergenceTolerance = 3.0; // ±3V comme demandé
     const maxAdjustmentPerIter = 3.0; // ±3% max par itération
     let previousVoltageErrors = [Infinity, Infinity, Infinity];
     let oscillationDetected = false;

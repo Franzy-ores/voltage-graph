@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,21 @@ export const ForcedModePanel = () => {
     updateAllCalculations,
     simulationResults
   } = useNetworkStore();
+
+  // Écouter les mises à jour de foisonnement depuis la simulation
+  useEffect(() => {
+    const handleFoisonnementUpdate = (event: CustomEvent) => {
+      console.log('🔄 Réception mise à jour foisonnement:', event.detail);
+      updateProjectConfig({
+        foisonnementCharges: event.detail.foisonnementCharges
+      });
+    };
+
+    window.addEventListener('updateProjectFoisonnement', handleFoisonnementUpdate as EventListener);
+    return () => {
+      window.removeEventListener('updateProjectFoisonnement', handleFoisonnementUpdate as EventListener);
+    };
+  }, [updateProjectConfig]);
 
   const [localConfig, setLocalConfig] = useState({
     U1: currentProject.forcedModeConfig?.measuredVoltages.U1 || 225,
