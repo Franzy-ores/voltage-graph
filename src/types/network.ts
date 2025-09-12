@@ -252,6 +252,11 @@ export interface CalculationResult {
   finalLoadDistribution?: { A: number; B: number; C: number };
   finalProductionDistribution?: { A: number; B: number; C: number };
   calibratedFoisonnementCharges?: number;
+  optimizedPhaseDistribution?: {
+    charges: { A: number; B: number; C: number };
+    productions: { A: number; B: number; C: number };
+    constraints: { min: number; max: number; total: number };
+  };
 }
 
 export interface NetworkState {

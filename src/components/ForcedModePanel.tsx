@@ -82,15 +82,19 @@ export const ForcedModePanel = () => {
   const saveSimulationResults = () => {
     if (!simulationResults_local) return;
     
-    // Sauvegarder les pourcentages finaux dans le projet
+    // Sauvegarder les pourcentages finaux et le foisonnement calibré dans le projet
     updateProjectConfig({
-      manualPhaseDistribution: {
+      manualPhaseDistribution: simulationResults_local.optimizedPhaseDistribution || {
         charges: simulationResults_local.finalLoadDistribution || {A: 33.33, B: 33.33, C: 33.33},
         productions: simulationResults_local.finalProductionDistribution || {A: 33.33, B: 33.33, C: 33.33},
-        constraints: {min: 10, max: 80, total: 100}
+        constraints: {min: 15, max: 70, total: 100}
       },
       foisonnementCharges: simulationResults_local.calibratedFoisonnementCharges || currentProject.foisonnementCharges
     });
+    
+    // Notification de succès
+    console.log('✅ Résultats sauvegardés - Foisonnement:', simulationResults_local.calibratedFoisonnementCharges, 
+                '% - Répartition charges:', simulationResults_local.finalLoadDistribution);
     
     // Réinitialiser les résultats locaux après sauvegarde
     setSimulationResults_local(null);
