@@ -29,6 +29,106 @@ export class ElectricalCalculator {
     this.cosPhi = value;
   }
 
+  /**
+   * Calcule la tension de source BT réelle basée sur la tension HT mesurée
+   * et le rapport de transformation du transformateur
+   * 
+   * Formule: V_BT_réelle = V_HT_mesurée × (V_BT_nominale / V_HT_nominale)
+   * 
+   * @param transformerConfig Configuration du transformateur
+   * @param htMeasuredVoltage Tension HT mesurée (V)
+   * @param htNominalVoltage Tension HT nominale (V)
+   * @param btNominalVoltage Tension BT nominale (V)
+   * @returns Tension de source BT réelle (V)
+   */
+  calculateSourceVoltage(
+    transformerConfig: TransformerConfig,
+    htMeasuredVoltage: number,
+    htNominalVoltage: number,
+    btNominalVoltage: number
+  ): number {
+    // Validation des paramètres
+    if (!isFinite(htMeasuredVoltage) || htMeasuredVoltage <= 0) {
+      console.warn(`⚠️ Tension HT mesurée invalide: ${htMeasuredVoltage}V, utilisation tension nominale BT`);
+      return transformerConfig.nominalVoltage_V;
+    }
+    
+    if (!isFinite(htNominalVoltage) || htNominalVoltage <= 0) {
+      console.warn(`⚠️ Tension HT nominale invalide: ${htNominalVoltage}V, utilisation tension nominale BT`);
+      return transformerConfig.nominalVoltage_V;
+    }
+    
+    if (!isFinite(btNominalVoltage) || btNominalVoltage <= 0) {
+      console.warn(`⚠️ Tension BT nominale invalide: ${btNominalVoltage}V, utilisation configuration transformateur`);
+      return transformerConfig.nominalVoltage_V;
+    }
+    
+    // Calcul du rapport de transformation
+    const transformationRatio = btNominalVoltage / htNominalVoltage;
+    const realSourceVoltage = htMeasuredVoltage * transformationRatio;
+    
+    console.log(`📊 Calcul tension source réaliste:`);
+    console.log(`   - Tension HT mesurée: ${htMeasuredVoltage.toFixed(1)}V`);
+    console.log(`   - Tension HT nominale: ${htNominalVoltage.toFixed(1)}V`);
+    console.log(`   - Tension BT nominale: ${btNominalVoltage.toFixed(1)}V`);
+    console.log(`   - Rapport transformation: ${transformationRatio.toFixed(6)}`);
+    console.log(`   - Tension source BT réelle: ${realSourceVoltage.toFixed(1)}V`);
+    
+    return realSourceVoltage;
+  }
+
+  /**
+   * Détermine la tension de référence à utiliser pour les calculs
+   * Priorité: tensionCible > calcul HT réaliste > tension nominale transformateur > tension base
+   * 
+   * @param source Nœud source
+   * @param transformerConfig Configuration du transformateur
+   * @param project Configuration du projet (pour config HT)
+   * @param baseVoltage Tension de base par défaut
+   * @returns Tension de référence (V)
+   */
+  private determineReferenceVoltage(
+    source: Node,
+    transformerConfig: TransformerConfig,
+    project: Project,
+    baseVoltage: number
+  ): number {
+    // 1. Priorité absolue: tension cible définie explicitement
+    if (source.tensionCible) {
+      console.log(`🎯 Utilisation tension cible explicite: ${source.tensionCible}V`);
+      return source.tensionCible;
+    }
+
+    // 2. Si configuration HT disponible, calcul réaliste
+    if (project.htVoltageConfig) {
+      const {
+        nominalVoltageHT_V,
+        nominalVoltageBT_V,
+        measuredVoltageHT_V
+      } = project.htVoltageConfig;
+
+      const realisticVoltage = this.calculateSourceVoltage(
+        transformerConfig,
+        measuredVoltageHT_V,
+        nominalVoltageHT_V,
+        nominalVoltageBT_V
+      );
+      
+      console.log(`🔌 Utilisation tension HT réaliste: ${realisticVoltage.toFixed(1)}V`);
+      return realisticVoltage;
+    }
+
+    // 3. Tension nominale du transformateur
+    if (transformerConfig?.nominalVoltage_V) {
+      console.log(`⚡ Utilisation tension nominale transformateur: ${transformerConfig.nominalVoltage_V}V`);
+      return transformerConfig.nominalVoltage_V;
+    }
+
+    // 4. Tension de base par défaut
+    console.log(`📋 Utilisation tension de base: ${baseVoltage}V`);
+    return baseVoltage;
+  }
+
   // ---- utilitaires ----
   private deg2rad(deg: number) { return deg * Math.PI / 180; }
 
@@ -281,7 +381,70 @@ export class ElectricalCalculator {
     };
   }
 
-  // ---- calcul d'un scénario ----
+  /**
+   * Version étendue de calculateScenario avec support de la configuration HT
+   * @param project Projet contenant la configuration HT
+   * @param scenario Scénario de calcul
+   * @param foisonnementCharges Foisonnement des charges
+   * @param foisonnementProductions Foisonnement des productions
+   * @param manualPhaseDistribution Distribution manuelle des phases (optionnel)
+   */
+  calculateScenarioWithHTConfig(
+    project: Project,
+    scenario: CalculationScenario,
+    foisonnementCharges: number = 100,
+    foisonnementProductions: number = 100,
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
+  ): CalculationResult {
+    // Si configuration HT disponible, ajuster la tension de la source
+    let modifiedNodes = [...project.nodes];
+    
+    if (project.htVoltageConfig && project.transformerConfig) {
+      const {
+        nominalVoltageHT_V,
+        nominalVoltageBT_V,
+        measuredVoltageHT_V
+      } = project.htVoltageConfig;
+
+      const sourceNode = modifiedNodes.find(n => n.isSource);
+      if (sourceNode && !sourceNode.tensionCible) {
+        // Calculer la tension source réaliste
+        const realisticVoltage = this.calculateSourceVoltage(
+          project.transformerConfig,
+          measuredVoltageHT_V,
+          nominalVoltageHT_V,
+          nominalVoltageBT_V
+        );
+
+        // Créer une copie du nœud source avec la tension calculée
+        const modifiedSourceNode = {
+          ...sourceNode,
+          tensionCible: realisticVoltage
+        };
+
+        // Remplacer le nœud source dans la liste
+        modifiedNodes = modifiedNodes.map(n => 
+          n.id === sourceNode.id ? modifiedSourceNode : n
+        );
+
+        console.log(`🔌 Application tension source HT réaliste: ${realisticVoltage.toFixed(1)}V`);
+      }
+    }
+
+    // Appeler la méthode standard avec les nœuds modifiés
+    return this.calculateScenario(
+      modifiedNodes,
+      project.cables,
+      project.cableTypes,
+      scenario,
+      foisonnementCharges,
+      foisonnementProductions,
+      project.transformerConfig,
+      project.loadModel ?? 'polyphase_equilibre',
+      project.desequilibrePourcent ?? 0,
+      manualPhaseDistribution
+    );
+  }
   calculateScenario(
     nodes: Node[],
     cables: Cable[],

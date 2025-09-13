@@ -115,6 +115,12 @@ export interface Project {
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
   transformerConfig: TransformerConfig; // Configuration du transformateur HT1/BT
+  // Configuration tension HT pour calcul source réaliste
+  htVoltageConfig?: {
+    nominalVoltageHT_V: number;    // Tension nominale HT (V) - ex: 20000V
+    nominalVoltageBT_V: number;    // Tension nominale BT (V) - ex: 400V
+    measuredVoltageHT_V: number;   // Tension HT mesurée (V)
+  };
   // Nouveau: modèle de charge et taux de déséquilibre
   loadModel?: LoadModel; // 'polyphase_equilibre' par défaut (compatibilité)
   desequilibrePourcent?: number; // 0 à 100, uniquement si loadModel = 'monophase_reparti'

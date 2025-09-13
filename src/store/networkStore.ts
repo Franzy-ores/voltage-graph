@@ -714,52 +714,32 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
     const results = {
-      PRÉLÈVEMENT: calculator.calculateScenario(
-        currentProject.nodes,
-        currentProject.cables,
-        currentProject.cableTypes,
+      PRÉLÈVEMENT: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'PRÉLÈVEMENT',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      MIXTE: calculator.calculateScenario(
-        currentProject.nodes,
-        currentProject.cables,
-        currentProject.cableTypes,
+      MIXTE: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'MIXTE',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      PRODUCTION: calculator.calculateScenario(
-        currentProject.nodes,
-        currentProject.cables,
-        currentProject.cableTypes,
+      PRODUCTION: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'PRODUCTION',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      FORCÉ: calculator.calculateScenario(
-        currentProject.nodes,
-        currentProject.cables,
-        currentProject.cableTypes,
+      FORCÉ: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'FORCÉ',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       )
     };
@@ -835,40 +815,25 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
     const results = {
-      PRÉLÈVEMENT: calculator.calculateScenario(
-        currentProject.nodes, 
-        currentProject.cables, 
-        currentProject.cableTypes, 
+      PRÉLÈVEMENT: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'PRÉLÈVEMENT',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      MIXTE: calculator.calculateScenario(
-        currentProject.nodes, 
-        currentProject.cables, 
-        currentProject.cableTypes, 
+      MIXTE: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'MIXTE',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
-      PRODUCTION: calculator.calculateScenario(
-        currentProject.nodes, 
-        currentProject.cables, 
-        currentProject.cableTypes, 
+      PRODUCTION: calculator.calculateScenarioWithHTConfig(
+        currentProject,
         'PRODUCTION',
         currentProject.foisonnementCharges,
         currentProject.foisonnementProductions,
-        currentProject.transformerConfig,
-        currentProject.loadModel ?? 'polyphase_equilibre',
-        currentProject.desequilibrePourcent ?? 0,
         currentProject.manualPhaseDistribution
       ),
       FORCÉ: (() => {
@@ -885,30 +850,20 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
           } catch (error) {
             console.error('Erreur simulation mode FORCÉ:', error);
             // Fallback vers calcul standard
-            return calculator.calculateScenario(
-              currentProject.nodes, 
-              currentProject.cables, 
-              currentProject.cableTypes, 
+            return calculator.calculateScenarioWithHTConfig(
+              currentProject,
               'FORCÉ',
               currentProject.foisonnementCharges,
               currentProject.foisonnementProductions,
-              currentProject.transformerConfig,
-              currentProject.loadModel ?? 'polyphase_equilibre',
-              currentProject.desequilibrePourcent ?? 0,
               currentProject.manualPhaseDistribution
             );
           }
         } else {
-          return calculator.calculateScenario(
-            currentProject.nodes, 
-            currentProject.cables, 
-            currentProject.cableTypes, 
+          return calculator.calculateScenarioWithHTConfig(
+            currentProject,
             'FORCÉ',
             currentProject.foisonnementCharges,
             currentProject.foisonnementProductions,
-            currentProject.transformerConfig,
-            currentProject.loadModel ?? 'polyphase_equilibre',
-            currentProject.desequilibrePourcent ?? 0,
             currentProject.manualPhaseDistribution
           );
         }
@@ -1011,16 +966,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         foisonnementProductions: 0 // Ignorer les productions pour tension cible
       };
 
-      const result = calculator.calculateScenario(
-        tempProject.nodes,
-        tempProject.cables,
-        tempProject.cableTypes,
+      const result = calculator.calculateScenarioWithHTConfig(
+        tempProject,
         selectedScenario,
         testFoisonnement,
-        0,
-        tempProject.transformerConfig,
-        tempProject.loadModel ?? 'polyphase_equilibre',
-        tempProject.desequilibrePourcent ?? 0,
+        0, // Ignorer les productions pour tension cible
         tempProject.manualPhaseDistribution
       );
 
