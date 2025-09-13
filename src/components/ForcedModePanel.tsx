@@ -21,12 +21,21 @@ export const ForcedModePanel = () => {
 
   // Écouter les mises à jour de foisonnement depuis la simulation
   useEffect(() => {
-    const handleFoisonnementUpdate = (event: CustomEvent) => {
-      console.log('🔄 Réception mise à jour foisonnement:', event.detail);
-      updateProjectConfig({
-        foisonnementCharges: event.detail.foisonnementCharges
-      });
-    };
+      // Écouter les mises à jour de foisonnement depuis la simulation
+      const handleFoisonnementUpdate = (event: CustomEvent) => {
+        console.log('🔄 Réception mise à jour foisonnement:', event.detail);
+        updateProjectConfig({
+          foisonnementCharges: event.detail.foisonnementCharges
+        });
+        
+        // Mettre à jour les répartitions si disponibles
+        if (event.detail.finalDistribution) {
+          updateProjectConfig({
+            manualPhaseDistribution: event.detail.finalDistribution
+          });
+          console.log('🔄 Répartitions des phases mises à jour:', event.detail.finalDistribution);
+        }
+      };
 
     window.addEventListener('updateProjectFoisonnement', handleFoisonnementUpdate as EventListener);
     return () => {
