@@ -64,6 +64,13 @@ const calculateProjectBounds = (nodes: Node[]) => {
 
 interface NetworkStoreState extends NetworkState {
   selectedCableType: string;
+  simulationPreview: {
+    foisonnementCharges?: number;
+    loadDistribution?: { A: number; B: number; C: number };
+    productionDistribution?: { A: number; B: number; C: number };
+    desequilibrePourcent?: number;
+    isActive: boolean;
+  };
 }
 
 interface NetworkActions {
@@ -98,6 +105,8 @@ interface NetworkActions {
   
   // Simulation actions
   toggleSimulationMode: () => void;
+  updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
+  clearSimulationPreview: () => void;
   addVoltageRegulator: (nodeId: string) => void;
   removeVoltageRegulator: (regulatorId: string) => void;
   updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => void;
@@ -242,6 +251,10 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
 });
 
 export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
+  // État de preview de simulation
+  simulationPreview: {
+    isActive: false
+  },
   // State
   currentProject: createDefaultProject(),
   selectedScenario: 'MIXTE',
@@ -1262,5 +1275,24 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       console.error('Erreur lors de la simulation:', error);
       toast.error('Erreur lors du calcul de simulation');
     }
+  },
+
+  // Actions de preview de simulation
+  updateSimulationPreview: (preview) => {
+    set(state => ({
+      simulationPreview: {
+        ...state.simulationPreview,
+        ...preview,
+        isActive: true
+      }
+    }));
+  },
+
+  clearSimulationPreview: () => {
+    set({
+      simulationPreview: {
+        isActive: false
+      }
+    });
   }
 }));

@@ -31,7 +31,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
     updateCableTypes,
     updateProjectConfig,
     setFoisonnementCharges,
-    setFoisonnementProductions
+    setFoisonnementProductions,
+    simulationPreview
   } = useNetworkStore();
 
   const handleExportPDF = async () => {
@@ -278,34 +279,41 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
-              {/* Foisonnement Sliders */}
-              <div className="flex items-center gap-4">
-                {/* Charges Slider */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Charges {currentProject.foisonnementCharges}%</Label>
-                  <Slider
-                    value={[currentProject.foisonnementCharges]}
-                    onValueChange={(value) => setFoisonnementCharges(value[0])}
-                    max={100}
-                    min={0}
-                    step={1}
-                    className="w-32 slider-charges"
-                  />
-                </div>
+                {/* Foisonnement Sliders */}
+                <div className="flex items-center gap-4">
+                  {/* Charges Slider */}
+                  <div className="flex items-center gap-2">
+                    <Label className={`text-sm font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                      Charges {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
+                      {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
+                        <span className="text-xs ml-1 text-orange-200">(sim)</span>
+                      )}
+                    </Label>
+                    <Slider
+                      value={[currentProject.foisonnementCharges]}
+                      onValueChange={(value) => setFoisonnementCharges(value[0])}
+                      max={100}
+                      min={0}
+                      step={1}
+                      className="w-32 slider-charges"
+                      disabled={simulationPreview.isActive}
+                    />
+                  </div>
 
-                {/* Productions Slider */}
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
-                  <Slider
-                    value={[currentProject.foisonnementProductions]}
-                    onValueChange={(value) => setFoisonnementProductions(value[0])}
-                    max={100}
-                    min={0}
-                    step={1}
-                    className="w-32 slider-productions"
-                  />
+                  {/* Productions Slider */}
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
+                    <Slider
+                      value={[currentProject.foisonnementProductions]}
+                      onValueChange={(value) => setFoisonnementProductions(value[0])}
+                      max={100}
+                      min={0}
+                      step={1}
+                      className="w-32 slider-productions"
+                      disabled={simulationPreview.isActive}
+                    />
+                  </div>
                 </div>
-              </div>
 
               {/* Phase Distribution Sliders */}
               {currentProject.loadModel === 'monophase_reparti' && (

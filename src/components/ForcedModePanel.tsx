@@ -16,7 +16,9 @@ export const ForcedModePanel = () => {
     updateProjectConfig,
     runSimulation,
     updateAllCalculations,
-    simulationResults
+    simulationResults,
+    updateSimulationPreview,
+    clearSimulationPreview
   } = useNetworkStore();
 
   // Écouter les mises à jour de foisonnement depuis la simulation
@@ -99,6 +101,14 @@ export const ForcedModePanel = () => {
       const simResult = simulationResults['FORCÉ'];
       if (simResult) {
         setSimulationResults_local(simResult);
+        
+        // Mettre à jour le preview dans le store
+        updateSimulationPreview({
+          foisonnementCharges: simResult.calibratedFoisonnementCharges,
+          loadDistribution: simResult.finalLoadDistribution,
+          productionDistribution: simResult.finalProductionDistribution,
+          desequilibrePourcent: calculatedImbalance
+        });
       }
     }, 200);
   };
@@ -137,6 +147,7 @@ export const ForcedModePanel = () => {
     
     // Réinitialiser les résultats locaux après sauvegarde
     setSimulationResults_local(null);
+    clearSimulationPreview();
   };
 
   return (
@@ -380,7 +391,10 @@ export const ForcedModePanel = () => {
                 )}
                 
                 <Button
-                  onClick={() => setSimulationResults_local(null)}
+                  onClick={() => {
+                    setSimulationResults_local(null);
+                    clearSimulationPreview();
+                  }}
                   className="w-full"
                   variant="outline"
                 >
@@ -407,7 +421,10 @@ export const ForcedModePanel = () => {
         {/* Nouvelle simulation */}
         {isForcedMode && simulationResults_local && (
           <Button
-            onClick={() => setSimulationResults_local(null)}
+            onClick={() => {
+              setSimulationResults_local(null);
+              clearSimulationPreview();
+            }}
             className="w-full"
             variant="outline"
           >
