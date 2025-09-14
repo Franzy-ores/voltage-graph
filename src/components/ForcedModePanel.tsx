@@ -104,21 +104,36 @@ export const ForcedModePanel = () => {
   };
 
   const saveSimulationResults = () => {
-    if (!simulationResults_local) return;
+    if (!simulationResults_local || simulationResults_local.convergenceStatus !== 'converged') return;
     
-    // Sauvegarder les pourcentages finaux et le foisonnement calibré dans le projet
-    updateProjectConfig({
-      manualPhaseDistribution: simulationResults_local.optimizedPhaseDistribution || {
+    // Appliquer les pourcentages de répartition optimisés au projet
+    const updatedConfig: any = {};
+    
+    // Sauvegarder les répartitions finales si disponibles
+    if (simulationResults_local.finalLoadDistribution || simulationResults_local.finalProductionDistribution) {
+      updatedConfig.manualPhaseDistribution = {
         charges: simulationResults_local.finalLoadDistribution || {A: 33.33, B: 33.33, C: 33.33},
         productions: simulationResults_local.finalProductionDistribution || {A: 33.33, B: 33.33, C: 33.33},
         constraints: {min: 15, max: 70, total: 100}
-      },
-      foisonnementCharges: simulationResults_local.calibratedFoisonnementCharges || currentProject.foisonnementCharges
-    });
+      };
+    }
     
-    // Notification de succès
-    console.log('✅ Résultats sauvegardés - Foisonnement:', simulationResults_local.calibratedFoisonnementCharges, 
-                '% - Répartition charges:', simulationResults_local.finalLoadDistribution);
+    // Sauvegarder le foisonnement calibré si disponible
+    if (simulationResults_local.calibratedFoisonnementCharges !== undefined) {
+      updatedConfig.foisonnementCharges = simulationResults_local.calibratedFoisonnementCharges;
+    }
+    
+    // Appliquer les changements au projet
+    updateProjectConfig(updatedConfig);
+    
+    // Déclencher la mise à jour des calculs avec les nouveaux paramètres
+    updateAllCalculations();
+    
+    console.log('✅ Résultats appliqués au projet:', {
+      foisonnement: simulationResults_local.calibratedFoisonnementCharges,
+      charges: simulationResults_local.finalLoadDistribution,
+      productions: simulationResults_local.finalProductionDistribution
+    });
     
     // Réinitialiser les résultats locaux après sauvegarde
     setSimulationResults_local(null);
@@ -261,70 +276,118 @@ export const ForcedModePanel = () => {
               <div className="flex items-center gap-2">
                 <Calculator className="h-4 w-4 text-blue-500" />
                 <Label className="text-sm font-medium">Résultats de la simulation</Label>
+                {simulationResults_local.iterations && (
+                  <Badge variant="outline" className="text-xs">
+                    {simulationResults_local.iterations} itérations
+                  </Badge>
+                )}
               </div>
               
               {/* Statut de convergence */}
               <div className={`p-3 rounded-md flex items-center gap-2 ${
                 simulationResults_local.convergenceStatus === 'converged' 
-                  ? 'bg-green-50 text-green-700' 
-                  : 'bg-red-50 text-red-700'
+                  ? 'bg-green-50 text-green-700 border border-green-200' 
+                  : 'bg-red-50 text-red-700 border border-red-200'
               }`}>
                 {simulationResults_local.convergenceStatus === 'converged' ? (
                   <>
                     <CheckCircle2 className="h-4 w-4" />
-                    <span className="text-sm font-medium">Simulation du réseau stabilisée</span>
+                    <span className="text-sm font-medium">Simulation convergée avec succès</span>
                   </>
                 ) : (
                   <>
                     <AlertTriangle className="h-4 w-4" />
-                    <span className="text-sm font-medium">ATTENTION : Le simulateur n'a pas réussi à converger</span>
+                    <span className="text-sm font-medium">Échec de la convergence</span>
                   </>
                 )}
               </div>
 
+              {/* Erreurs de tension */}
+              {simulationResults_local.voltageErrors && (
+                <div className="bg-muted/50 p-3 rounded-md">
+                  <div className="text-xs font-medium mb-2">Erreurs de tension finales :</div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div>Phase A: {Math.abs(simulationResults_local.voltageErrors.A).toFixed(2)}V</div>
+                    <div>Phase B: {Math.abs(simulationResults_local.voltageErrors.B).toFixed(2)}V</div>
+                    <div>Phase C: {Math.abs(simulationResults_local.voltageErrors.C).toFixed(2)}V</div>
+                  </div>
+                </div>
+              )}
+
               {/* Répartition finale des charges */}
               {simulationResults_local.finalLoadDistribution && (
-                <div className="bg-muted/50 p-3 rounded-md">
-                  <div className="text-xs font-medium mb-2">Répartition finale des charges :</div>
+                <div className="bg-blue-50/50 p-3 rounded-md border border-blue-200">
+                  <div className="text-xs font-medium mb-2 text-blue-800">Répartition optimisée des charges :</div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>Phase A: {simulationResults_local.finalLoadDistribution.A.toFixed(1)}%</div>
-                    <div>Phase B: {simulationResults_local.finalLoadDistribution.B.toFixed(1)}%</div>
-                    <div>Phase C: {simulationResults_local.finalLoadDistribution.C.toFixed(1)}%</div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase A</div>
+                      <div className="font-semibold text-blue-700">{simulationResults_local.finalLoadDistribution.A.toFixed(1)}%</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase B</div>
+                      <div className="font-semibold text-blue-700">{simulationResults_local.finalLoadDistribution.B.toFixed(1)}%</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase C</div>
+                      <div className="font-semibold text-blue-700">{simulationResults_local.finalLoadDistribution.C.toFixed(1)}%</div>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Répartition finale des productions */}
               {simulationResults_local.finalProductionDistribution && (
-                <div className="bg-muted/50 p-3 rounded-md">
-                  <div className="text-xs font-medium mb-2">Répartition finale des productions :</div>
+                <div className="bg-green-50/50 p-3 rounded-md border border-green-200">
+                  <div className="text-xs font-medium mb-2 text-green-800">Répartition optimisée des productions :</div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div>Phase A: {simulationResults_local.finalProductionDistribution.A.toFixed(1)}%</div>
-                    <div>Phase B: {simulationResults_local.finalProductionDistribution.B.toFixed(1)}%</div>
-                    <div>Phase C: {simulationResults_local.finalProductionDistribution.C.toFixed(1)}%</div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase A</div>
+                      <div className="font-semibold text-green-700">{simulationResults_local.finalProductionDistribution.A.toFixed(1)}%</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase B</div>
+                      <div className="font-semibold text-green-700">{simulationResults_local.finalProductionDistribution.B.toFixed(1)}%</div>
+                    </div>
+                    <div className="bg-white/50 p-2 rounded text-center">
+                      <div className="text-muted-foreground">Phase C</div>
+                      <div className="font-semibold text-green-700">{simulationResults_local.finalProductionDistribution.C.toFixed(1)}%</div>
+                    </div>
                   </div>
                 </div>
               )}
 
               {/* Foisonnement calibré */}
               {simulationResults_local.calibratedFoisonnementCharges && (
-                <div className="bg-muted/50 p-3 rounded-md">
-                  <div className="text-xs font-medium mb-1">Foisonnement calibré :</div>
-                  <div className="text-xs">{simulationResults_local.calibratedFoisonnementCharges.toFixed(1)}%</div>
+                <div className="bg-orange-50/50 p-3 rounded-md border border-orange-200">
+                  <div className="text-xs font-medium mb-1 text-orange-800">Foisonnement calibré :</div>
+                  <div className="text-lg font-semibold text-orange-700 text-center">
+                    {simulationResults_local.calibratedFoisonnementCharges.toFixed(1)}%
+                  </div>
                 </div>
               )}
 
-              {/* Bouton de sauvegarde */}
-              {simulationResults_local.convergenceStatus === 'converged' && (
+              {/* Boutons d'action */}
+              <div className="space-y-2">
+                {simulationResults_local.convergenceStatus === 'converged' && (
+                  <Button
+                    onClick={saveSimulationResults}
+                    className="w-full"
+                    variant="default"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    Appliquer les résultats au projet
+                  </Button>
+                )}
+                
                 <Button
-                  onClick={saveSimulationResults}
+                  onClick={() => setSimulationResults_local(null)}
                   className="w-full"
-                  variant="default"
+                  variant="outline"
                 >
-                  <Save className="h-4 w-4 mr-2" />
-                  Sauvegarder les résultats dans le projet
+                  <Calculator className="h-4 w-4 mr-2" />
+                  Nouvelle simulation
                 </Button>
-              )}
+              </div>
             </div>
           </>
         )}
