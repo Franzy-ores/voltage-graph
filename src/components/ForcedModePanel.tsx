@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useNetworkStore } from "@/store/networkStore";
+import { SimulationCalculator } from "@/utils/simulationCalculator";
+import { toast } from "sonner";
 import { Zap, AlertTriangle, CheckCircle2, Save, Calculator } from "lucide-react";
 
 export const ForcedModePanel = () => {
@@ -76,41 +78,82 @@ export const ForcedModePanel = () => {
   const imbalancePercent = calculateImbalancePercent();
 
   const runForcedSimulation = async () => {
-    const calculatedImbalance = calculateImbalancePercent();
-    
-    // Mettre à jour la configuration du projet
-    updateProjectConfig({
-      forcedModeConfig: {
-        measuredVoltages: {
-          U1: localConfig.U1,
-          U2: localConfig.U2,
-          U3: localConfig.U3
-        },
-        measurementNodeId: localConfig.measurementNodeId,
-        targetVoltage: localConfig.targetVoltage > 0 ? localConfig.targetVoltage : undefined
-      },
-      desequilibrePourcent: calculatedImbalance
-    });
+    if (!currentProject || !localConfig.measurementNodeId) {
+      toast.error("Configuration incomplète pour la simulation");
+      return;
+    }
 
-    // Déclencher les calculs normaux ET la simulation
-    updateAllCalculations();
-    runSimulation();
-    
-    // Récupérer les résultats après simulation
-    setTimeout(() => {
-      const simResult = simulationResults['FORCÉ'];
-      if (simResult) {
-        setSimulationResults_local(simResult);
-        
-        // Mettre à jour le preview dans le store
-        updateSimulationPreview({
-          foisonnementCharges: simResult.calibratedFoisonnementCharges,
-          loadDistribution: simResult.finalLoadDistribution,
-          productionDistribution: simResult.finalProductionDistribution,
-          desequilibrePourcent: calculatedImbalance
-        });
+    try {
+      toast.info("Démarrage de la simulation forcée...");
+      
+      // Créer une instance du calculateur de simulation
+      const calculator = new SimulationCalculator(currentProject.cosPhi);
+      
+      // Estimer la tension manquante en 230V si nécessaire
+      let { U1, U2, U3 } = localConfig;
+      if (currentProject.voltageSystem === 'TRIPHASÉ_230V') {
+        // Logique d'estimation simple pour la 3ème tension
+        const validVoltages = [U1, U2, U3].filter(v => v && v > 0);
+        if (validVoltages.length === 2) {
+          const averageMeasured = validVoltages.reduce((sum, v) => sum + v, 0) / validVoltages.length;
+          const nominalVoltage = 230;
+          
+          if (!U1 || U1 <= 0) U1 = nominalVoltage + (nominalVoltage - averageMeasured);
+          if (!U2 || U2 <= 0) U2 = nominalVoltage + (nominalVoltage - averageMeasured);
+          if (!U3 || U3 <= 0) U3 = nominalVoltage + (nominalVoltage - averageMeasured);
+          
+          console.log(`📊 Tension manquante estimée: ${averageMeasured.toFixed(1)}V`);
+        }
       }
-    }, 200);
+      
+      // Déterminer la tension source
+      const sourceNode = currentProject.nodes.find(n => n.isSource);
+      const sourceVoltage = localConfig.targetVoltage > 0 ? localConfig.targetVoltage : (sourceNode?.tensionCible || 230);
+      
+      // Lancer la simulation forcée avec algorithme de convergence
+      const result = await calculator.runForcedModeConvergence(
+        currentProject,
+        { U1, U2, U3 },
+        localConfig.measurementNodeId,
+        sourceVoltage
+      );
+      
+      if (result.result) {
+        // Stocker les résultats de la simulation
+        const enhancedResult = {
+          ...result.result,
+          convergenceStatus: result.convergenceStatus,
+          voltageErrors: result.voltageErrors,
+          iterations: result.iterations,
+          finalLoadDistribution: result.finalLoadDistribution,
+          finalProductionDistribution: result.finalProductionDistribution,
+          calibratedFoisonnementCharges: result.calibratedFoisonnementCharges
+        };
+        
+        setSimulationResults_local(enhancedResult);
+        
+        // Mettre à jour le preview dans the store
+        updateSimulationPreview({
+          foisonnementCharges: result.calibratedFoisonnementCharges || result.foisonnementCharges,
+          loadDistribution: result.finalLoadDistribution,
+          productionDistribution: result.finalProductionDistribution,
+          desequilibrePourcent: result.desequilibrePourcent
+        });
+
+        // Message de succès/échec
+        if (result.convergenceStatus === 'converged') {
+          toast.success(`Simulation convergée en ${result.iterations} itérations !`);
+        } else {
+          toast.warning("Simulation terminée sans convergence complète");
+        }
+      } else {
+        toast.error("Échec de la simulation forcée");
+      }
+      
+    } catch (error) {
+      console.error('Erreur simulation forcée:', error);
+      toast.error("Erreur lors de la simulation forcée");
+    }
   };
 
   const saveSimulationResults = () => {
