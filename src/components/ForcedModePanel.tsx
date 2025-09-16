@@ -111,7 +111,7 @@ export const ForcedModePanel = () => {
       const sourceVoltage = localConfig.targetVoltage > 0 ? localConfig.targetVoltage : (sourceNode?.tensionCible || 230);
       
       // Lancer la simulation forcée avec algorithme de convergence
-      const result = await calculator.runForcedModeSimulation(
+      const result = await calculator.runForcedModeConvergence(
         currentProject,
         { U1, U2, U3 },
         localConfig.measurementNodeId,
