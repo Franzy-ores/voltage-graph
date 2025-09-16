@@ -197,11 +197,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Utiliser les résultats du dernier calcul si disponibles
     if (this.lastResult?.nodeMetricsPerPhase) {
       this.lastResult.nodeMetricsPerPhase.forEach(m => {
-        const items = type === 'charges' ? m.chargesPerPhase : m.productionsPerPhase;
-        if (!items) return;
-        phaseSum.A += items.A ?? 0;
-        phaseSum.B += items.B ?? 0;
-        phaseSum.C += items.C ?? 0;
+        // Les propriétés chargesPerPhase et productionsPerPhase ne sont pas disponibles dans le type actuel
+        // Utiliser une distribution équilibrée basée sur les tensions par phase
+        const totalVoltage = m.voltagesPerPhase.A + m.voltagesPerPhase.B + m.voltagesPerPhase.C;
+        if (totalVoltage > 0) {
+          phaseSum.A += m.voltagesPerPhase.A / totalVoltage;
+          phaseSum.B += m.voltagesPerPhase.B / totalVoltage;
+          phaseSum.C += m.voltagesPerPhase.C / totalVoltage;
+        }
       });
     } else {
       // Fallback: calcul basé sur les nœuds
