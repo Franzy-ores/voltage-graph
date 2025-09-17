@@ -52,7 +52,12 @@ export const ForcedModePanel = () => {
     U2: currentProject.forcedModeConfig?.measuredVoltages.U2 || 230,
     U3: currentProject.forcedModeConfig?.measuredVoltages.U3 || 228,
     measurementNodeId: currentProject.forcedModeConfig?.measurementNodeId || "",
-    targetVoltage: currentProject.forcedModeConfig?.targetVoltage || 0
+    targetVoltage: currentProject.forcedModeConfig?.targetVoltage || 0,
+    // Nouvelles tensions de référence pour l'estimation analytique
+    nightU1: 235,
+    nightU2: 235,
+    nightU3: 235,
+    useAnalyticalEstimation: false
   });
 
   // État local pour stocker les résultats de simulation
@@ -110,12 +115,18 @@ export const ForcedModePanel = () => {
       const sourceNode = currentProject.nodes.find(n => n.isSource);
       const sourceVoltage = localConfig.targetVoltage > 0 ? localConfig.targetVoltage : (sourceNode?.tensionCible || 230);
       
-      // Lancer la simulation forcée avec algorithme de convergence
+      // Lancer la simulation forcée avec algorithme hybride
       const result = await calculator.runForcedModeConvergence(
         currentProject,
         { U1, U2, U3 },
         localConfig.measurementNodeId,
-        sourceVoltage
+        sourceVoltage,
+        // Passer les tensions de nuit si l'estimation analytique est activée
+        localConfig.useAnalyticalEstimation ? {
+          U1: localConfig.nightU1,
+          U2: localConfig.nightU2,
+          U3: localConfig.nightU3
+        } : undefined
       );
       
       if (result.result) {
@@ -253,6 +264,71 @@ export const ForcedModePanel = () => {
               placeholder="0 pour utiliser le foisonnement manuel"
             />
           </div>
+        </div>
+
+        {/* Estimation analytique hybride */}
+        <div className="space-y-3 bg-blue-50/50 p-3 rounded-md border border-blue-200">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="useAnalyticalEstimation"
+              checked={localConfig.useAnalyticalEstimation}
+              onChange={(e) => setLocalConfig({ ...localConfig, useAnalyticalEstimation: e.target.checked })}
+              disabled={!isForcedMode}
+              className="rounded"
+            />
+            <Label htmlFor="useAnalyticalEstimation" className="text-xs font-medium text-blue-800">
+              🧮 Utiliser l'estimation analytique hybride
+            </Label>
+          </div>
+          
+          {localConfig.useAnalyticalEstimation && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Tensions de référence nocturnes (V)</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Nuit U1</Label>
+                  <Input
+                    type="number"
+                    value={localConfig.nightU1}
+                    onChange={(e) => setLocalConfig({ ...localConfig, nightU1: Number(e.target.value) })}
+                    className="h-8"
+                    disabled={!isForcedMode}
+                    min={220}
+                    max={250}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Nuit U2</Label>
+                  <Input
+                    type="number"
+                    value={localConfig.nightU2}
+                    onChange={(e) => setLocalConfig({ ...localConfig, nightU2: Number(e.target.value) })}
+                    className="h-8"
+                    disabled={!isForcedMode}
+                    min={220}
+                    max={250}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Nuit U3</Label>
+                  <Input
+                    type="number"
+                    value={localConfig.nightU3}
+                    onChange={(e) => setLocalConfig({ ...localConfig, nightU3: Number(e.target.value) })}
+                    className="h-8"
+                    disabled={!isForcedMode}
+                    min={220}
+                    max={250}
+                  />
+                </div>
+              </div>
+              <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded">
+                ✨ L'estimation analytique utilise les tensions de référence pour calculer automatiquement 
+                les paramètres optimaux de foisonnement et déséquilibre, puis lance une simulation unique.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Phase 2: Tensions mesurées pour répartition des phases */}

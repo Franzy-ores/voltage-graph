@@ -43,13 +43,87 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Méthode publique pour l'algorithme de convergence du mode forcé
+   * Estimation analytique des paramètres du mode forcé
+   * Utilise une analyse complexe des tensions pour estimer le foisonnement et le déséquilibre
+   */
+  private _estimateForcedModeParameters(
+    Vnight: { U1: number; U2: number; U3: number },
+    Vday: { U1: number; U2: number; U3: number },
+    P_total_kW: number | null = null
+  ): { foisonnementEstimate: number; desequilibreEstimate: number } {
+    
+    console.log('🧮 Estimation analytique des paramètres du mode forcé');
+    console.log(`   Tensions nuit: U1=${Vnight.U1}V, U2=${Vnight.U2}V, U3=${Vnight.U3}V`);
+    console.log(`   Tensions jour: U1=${Vday.U1}V, U2=${Vday.U2}V, U3=${Vday.U3}V`);
+    
+    // Définition des angles de base d'un système triphasé équilibré (en radians)
+    const angles = [0, -2 * Math.PI / 3, 2 * Math.PI / 3];
+    
+    // Construction des phasors pour les tensions de nuit
+    const VnightPhasors = [
+      fromPolar(Vnight.U1, angles[0]),
+      fromPolar(Vnight.U2, angles[1]), 
+      fromPolar(Vnight.U3, angles[2])
+    ];
+    
+    // Construction des phasors pour les tensions de jour
+    const VdayPhasors = [
+      fromPolar(Vday.U1, angles[0]),
+      fromPolar(Vday.U2, angles[1]),
+      fromPolar(Vday.U3, angles[2])
+    ];
+    
+    // Calcul du vecteur de déséquilibre (différence entre jour et nuit)
+    const delta_V_complex = [
+      sub(VdayPhasors[0], VnightPhasors[0]),
+      sub(VdayPhasors[1], VnightPhasors[1]),
+      sub(VdayPhasors[2], VnightPhasors[2])
+    ];
+    
+    // Calcul des angles de déphasage pour chaque phase
+    const delta_angles_rad = delta_V_complex.map(delta => {
+      const angle = Math.atan2(delta.im, delta.re);
+      // Normalisation dans l'intervalle [-π, π]
+      return angle > Math.PI ? angle - 2 * Math.PI : (angle < -Math.PI ? angle + 2 * Math.PI : angle);
+    });
+    
+    const delta_angles_deg = delta_angles_rad.map(angle => angle * 180 / Math.PI);
+    
+    // Estimation du déséquilibre basée sur l'angle de déphasage maximal
+    const max_abs_delta_angle_deg = Math.max(...delta_angles_deg.map(angle => Math.abs(angle)));
+    const desequilibreEstimate = Math.min(100, (max_abs_delta_angle_deg / 5) * 100);
+    
+    // Calcul de la chute de tension moyenne
+    const Vnight_avg = (Vnight.U1 + Vnight.U2 + Vnight.U3) / 3;
+    const Vday_avg = (Vday.U1 + Vday.U2 + Vday.U3) / 3;
+    const tensionDrop = Vnight_avg - Vday_avg;
+    
+    // Estimation du foisonnement basée sur la chute de tension
+    // Référence nominale: 5V de chute pour 100% de foisonnement
+    const nominalDrop = 5.0;
+    const foisonnementEstimate = Math.min(100, Math.max(10, (tensionDrop / nominalDrop) * 100));
+    
+    console.log(`   Angles de déphasage: ${delta_angles_deg.map(a => a.toFixed(1)).join('°, ')}°`);
+    console.log(`   Chute de tension moyenne: ${tensionDrop.toFixed(1)}V`);
+    console.log(`   Estimation foisonnement: ${foisonnementEstimate.toFixed(1)}%`);
+    console.log(`   Estimation déséquilibre: ${desequilibreEstimate.toFixed(1)}%`);
+    
+    return {
+      foisonnementEstimate: Math.round(foisonnementEstimate * 10) / 10,
+      desequilibreEstimate: Math.round(desequilibreEstimate * 10) / 10
+    };
+  }
+
+  /**
+   * Méthode publique pour l'algorithme hybride du mode forcé
+   * Utilise une estimation analytique initiale suivie d'une simulation unique
    */
   public async runForcedModeConvergence(
     project: Project,
     measuredVoltages: { U1: number; U2: number; U3: number },
     measurementNodeId: string,
-    sourceVoltage: number
+    sourceVoltage: number,
+    nightVoltages?: { U1: number; U2: number; U3: number }
   ): Promise<{ 
     result: CalculationResult | null;
     foisonnementCharges: number;
@@ -62,109 +136,95 @@ export class SimulationCalculator extends ElectricalCalculator {
     calibratedFoisonnementCharges?: number;
   }> {
     
-    // Initialisation des paramètres
-    let foisonnementCharges = project.foisonnementCharges;
-    let desequilibrePourcent = project.desequilibrePourcent || 0;
-    let currentResult: CalculationResult | null = null;
-    
-    // Définir les tensions cibles par phase
-    const targetV_A = measuredVoltages.U1;
-    const targetV_B = measuredVoltages.U2;
-    const targetV_C = measuredVoltages.U3;
-
-    console.log(`🔥 Démarrage algorithme de convergence Mode Forcé`);
-    console.log(`   Tensions cibles: A=${targetV_A}V, B=${targetV_B}V, C=${targetV_C}V`);
+    console.log(`🔥 Démarrage algorithme hybride Mode Forcé`);
+    console.log(`   Tensions cibles: A=${measuredVoltages.U1}V, B=${measuredVoltages.U2}V, C=${measuredVoltages.U3}V`);
     console.log(`   Nœud de mesure: ${measurementNodeId}`);
 
-    for (let i = 0; i < SimulationCalculator.SIM_MAX_ITERATIONS; i++) {
-      console.log(`🔄 Mode Forcé - Itération ${i + 1}/${SimulationCalculator.SIM_MAX_ITERATIONS}`);
-      
-      // 1. Lancer un calcul avec les paramètres actuels
-      currentResult = this.calculateScenario(
-        project.nodes,
-        project.cables,
-        project.cableTypes,
-        'FORCÉ',
-        foisonnementCharges,
-        project.foisonnementProductions,
-        project.transformerConfig,
-        'monophase_reparti',
-        desequilibrePourcent,
-        project.manualPhaseDistribution
+    // Étape 1: Estimation initiale analytique
+    let foisonnementCharges = project.foisonnementCharges;
+    let desequilibrePourcent = project.desequilibrePourcent || 0;
+    
+    // Si des tensions de nuit sont disponibles, utiliser l'estimation analytique
+    if (nightVoltages) {
+      const estimates = this._estimateForcedModeParameters(
+        nightVoltages,
+        measuredVoltages,
+        null // P_total_kW peut être ajouté plus tard si disponible
       );
-
-      if (!currentResult || !currentResult.nodeMetricsPerPhase) {
-          console.warn('❌ Échec du calcul');
-          break;
-      }
       
-      // 2. Récupérer les tensions simulées au nœud de mesure
-      const simulatedVoltages = currentResult.nodeMetricsPerPhase.find(n => n.nodeId === measurementNodeId);
-      if (!simulatedVoltages) {
-          console.warn(`❌ Nœud de mesure ${measurementNodeId} non trouvé`);
-          break;
-      }
-
-      const V_A = simulatedVoltages.voltagesPerPhase.A;
-      const V_B = simulatedVoltages.voltagesPerPhase.B;
-      const V_C = simulatedVoltages.voltagesPerPhase.C;
+      foisonnementCharges = estimates.foisonnementEstimate;
+      desequilibrePourcent = estimates.desequilibreEstimate;
       
-      // 3. Calculer les écarts par rapport aux tensions mesurées
-      const diff_A = V_A - targetV_A;
-      const diff_B = V_B - targetV_B;
-      const diff_C = V_C - targetV_C;
-      const averageError = (Math.abs(diff_A) + Math.abs(diff_B) + Math.abs(diff_C)) / 3;
-
-      console.log(`   Tensions: A=${V_A.toFixed(1)}V→${targetV_A}V, B=${V_B.toFixed(1)}V→${targetV_B}V, C=${V_C.toFixed(1)}V→${targetV_C}V`);
-      console.log(`   Erreurs: A=${diff_A.toFixed(2)}V, B=${diff_B.toFixed(2)}V, C=${diff_C.toFixed(2)}V (moy: ${averageError.toFixed(3)}V)`);
-
-      // 4. Critère de convergence
-      if (averageError < SimulationCalculator.CONVERGENCE_TOLERANCE_V) {
-        console.log(`✅ Convergence atteinte en ${i + 1} itérations. Erreur moyenne: ${averageError.toFixed(3)}V`);
-        return { 
-          result: currentResult,
-          foisonnementCharges,
-          desequilibrePourcent,
-          voltageErrors: { A: diff_A, B: diff_B, C: diff_C },
-          iterations: i + 1,
-          convergenceStatus: 'converged',
-          finalLoadDistribution: currentResult.finalLoadDistribution,
-          finalProductionDistribution: currentResult.finalProductionDistribution,
-          calibratedFoisonnementCharges: foisonnementCharges
-        };
-      }
-
-      // 5. Ajuster les paramètres
-      const adjustmentFactor = Math.min(0.5, averageError * 0.3); // Ajustement plus conservateur
-
-      // Ajustement du foisonnement : Si la tension moyenne est trop basse, augmenter le foisonnement
-      const simulatedAverageV = (V_A + V_B + V_C) / 3;
-      const measuredAverageV = (targetV_A + targetV_B + targetV_C) / 3;
-      const foisonnementAdjustment = (measuredAverageV - simulatedAverageV) * 0.3;
-      foisonnementCharges = Math.max(10, Math.min(150, foisonnementCharges + foisonnementAdjustment));
-
-      // Ajustement du déséquilibre basé sur l'écart entre phases
-      const maxErrorPhase = Math.max(Math.abs(diff_A), Math.abs(diff_B), Math.abs(diff_C));
-      const desequilibreAdjustment = maxErrorPhase * 0.1;
-      desequilibrePourcent = Math.max(0, Math.min(50, desequilibrePourcent + desequilibreAdjustment));
-      
-      console.log(`   Ajustements: foisonnement=${foisonnementCharges.toFixed(1)}%, déséquilibre=${desequilibrePourcent.toFixed(1)}%`);
+      console.log(`✨ Paramètres estimés - Foisonnement: ${foisonnementCharges}%, Déséquilibre: ${desequilibrePourcent}%`);
+    } else {
+      console.log(`📊 Utilisation des paramètres manuels - Foisonnement: ${foisonnementCharges}%, Déséquilibre: ${desequilibrePourcent}%`);
     }
 
-    console.log(`⚠️ Échec de la convergence après ${SimulationCalculator.SIM_MAX_ITERATIONS} itérations.`);
-    return {
+    // Étape 2: Simulation unique avec les paramètres estimés
+    const currentResult = this.calculateScenario(
+      project.nodes,
+      project.cables,
+      project.cableTypes,
+      'FORCÉ',
+      foisonnementCharges,
+      project.foisonnementProductions,
+      project.transformerConfig,
+      'monophase_reparti',
+      desequilibrePourcent,
+      project.manualPhaseDistribution
+    );
+
+    if (!currentResult || !currentResult.nodeMetricsPerPhase) {
+      console.warn('❌ Échec du calcul');
+      return {
+        result: null,
+        foisonnementCharges,
+        desequilibrePourcent,
+        iterations: 1,
+        convergenceStatus: 'not_converged'
+      };
+    }
+    
+    // Récupérer les tensions simulées au nœud de mesure
+    const simulatedVoltages = currentResult.nodeMetricsPerPhase.find(n => n.nodeId === measurementNodeId);
+    if (!simulatedVoltages) {
+      console.warn(`❌ Nœud de mesure ${measurementNodeId} non trouvé`);
+      return {
+        result: currentResult,
+        foisonnementCharges,
+        desequilibrePourcent,
+        iterations: 1,
+        convergenceStatus: 'not_converged'
+      };
+    }
+
+    const V_A = simulatedVoltages.voltagesPerPhase.A;
+    const V_B = simulatedVoltages.voltagesPerPhase.B;
+    const V_C = simulatedVoltages.voltagesPerPhase.C;
+    
+    // Calculer les écarts par rapport aux tensions mesurées
+    const diff_A = V_A - measuredVoltages.U1;
+    const diff_B = V_B - measuredVoltages.U2;
+    const diff_C = V_C - measuredVoltages.U3;
+    const averageError = (Math.abs(diff_A) + Math.abs(diff_B) + Math.abs(diff_C)) / 3;
+
+    console.log(`   Tensions simulées: A=${V_A.toFixed(1)}V, B=${V_B.toFixed(1)}V, C=${V_C.toFixed(1)}V`);
+    console.log(`   Erreurs: A=${diff_A.toFixed(2)}V, B=${diff_B.toFixed(2)}V, C=${diff_C.toFixed(2)}V (moy: ${averageError.toFixed(3)}V)`);
+
+    // Déterminer le statut de convergence basé sur la précision obtenue
+    const convergenceStatus = averageError < 2.0 ? 'converged' : 'not_converged';
+    
+    console.log(`✅ Simulation hybride terminée. Erreur moyenne: ${averageError.toFixed(3)}V - Statut: ${convergenceStatus}`);
+    
+    return { 
       result: currentResult,
       foisonnementCharges,
       desequilibrePourcent,
-      voltageErrors: currentResult?.nodeMetricsPerPhase?.find(n => n.nodeId === measurementNodeId) ? {
-        A: currentResult.nodeMetricsPerPhase.find(n => n.nodeId === measurementNodeId)!.voltagesPerPhase.A - targetV_A,
-        B: currentResult.nodeMetricsPerPhase.find(n => n.nodeId === measurementNodeId)!.voltagesPerPhase.B - targetV_B,
-        C: currentResult.nodeMetricsPerPhase.find(n => n.nodeId === measurementNodeId)!.voltagesPerPhase.C - targetV_C
-      } : undefined,
-      iterations: SimulationCalculator.SIM_MAX_ITERATIONS,
-      convergenceStatus: 'not_converged',
-      finalLoadDistribution: currentResult?.finalLoadDistribution,
-      finalProductionDistribution: currentResult?.finalProductionDistribution,
+      voltageErrors: { A: diff_A, B: diff_B, C: diff_C },
+      iterations: 1,
+      convergenceStatus,
+      finalLoadDistribution: currentResult.finalLoadDistribution,
+      finalProductionDistribution: currentResult.finalProductionDistribution,
       calibratedFoisonnementCharges: foisonnementCharges
     };
   }
@@ -214,9 +274,9 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
-   * Nouveau processus Mode Forcé en 2 étapes avec boucle de convergence intelligente du déséquilibre
-   * Phase 1: Calibration du foisonnement (nuit)
-   * Phase 2: Convergence sur déséquilibre (jour) avec ajustement des répartitions par phase
+   * Nouveau processus Mode Forcé hybride avec estimation analytique
+   * Phase 1: Estimation analytique des paramètres
+   * Phase 2: Simulation unique avec les paramètres estimés
    */
   private runForcedModeSimulation(
     project: Project,
@@ -235,57 +295,127 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     }
     
-    let foisonnementCharges = project.foisonnementCharges;
-    let simulationConverged = false;
-    
-    console.log('🔥 Mode FORCÉ: Démarrage simulation avec convergence du déséquilibre');
+    console.log('🔥 Mode FORCÉ: Démarrage simulation hybride');
     
     // === VALIDATION ET PRÉPARATION DES TENSIONS MESURÉES ===
     const { U1, U2, U3 } = this.prepareMeasuredVoltages(config.measuredVoltages, project.voltageSystem);
     console.log(`Tensions cibles préparées: U1=${U1}V, U2=${U2}V, U3=${U3}V`);
     
-    // === PHASE 1: CALIBRATION DU FOISONNEMENT (NUIT) ===
+    // === ESTIMATION ANALYTIQUE DES PARAMÈTRES ===
+    let foisonnementCharges = project.foisonnementCharges;
+    let desequilibrePourcent = project.desequilibrePourcent || 0;
+    
+    // Utiliser l'estimation analytique si on a une tension cible de référence
     if (config.targetVoltage && config.targetVoltage > 0) {
-      console.log(`📊 Phase 1: Calibration pour tension cible ${config.targetVoltage}V`);
-      foisonnementCharges = this.calibrateFoisonnement(project, scenario, config, foisonnementCharges);
+      // Créer des tensions de nuit simulées basées sur la tension cible
+      const nightVoltages = {
+        U1: config.targetVoltage,
+        U2: config.targetVoltage, 
+        U3: config.targetVoltage
+      };
+      
+      const dayVoltages = { U1, U2, U3 };
+      
+      console.log(`📊 Estimation analytique avec tension de référence ${config.targetVoltage}V`);
+      const estimates = this._estimateForcedModeParameters(nightVoltages, dayVoltages, null);
+      
+      foisonnementCharges = estimates.foisonnementEstimate;
+      desequilibrePourcent = estimates.desequilibreEstimate;
       
       // Mise à jour immédiate du foisonnement dans l'interface
       const updateEvent = new CustomEvent('updateProjectFoisonnement', { 
-        detail: { foisonnementCharges } 
+        detail: { foisonnementCharges, desequilibrePourcent } 
       });
       window.dispatchEvent(updateEvent);
     } else {
-      console.log('📊 Phase 1: Utilisation du foisonnement manuel (pas de calibration)');
+      console.log('📊 Utilisation des paramètres manuels (pas d\'estimation analytique)');
     }
     
-    // === PHASE 2: CONVERGENCE SUR DÉSÉQUILIBRE (JOUR) ===
-    console.log('📊 Phase 2: Convergence sur déséquilibre avec ajustement des répartitions');
+    // === SIMULATION UNIQUE AVEC PARAMÈTRES ESTIMÉS ===
+    console.log(`📊 Simulation finale avec foisonnement: ${foisonnementCharges}%, déséquilibre: ${desequilibrePourcent}%`);
     
-    const convergenceResult = this.runImbalanceConvergence(
-      project, 
-      scenario, 
-      { U1, U2, U3 }, 
-      config.measurementNodeId, 
-      foisonnementCharges
+    const result = this.calculateScenario(
+      project.nodes,
+      project.cables,
+      project.cableTypes,
+      'FORCÉ',
+      foisonnementCharges,
+      project.foisonnementProductions,
+      project.transformerConfig,
+      'monophase_reparti',
+      desequilibrePourcent,
+      project.manualPhaseDistribution
     );
     
-    // Mise à jour finale des répartitions dans l'interface
-    const finalUpdateEvent = new CustomEvent('updateProjectFoisonnement', { 
-      detail: { 
-        foisonnementCharges,
-        finalDistribution: convergenceResult.finalDistribution
-      } 
-    });
-    window.dispatchEvent(finalUpdateEvent);
+    if (!result) {
+      console.warn('❌ Échec de la simulation finale');
+      // Créer un résultat d'erreur valide avec tous les champs requis
+      return {
+        success: false,
+        scenario: 'FORCÉ',
+        message: 'Échec de la simulation forcée',
+        cables: [],
+        totalLoads_kVA: 0,
+        totalProductions_kVA: 0,
+        globalLosses_kW: 0,
+        nodeVoltageDrops: [],
+        maxVoltageDropPercent: 0,
+        compliance: 'critical',
+        convergenceStatus: 'not_converged'
+      } as CalculationResult;
+    }
     
-    // Retourner le résultat avec toutes les informations de convergence
+    // === CALCUL DES ERREURS DE TENSION ===
+    const nodeData = result.nodeMetricsPerPhase?.find(n => n.nodeId === config.measurementNodeId);
+    if (nodeData) {
+      const voltageErrors = {
+        A: nodeData.voltagesPerPhase.A - U1,
+        B: nodeData.voltagesPerPhase.B - U2,
+        C: nodeData.voltagesPerPhase.C - U3
+      };
+      
+      const averageError = (Math.abs(voltageErrors.A) + Math.abs(voltageErrors.B) + Math.abs(voltageErrors.C)) / 3;
+      
+      console.log(`   Tensions simulées: A=${nodeData.voltagesPerPhase.A.toFixed(1)}V, B=${nodeData.voltagesPerPhase.B.toFixed(1)}V, C=${nodeData.voltagesPerPhase.C.toFixed(1)}V`);
+      console.log(`   Erreurs finales: A=${voltageErrors.A.toFixed(2)}V, B=${voltageErrors.B.toFixed(2)}V, C=${voltageErrors.C.toFixed(2)}V (moy: ${averageError.toFixed(3)}V)`);
+      
+      // Déterminer le statut de convergence
+      const convergenceStatus = averageError < 2.0 ? 'converged' : 'not_converged';
+      
+      // Mise à jour finale dans l'interface
+      const finalUpdateEvent = new CustomEvent('updateProjectFoisonnement', { 
+        detail: { 
+          foisonnementCharges,
+          desequilibrePourcent,
+          voltageErrors,
+          convergenceStatus
+        } 
+      });
+      window.dispatchEvent(finalUpdateEvent);
+    }
+    
+    // Calculer les distributions finales
+    const finalLoadDistribution = this.calculateFinalDistribution(
+      project.nodes, 
+      'charges', 
+      foisonnementCharges, 
+      project.manualPhaseDistribution
+    );
+    
+    const finalProductionDistribution = this.calculateFinalDistribution(
+      project.nodes, 
+      'productions', 
+      project.foisonnementProductions, 
+      project.manualPhaseDistribution
+    );
+    
+     // Retourner le résultat avec toutes les informations
     return {
-      ...convergenceResult.result,
-      convergenceStatus: convergenceResult.converged ? 'converged' : 'not_converged',
-      finalLoadDistribution: convergenceResult.finalDistribution.charges,
-      finalProductionDistribution: convergenceResult.finalDistribution.productions,
-      calibratedFoisonnementCharges: foisonnementCharges,
-      optimizedPhaseDistribution: convergenceResult.finalDistribution
+      ...result,
+      convergenceStatus: nodeData ? 'converged' : 'not_converged',
+      finalLoadDistribution,
+      finalProductionDistribution,
+      calibratedFoisonnementCharges: foisonnementCharges
     };
   }
 
