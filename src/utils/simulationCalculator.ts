@@ -624,169 +624,121 @@ export class SimulationCalculator extends ElectricalCalculator {
    * Ajuste phase par phase pour atteindre les tensions mesurées
    */
   private runImbalanceConvergence(
-    project: Project,
-    scenario: CalculationScenario,
-    targetVoltages: { U1: number; U2: number; U3: number },
-    measurementNodeId: string,
-    foisonnementCharges: number
-  ): { 
-    result: CalculationResult, 
-    converged: boolean, 
-    finalDistribution: any, 
-    iterations: number, 
-    maxError: number 
-  } {
-    console.log(`📊 Phase 2: Convergence déséquilibre par phase pour tensions cibles A=${targetVoltages.U1}V, B=${targetVoltages.U2}V, C=${targetVoltages.U3}V`);
-    
-    // Initialiser la répartition des phases
-    let currentDistribution = project.manualPhaseDistribution ? 
-      { ...project.manualPhaseDistribution } : 
-      {
-        charges: { A: 33.33, B: 33.33, C: 33.34 },
-        productions: { A: 33.33, B: 33.33, C: 33.34 },
-        constraints: { min: 15, max: 70, total: 100 }
-      };
-    
-    let iterationResult: CalculationResult;
-    
-    // Paramètres de convergence
-    const maxConvergenceIter = 30;
-    const convergenceTolerance = 2.0; // ±2V
-    const adjustmentGain = 0.3; // Gain d'ajustement par phase
-    let stagnationCounter = 0;
-    const maxStagnation = 5;
-    
-    for (let convIter = 0; convIter < maxConvergenceIter; convIter++) {
-      console.log(`🔄 Convergence déséquilibre - Itération ${convIter + 1}`);
-      
-      // Exécuter le calcul avec la distribution actuelle (charges calibrées + productions 100%)
-      iterationResult = this.calculateScenario(
-        project.nodes,
-        project.cables,
-        project.cableTypes,
-        scenario,
-        foisonnementCharges, // Foisonnement calibré en Phase 1
-        100, // Productions à 100% pour simulation jour
-        project.transformerConfig,
-        'monophase_reparti',
-        0, // Pas de déséquilibre global, on utilise les répartitions manuelles
-        currentDistribution // Distribution par phase
-      );
-      
-      // Trouver les tensions calculées au nœud de mesure
-      const targetNodeMetric = iterationResult.nodeMetricsPerPhase?.find(m => m.nodeId === measurementNodeId);
-      if (!targetNodeMetric) {
-        console.warn(`⚠️ Nœud de mesure ${measurementNodeId} non trouvé`);
-        break;
-      }
-      
-      const calculatedVoltages = targetNodeMetric.voltagesPerPhase;
-      const voltageErrors = {
-        A: targetVoltages.U1 - calculatedVoltages.A,
-        B: targetVoltages.U2 - calculatedVoltages.B,
-        C: targetVoltages.U3 - calculatedVoltages.C
-      };
-      
-      console.log(`  Tensions calculées: A=${calculatedVoltages.A.toFixed(1)}V, B=${calculatedVoltages.B.toFixed(1)}V, C=${calculatedVoltages.C.toFixed(1)}V`);
-      console.log(`  Erreurs: A=${voltageErrors.A.toFixed(1)}V, B=${voltageErrors.B.toFixed(1)}V, C=${voltageErrors.C.toFixed(1)}V`);
-      console.log(`  Répartitions charges: A=${currentDistribution.charges.A.toFixed(1)}%, B=${currentDistribution.charges.B.toFixed(1)}%, C=${currentDistribution.charges.C.toFixed(1)}%`);
-      
-      // Vérifier la convergence
-      const maxError = Math.max(Math.abs(voltageErrors.A), Math.abs(voltageErrors.B), Math.abs(voltageErrors.C));
-      if (maxError <= convergenceTolerance) {
-        console.log(`✅ Convergence déséquilibre atteinte en ${convIter + 1} itérations (erreur max: ${maxError.toFixed(2)}V)`);
-        return {
-          result: iterationResult,
-          converged: true,
-          finalDistribution: currentDistribution,
-          iterations: convIter + 1,
-          maxError
-        };
-      }
-      
-      // Détecter stagnation
-      if (convIter > 0 && maxError >= convergenceTolerance) {
-        stagnationCounter++;
-        if (stagnationCounter >= maxStagnation) {
-          console.log(`⚠️ Stagnation détectée après ${stagnationCounter} itérations`);
-          break;
-        }
-      } else {
-        stagnationCounter = 0;
-      }
-      
-      // **PHASE PAR PHASE** : Ajuster les répartitions selon les erreurs de tension
-      // Si tension trop basse → réduire les charges ET les productions sur cette phase
-      // Si tension trop haute → augmenter les charges OU réduire les productions sur cette phase
-      
-      const newDistribution = { ...currentDistribution };
-      
-      // Ajustement par phase pour les charges
-      Object.keys(voltageErrors).forEach((phase) => {
-        const error = voltageErrors[phase as keyof typeof voltageErrors];
-        const phaseKey = phase as 'A' | 'B' | 'C';
-        
-        // Ajustement proportionnel à l'erreur de tension
-        let chargeAdjustment = error * adjustmentGain; // Si erreur positive (tension simulée < cible) → augmenter les charges
-        let productionAdjustment = -error * adjustmentGain; // Si erreur positive → réduire les productions
-        
-        // Appliquer les ajustements avec contraintes
-        newDistribution.charges[phaseKey] = Math.max(15, Math.min(70, 
-          newDistribution.charges[phaseKey] + chargeAdjustment
-        ));
-        
-        newDistribution.productions[phaseKey] = Math.max(15, Math.min(70, 
-          newDistribution.productions[phaseKey] + productionAdjustment
-        ));
-      });
-      
-      // Normaliser pour conserver les totaux à 100%
-      const totalCharges = newDistribution.charges.A + newDistribution.charges.B + newDistribution.charges.C;
-      const totalProductions = newDistribution.productions.A + newDistribution.productions.B + newDistribution.productions.C;
-      
-      if (totalCharges > 0) {
-        newDistribution.charges.A = (newDistribution.charges.A / totalCharges) * 100;
-        newDistribution.charges.B = (newDistribution.charges.B / totalCharges) * 100;
-        newDistribution.charges.C = (newDistribution.charges.C / totalCharges) * 100;
-      }
-      
-      if (totalProductions > 0) {
-        newDistribution.productions.A = (newDistribution.productions.A / totalProductions) * 100;
-        newDistribution.productions.B = (newDistribution.productions.B / totalProductions) * 100;
-        newDistribution.productions.C = (newDistribution.productions.C / totalProductions) * 100;
-      }
-      
-      currentDistribution = newDistribution;
-      
-      console.log(`  Nouvelles répartitions charges: A=${currentDistribution.charges.A.toFixed(1)}%, B=${currentDistribution.charges.B.toFixed(1)}%, C=${currentDistribution.charges.C.toFixed(1)}%`);
-      console.log(`  Nouvelles répartitions productions: A=${currentDistribution.productions.A.toFixed(1)}%, B=${currentDistribution.productions.B.toFixed(1)}%, C=${currentDistribution.productions.C.toFixed(1)}%`);
-    }
-    
-    console.warn(`⚠️ Convergence déséquilibre non atteinte après ${maxConvergenceIter} itérations`);
-    
-    // Calculer l'erreur finale si on a un résultat
-    let finalMaxError = Infinity;
-    if (iterationResult) {
-      const finalNodeMetric = iterationResult.nodeMetricsPerPhase?.find(m => m.nodeId === measurementNodeId);
-      if (finalNodeMetric) {
-        const finalVoltages = finalNodeMetric.voltagesPerPhase;
-        const finalErrors = {
-          A: Math.abs(targetVoltages.U1 - finalVoltages.A),
-          B: Math.abs(targetVoltages.U2 - finalVoltages.B),
-          C: Math.abs(targetVoltages.U3 - finalVoltages.C)
-        };
-        finalMaxError = Math.max(finalErrors.A, finalErrors.B, finalErrors.C);
-      }
-    }
-    
-    return {
-      result: iterationResult!,
-      converged: false,
-      finalDistribution: currentDistribution,
-      iterations: maxConvergenceIter,
-      maxError: finalMaxError
+  project: Project,
+  scenario: CalculationScenario,
+  targetVoltages: { U1: number; U2: number; U3: number },
+  measurementNodeId: string,
+  foisonnementCharges: number
+): { result: CalculationResult, converged: boolean, finalDistribution: any, iterations: number, maxError: number } {
+  
+  console.log(`📊 Phase 2: Convergence déséquilibre - Cibles: L1=${targetVoltages.U1}V, L2=${targetVoltages.U2}V, L3=${targetVoltages.U3}V`);
+  
+  // Initialisation avec répartition équilibrée
+  let currentDistribution = project.manualPhaseDistribution ? 
+    { ...project.manualPhaseDistribution } : 
+    {
+      charges: { A: 33.33, B: 33.33, C: 33.34 },
+      productions: { A: 33.33, B: 33.33, C: 33.34 },
+      constraints: { min: 10, max: 80, total: 100 } // Limites élargies
     };
+  
+  const maxIterations = 20;
+  const tolerance = 1.5; // ±1.5V tolérance
+  let bestDistribution = { ...currentDistribution };
+  let bestError = Infinity;
+  
+  for (let iter = 0; iter < maxIterations; iter++) {
+    console.log(`🔄 Itération ${iter + 1} - Répartition: A=${currentDistribution.charges.A.toFixed(1)}%, B=${currentDistribution.charges.B.toFixed(1)}%, C=${currentDistribution.charges.C.toFixed(1)}%`);
+    
+    // Simulation avec répartition actuelle
+    const result = this.calculateScenario(
+      project.nodes,
+      project.cables, 
+      project.cableTypes,
+      scenario,
+      foisonnementCharges,
+      100, // Productions à 100%
+      project.transformerConfig,
+      'monophase_reparti',
+      0, // Pas de déséquilibre global
+      currentDistribution
+    );
+    
+    const nodeMetrics = result.nodeMetricsPerPhase?.find(m => m.nodeId === measurementNodeId);
+    if (!nodeMetrics) break;
+    
+    const simulated = nodeMetrics.voltagesPerPhase;
+    const errors = {
+      A: targetVoltages.U1 - simulated.A, // Erreur = Cible - Simulé
+      B: targetVoltages.U2 - simulated.B,
+      C: targetVoltages.U3 - simulated.C
+    };
+    
+    const maxError = Math.max(Math.abs(errors.A), Math.abs(errors.B), Math.abs(errors.C));
+    
+    console.log(`  Simulé: L1=${simulated.A.toFixed(1)}V, L2=${simulated.B.toFixed(1)}V, L3=${simulated.C.toFixed(1)}V`);
+    console.log(`  Erreurs: A=${errors.A.toFixed(2)}V, B=${errors.B.toFixed(2)}V, C=${errors.C.toFixed(2)}V (max=${maxError.toFixed(2)}V)`);
+    
+    // Sauvegarder la meilleure solution
+    if (maxError < bestError) {
+      bestError = maxError;
+      bestDistribution = { ...currentDistribution };
+    }
+    
+    // Test convergence
+    if (maxError <= tolerance) {
+      console.log(`✅ Convergence atteinte en ${iter + 1} itérations`);
+      return {
+        result,
+        converged: true,
+        finalDistribution: currentDistribution,
+        iterations: iter + 1,
+        maxError
+      };
+    }
+    
+    // ✅ ALGORITHME CORRIGÉ : Ajustement proportionnel aux erreurs
+    const adjustmentFactor = Math.min(10, 5 + iter * 0.5); // Gain adaptatif (5→15)
+    
+    // Si erreur positive (simulé < cible) → augmenter charges pour baisser tension
+    // Si erreur négative (simulé > cible) → réduire charges pour monter tension
+    const adjustments = {
+      A: errors.A * adjustmentFactor, // ATTENTION : logique inverse pour les tensions
+      B: errors.B * adjustmentFactor,
+      C: errors.C * adjustmentFactor
+    };
+    
+    // Appliquer les ajustements SANS normalisation initiale
+    const newCharges = {
+      A: currentDistribution.charges.A + adjustments.A,
+      B: currentDistribution.charges.B + adjustments.B,
+      C: currentDistribution.charges.C + adjustments.C
+    };
+    
+    // Contraintes individuelles
+    newCharges.A = Math.max(10, Math.min(80, newCharges.A));
+    newCharges.B = Math.max(10, Math.min(80, newCharges.B));
+    newCharges.C = Math.max(10, Math.min(80, newCharges.C));
+    
+    // Normalisation finale pour respecter 100% total
+    const total = newCharges.A + newCharges.B + newCharges.C;
+    currentDistribution.charges.A = (newCharges.A / total) * 100;
+    currentDistribution.charges.B = (newCharges.B / total) * 100;
+    currentDistribution.charges.C = (newCharges.C / total) * 100;
+    
+    console.log(`  Ajustements: A=${adjustments.A.toFixed(1)}, B=${adjustments.B.toFixed(1)}, C=${adjustments.C.toFixed(1)}`);
+    console.log(`  Nouvelle répartition: A=${currentDistribution.charges.A.toFixed(1)}%, B=${currentDistribution.charges.B.toFixed(1)}%, C=${currentDistribution.charges.C.toFixed(1)}%`);
   }
+  
+  console.warn(`⚠️ Non convergé après ${maxIterations} itérations. Utilisation de la meilleure solution (erreur=${bestError.toFixed(2)}V)`);
+  return {
+    result: result!,
+    converged: false,
+    finalDistribution: bestDistribution,
+    iterations: maxIterations,
+    maxError: bestError
+  };
+}
 
   /**
    * Calcule les ajustements à appliquer aux phases avec algorithme amélioré
