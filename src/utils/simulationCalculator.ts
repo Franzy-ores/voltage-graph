@@ -30,7 +30,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   
   // Constantes pour le mode Forcé
   private static readonly PRODUCTION_DISCONNECT_VOLTAGE = 253;
-  public static readonly CONVERGENCE_TOLERANCE_V = 0.01;
+  public static readonly CONVERGENCE_TOLERANCE_V = 1;
   
   private simCosPhi: number;
   
