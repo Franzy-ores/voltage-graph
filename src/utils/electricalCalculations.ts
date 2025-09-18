@@ -163,12 +163,16 @@ export class ElectricalCalculator {
   private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
       case 'MONO_230V_PN':
-        return { U: 230, isThreePhase: false, useR0: true }; // Phase-neutre = 230V
+        // Phase-neutre 230V: utilise R0/X0 car courant retourne par le neutre
+        return { U: 230, isThreePhase: false, useR0: true };
       case 'MONO_230V_PP':
+        // Phase-phase 230V: utilise R12/X12 car pas de neutre
         return { U: 230, isThreePhase: false, useR0: false };
       case 'TRI_230V_3F':
+        // Triphasé 230V équilibré: utilise R12/X12 (séquence directe)
         return { U: 230, isThreePhase: true, useR0: false };
       case 'TÉTRA_3P+N_230_400V':
+        // Tétraphasé 400V: utilise R12/X12 pour calculs équilibrés
         return { U: 400, isThreePhase: true, useR0: false };
       default:
         return { U: 230, isThreePhase: true, useR0: false };
@@ -202,15 +206,20 @@ export class ElectricalCalculator {
 
   private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
     const { useR0 } = this.getVoltageConfig(connectionType);
-    return useR0
+    const result = useR0
       ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
       : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
+    
+    // Log de débogage de la sélection R/X
+    console.log(`🔧 Sélection R/X [${connectionType}]: ${useR0 ? 'R0/X0' : 'R12/X12'} = R=${result.R} Ω/km, X=${result.X} Ω/km`);
+    
+    return result;
   }
 
   /**
    * Calcule le courant RMS par phase (A) à partir de la puissance apparente S_kVA.
-   * Conventions:
-   * - Triphasé: I = |S_kVA| * 1000 / (√3 · U_line)
+   * Conventions physiques corrigées:
+   * - Triphasé équilibré: I = |S_kVA| * 1000 / (√3 · U_line)
    * - Monophasé: I = |S_kVA| * 1000 / U_phase
    * S_kVA est la puissance apparente totale (kVA), positive en consommation, négative en injection.
    * sourceVoltage, s'il est fourni, est interprété comme U_line (tri) ou U_phase (mono).
@@ -224,24 +233,45 @@ export class ElectricalCalculator {
 
     const Sabs_kVA = Math.abs(S_kVA);
     
-    // Correction pour le calcul du courant selon le type de connexion
+    // Formules physiques uniformisées
     let denom: number;
+    let formula: string;
+    
     if (connectionType === 'MONO_230V_PN') {
-      denom = U_base; // I = S / 230V pour monophasé phase-neutre
+      // Monophasé phase-neutre: I = S / U_phase_neutre
+      denom = U_base;
+      formula = `S / U_PN = ${Sabs_kVA} kVA / ${U_base}V`;
     } else if (connectionType === 'MONO_230V_PP') {
-      denom = U_base; // I = S / tension_entre_phases
+      // Monophasé phase-phase: I = S / U_phase_phase
+      denom = U_base;
+      formula = `S / U_PP = ${Sabs_kVA} kVA / ${U_base}V`;
     } else if (connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : pas de √3, calcul direct en tension composée
-      denom = U_base; // I = S / 230V directement (pas de √3)
+      // Triphasé 230V: I = S / (√3 × U_ligne) - CORRECTION: ajout du √3
+      denom = Math.sqrt(3) * U_base;
+      formula = `S / (√3 × U_ligne) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`;
+    } else if (connectionType === 'TÉTRA_3P+N_230_400V') {
+      // Tétraphasé 400V: I = S / (√3 × U_ligne)
+      denom = Math.sqrt(3) * U_base;
+      formula = `S / (√3 × U_ligne) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`;
     } else {
+      // Générique: triphasé avec √3, monophasé sans
       denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
+      formula = isThreePhase 
+        ? `S / (√3 × U) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`
+        : `S / U = ${Sabs_kVA} kVA / ${U_base}V`;
     }
     
     if (!isFinite(denom) || denom <= 0) {
       console.warn(`⚠️ Dénominateur invalide pour le calcul du courant: ${denom}, connectionType: ${connectionType}`);
       return 0;
     }
-    return (Sabs_kVA * 1000) / denom;
+    
+    const current = (Sabs_kVA * 1000) / denom;
+    
+    // Log de débogage des calculs de courant
+    console.log(`🔌 Calcul courant [${connectionType}]: ${formula} = ${current.toFixed(2)}A`);
+    
+    return current;
   }
 
   private getComplianceStatus(voltageDropPercent: number): 'normal'|'warning'|'critical' {
