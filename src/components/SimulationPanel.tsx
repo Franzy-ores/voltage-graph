@@ -380,17 +380,11 @@ export const SimulationPanel = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
-          {/* Panel Mode Forcé */}
-          <ForcedModePanel />
-          
-          <Tabs defaultValue="regulators" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 text-xs">
-              <TabsTrigger value="forced" className="text-xs">
+          <Tabs defaultValue="calibration" className="w-full">
+            <TabsList className="grid w-full grid-cols-4 text-xs">
+              <TabsTrigger value="calibration" className="text-xs">
                 <Target className="h-3 w-3 mr-1" />
-                Forcé
-              </TabsTrigger>
-              <TabsTrigger value="model" className="text-xs">
-                Modèle
+                Calibration
               </TabsTrigger>
               <TabsTrigger value="regulators" className="text-xs">
                 <Zap className="h-3 w-3 mr-1" />
@@ -406,37 +400,8 @@ export const SimulationPanel = () => {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="forced" className="mt-4">
-              <div className="text-center text-muted-foreground text-sm py-4">
-                La configuration du mode forcé est gérée dans le panneau ci-dessus.
-                Sélectionnez le scénario "FORCÉ" depuis le menu principal pour activer cette fonctionnalité.
-              </div>
-            </TabsContent>
-
-            <TabsContent value="model" className="mt-4">
-              <div className="space-y-4">
-                <h3 className="text-sm font-medium">Répartition manuelle des phases</h3>
-                {currentProject.loadModel === 'monophase_reparti' ? (
-                  <div className="space-y-4">
-                    <PhaseDistributionSliders type="charges" title="Répartition des charges" />
-                    <PhaseDistributionSliders type="productions" title="Répartition des productions" />
-                  </div>
-                ) : (
-                  <Card className="p-4 text-center text-muted-foreground">
-                    <div className="text-xs">
-                      La répartition manuelle n'est disponible qu'en mode "monophasé réparti".
-                    </div>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
-                      className="mt-2"
-                      onClick={() => updateProjectConfig({ loadModel: 'monophase_reparti' })}
-                    >
-                      Activer le mode monophasé réparti
-                    </Button>
-                  </Card>
-                )}
-              </div>
+            <TabsContent value="calibration" className="mt-4">
+              <ForcedModePanel />
             </TabsContent>
 
             <TabsContent value="regulators" className="mt-4">
