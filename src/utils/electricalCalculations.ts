@@ -132,6 +132,15 @@ export class ElectricalCalculator {
   // ---- utilitaires ----
   private deg2rad(deg: number) { return deg * Math.PI / 180; }
 
+  // NOUVEAUX UTILITAIRES: Conversions phase ↔ ligne
+  private toPhaseVoltage(U_line: number): number {
+    return U_line / Math.sqrt(3);
+  }
+
+  private toLineVoltage(U_phase: number): number {
+    return U_phase * Math.sqrt(3);
+  }
+
   static calculateGeodeticDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -163,8 +172,9 @@ export class ElectricalCalculator {
   private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
       case 'MONO_230V_PN':
-        // Phase-neutre 230V: utilise R0/X0 car courant retourne par le neutre
-        return { U: 230, isThreePhase: false, useR0: true };
+        // Phase-neutre 230V: CORRECTION - utilise maintenant R12/X12 pour chute de phase
+        // R0/X0 seulement pour courant de neutre, pas pour chute de tension
+        return { U: 230, isThreePhase: false, useR0: false };
       case 'MONO_230V_PP':
         // Phase-phase 230V: utilise R12/X12 car pas de neutre
         return { U: 230, isThreePhase: false, useR0: false };
@@ -204,72 +214,73 @@ export class ElectricalCalculator {
     }
   }
 
-  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
+  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number, R0:number, X0:number } {
     const { useR0 } = this.getVoltageConfig(connectionType);
-    const result = useR0
-      ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
-      : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
     
-    // Log de débogage de la sélection R/X
-    console.log(`🔧 Sélection R/X [${connectionType}]: ${useR0 ? 'R0/X0' : 'R12/X12'} = R=${result.R} Ω/km, X=${result.X} Ω/km`);
+    // CORRECTION: Toujours fournir R12/X12 pour phase ET R0/X0 pour neutre
+    const result = {
+      R: cableType.R12_ohm_per_km,    // Résistance de phase (toujours R12)
+      X: cableType.X12_ohm_per_km,    // Réactance de phase (toujours X12)
+      R0: cableType.R0_ohm_per_km,    // Résistance homopolaire (pour neutre)
+      X0: cableType.X0_ohm_per_km     // Réactance homopolaire (pour neutre)
+    };
+    
+    // Log de débogage détaillé pour la sélection R/X
+    console.log(`🔧 Sélection R/X [${connectionType}]:`);
+    console.log(`   - R_phase (R12) = ${result.R} Ω/km`);
+    console.log(`   - X_phase (X12) = ${result.X} Ω/km`);
+    console.log(`   - R_neutre (R0) = ${result.R0} Ω/km`);
+    console.log(`   - X_neutre (X0) = ${result.X0} Ω/km`);
+    console.log(`   - useR0 legacy flag = ${useR0} (deprecated, using R12 for phase drops)`);
     
     return result;
   }
 
   /**
    * Calcule le courant RMS par phase (A) à partir de la puissance apparente S_kVA.
-   * Conventions physiques corrigées:
+   * Conventions physiques corrigées et uniformisées:
    * - Triphasé équilibré: I = |S_kVA| * 1000 / (√3 · U_line)
    * - Monophasé: I = |S_kVA| * 1000 / U_phase
    * S_kVA est la puissance apparente totale (kVA), positive en consommation, négative en injection.
    * sourceVoltage, s'il est fourni, est interprété comme U_line (tri) ou U_phase (mono).
    */
   private calculateCurrentA(S_kVA: number, connectionType: ConnectionType, sourceVoltage?: number): number {
+    // ROBUSTESSE: Validation des entrées
+    if (!isFinite(S_kVA)) {
+      console.warn(`⚠️ Puissance S_kVA invalide: ${S_kVA}, retour 0A`);
+      return 0;
+    }
+
     let { U_base, isThreePhase } = this.getVoltage(connectionType);
 
     if (sourceVoltage) {
-      U_base = sourceVoltage;
+      if (!isFinite(sourceVoltage) || sourceVoltage <= 0) {
+        console.warn(`⚠️ Tension source invalide: ${sourceVoltage}V, utilisation U_base=${U_base}V`);
+      } else {
+        U_base = sourceVoltage;
+      }
+    }
+
+    // ROBUSTESSE: Validation de la tension de base
+    if (!isFinite(U_base) || U_base <= 0) {
+      throw new Error(`Tension de base invalide: U_base=${U_base}V, connectionType=${connectionType}`);
     }
 
     const Sabs_kVA = Math.abs(S_kVA);
     
-    // Formules physiques uniformisées
-    let denom: number;
-    let formula: string;
-    
-    if (connectionType === 'MONO_230V_PN') {
-      // Monophasé phase-neutre: I = S / U_phase_neutre
-      denom = U_base;
-      formula = `S / U_PN = ${Sabs_kVA} kVA / ${U_base}V`;
-    } else if (connectionType === 'MONO_230V_PP') {
-      // Monophasé phase-phase: I = S / U_phase_phase
-      denom = U_base;
-      formula = `S / U_PP = ${Sabs_kVA} kVA / ${U_base}V`;
-    } else if (connectionType === 'TRI_230V_3F') {
-      // Triphasé 230V: I = S / (√3 × U_ligne) - CORRECTION: ajout du √3
-      denom = Math.sqrt(3) * U_base;
-      formula = `S / (√3 × U_ligne) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`;
-    } else if (connectionType === 'TÉTRA_3P+N_230_400V') {
-      // Tétraphasé 400V: I = S / (√3 × U_ligne)
-      denom = Math.sqrt(3) * U_base;
-      formula = `S / (√3 × U_ligne) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`;
-    } else {
-      // Générique: triphasé avec √3, monophasé sans
-      denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
-      formula = isThreePhase 
-        ? `S / (√3 × U) = ${Sabs_kVA} kVA / (√3 × ${U_base}V)`
-        : `S / U = ${Sabs_kVA} kVA / ${U_base}V`;
-    }
-    
-    if (!isFinite(denom) || denom <= 0) {
-      console.warn(`⚠️ Dénominateur invalide pour le calcul du courant: ${denom}, connectionType: ${connectionType}`);
-      return 0;
-    }
-    
+    // FORMULES UNIFORMISÉES selon les conventions physiques
+    const denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     const current = (Sabs_kVA * 1000) / denom;
     
-    // Log de débogage des calculs de courant
-    console.log(`🔌 Calcul courant [${connectionType}]: ${formula} = ${current.toFixed(2)}A`);
+    // Log de débogage détaillé
+    const formula = isThreePhase 
+      ? `S / (√3 × U) = ${Sabs_kVA} kVA / (√3 × ${U_base}V) = ${Sabs_kVA} / ${denom.toFixed(1)}`
+      : `S / U = ${Sabs_kVA} kVA / ${U_base}V`;
+    
+    console.log(`🔌 Calcul courant [${connectionType}]:`);
+    console.log(`   - Formule: ${formula}`);
+    console.log(`   - Résultat: I = ${current.toFixed(2)}A`);
+    console.log(`   - isThreePhase: ${isThreePhase}, U_base: ${U_base}V`);
     
     return current;
   }
@@ -648,8 +659,8 @@ export class ElectricalCalculator {
       // Ztr (Ω/phase) à partir de Ucc% (en p.u.) et du ratio X/R si fourni
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
-      // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
-      const Zbase = (U_line_base * U_line_base) / (Sbase_VA * Math.sqrt(3)); // Ω
+      // CORRECTION: Zbase (Ω) en utilisant U_ligne^2 / Sbase, sans √3 incorrect
+      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
       const Zmag = Zpu * Zbase; // |Z|
 
       const xOverR = transformerConfig.xOverR;
