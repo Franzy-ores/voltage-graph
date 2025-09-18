@@ -350,9 +350,12 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               {/* Phase Distribution Sliders */}
               {currentProject.loadModel === 'monophase_reparti' && (
                 <div className="flex items-center gap-4">
-                  <div className="flex gap-4">
-                    <PhaseDistributionSliders type="charges" title="Charges" />
-                    <PhaseDistributionSliders type="productions" title="Productions" />
+                  <div className="flex flex-col gap-2 p-3 bg-white/5 rounded border border-white/10">
+                    <Label className="text-xs font-medium text-primary-foreground text-center">Foisonnements</Label>
+                    <div className="flex gap-4">
+                      <PhaseDistributionSliders type="charges" title="Charges" />
+                      <PhaseDistributionSliders type="productions" title="Productions" />
+                    </div>
                   </div>
                 </div>
               )}
