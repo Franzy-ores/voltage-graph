@@ -343,15 +343,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     config: any,
     initialFoisonnement: number
   ): number {
-    let bestFoisonnement = initialFoisonnement;
+    let bestFoisonnement = 100;
     let bestVoltage = 0;
     let minDiff = Infinity;
 
     console.log(`📊 Phase 1: Calibration foisonnement pour tension cible ${config.targetVoltage}V au nœud ${config.measurementNodeId}`);
 
-    // Dichotomie pour trouver le foisonnement optimal (même logique que calculateWithTargetVoltage)
+    // Dichotomie pour trouver le foisonnement optimal (EXACTEMENT la même logique que calculateWithTargetVoltage)
     let low = 0;
-    let high = 150;
+    let high = 100;
     
     for (let iteration = 0; iteration < 20; iteration++) {
       const testFoisonnement = (low + high) / 2;
@@ -360,25 +360,25 @@ export class SimulationCalculator extends ElectricalCalculator {
       const tempProject = {
         ...project,
         foisonnementCharges: testFoisonnement,
-        foisonnementProductions: 0 // Productions à 0% pour calibration nuit
+        foisonnementProductions: 0 // Ignorer les productions pour tension cible
       };
 
-      // Utiliser la même méthode que dans le store (calculateScenarioWithHTConfig)
+      // Utiliser EXACTEMENT la même méthode que dans le store
       const result = this.calculateScenarioWithHTConfig(
         tempProject,
         scenario,
         testFoisonnement,
-        0, // Productions à 0% pour calibration nuit
+        0, // Ignorer les productions pour tension cible
         tempProject.manualPhaseDistribution
       );
 
       const nodeData = result.nodeVoltageDrops?.find(n => n.nodeId === config.measurementNodeId);
       if (!nodeData) break;
 
-      // Calculer la tension du nœud (même logique que dans le store)
+      // Calculer la tension du nœud (EXACTEMENT la même logique que dans le store)
       let baseVoltage = 230;
       const node = tempProject.nodes.find(n => n.id === config.measurementNodeId);
-      if (node?.connectionType === 'TÉTRA_3P+N_230_400V' || project.voltageSystem === 'TÉTRAPHASÉ_400V') {
+      if (node?.connectionType === 'TÉTRA_3P+N_230_400V') {
         baseVoltage = 400;
       }
       
@@ -393,11 +393,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         bestVoltage = actualVoltage;
       }
 
-      if (diff < 0.5) { // Tolérance de 0.5V
-        console.log(`✅ Calibration convergée: foisonnement = ${bestFoisonnement.toFixed(1)}%`);
-        break;
-      }
-
+      // EXACTEMENT la même logique de convergence que dans le store
       if (actualVoltage < config.targetVoltage) {
         high = testFoisonnement - 0.1;
       } else {
