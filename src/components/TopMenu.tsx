@@ -170,7 +170,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               </div>
 
               {/* System Info */}
-              <div className="text-xs text-primary-foreground/80">
+              <div className="text-xs text-primary-foreground/120">
                 {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
@@ -280,72 +280,69 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               </div>
 
                 {/* Foisonnement Sliders - Vertical avec barres colorées */}
-                <div className="flex flex-col gap-2 p-3 bg-white/5 rounded border border-white/10">
-                  <Label className="text-xs font-medium text-primary-foreground text-center">Foisonnements</Label>
-                  <div className="flex items-start gap-6">
-                    {/* Charges Slider - Vertical */}
-                    <div className="flex flex-col items-center gap-2">
-                      <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
-                        Charges
-                      </Label>
-                      <div className="relative flex flex-col items-center">
-                        {/* Barre de fond */}
-                        <div className="relative w-6 h-20 bg-muted rounded-md border">
-                          {/* Barre de progression colorée */}
-                          <div 
-                            className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
-                            style={{ 
-                              height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
-                            }}
-                          />
-                          {/* Curseur traditionnel par-dessus */}
-                          <Slider
-                            value={[currentProject.foisonnementCharges]}
-                            onValueChange={(value) => setFoisonnementCharges(value[0])}
-                            max={100}
-                            min={0}
-                            step={1}
-                            orientation="vertical"
-                            className="absolute inset-0 h-20 slider-charges opacity-80"
-                            disabled={simulationPreview.isActive}
-                          />
-                        </div>
-                        <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
-                          {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
-                          {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
-                            <span className="text-xs ml-1 text-orange-200">(sim)</span>
-                          )}
-                        </span>
+                <div className="flex items-start gap-6">
+                  {/* Charges Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                      Charges
+                    </Label>
+                    <div className="relative flex flex-col items-center">
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
+                          style={{ 
+                            height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
+                          }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementCharges]}
+                          onValueChange={(value) => setFoisonnementCharges(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-charges opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
                       </div>
+                      <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
+                          <span className="text-xs ml-1 text-orange-200">(sim)</span>
+                        )}
+                      </span>
                     </div>
+                  </div>
 
-                    {/* Productions Slider - Vertical */}
-                    <div className="flex flex-col items-center gap-2">
-                      <Label className="text-xs font-medium text-center">Productions</Label>
-                      <div className="relative flex flex-col items-center">
-                        {/* Barre de fond */}
-                        <div className="relative w-6 h-20 bg-muted rounded-md border">
-                          {/* Barre de progression colorée */}
-                          <div 
-                            className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
-                            style={{ height: `${currentProject.foisonnementProductions}%` }}
-                          />
-                          {/* Curseur traditionnel par-dessus */}
-                          <Slider
-                            value={[currentProject.foisonnementProductions]}
-                            onValueChange={(value) => setFoisonnementProductions(value[0])}
-                            max={100}
-                            min={0}
-                            step={1}
-                            orientation="vertical"
-                            className="absolute inset-0 h-20 slider-productions opacity-80"
-                            disabled={simulationPreview.isActive}
-                          />
-                        </div>
-                        <span className="text-xs mt-1 font-medium">
-                          {currentProject.foisonnementProductions}%
-                        </span>
+                  {/* Productions Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className="text-xs font-medium text-center">Productions</Label>
+                    <div className="relative flex flex-col items-center">
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
+                          style={{ height: `${currentProject.foisonnementProductions}%` }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementProductions]}
+                          onValueChange={(value) => setFoisonnementProductions(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-productions opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
                       </div>
+                      <span className="text-xs mt-1 font-medium">
+                        {currentProject.foisonnementProductions}%
+                      </span>
                     </div>
                   </div>
                 </div>
