@@ -343,60 +343,60 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Calcule directement les répartitions de charges par phase à partir des tensions mesurées
+   * Calcule directement les répartitions de productions par phase à partir des tensions mesurées
    */
   private calculateImbalanceFromVoltages(
     measuredVoltages: { U1: number; U2: number; U3: number }
   ): { charges: { A: number; B: number; C: number }, productions: { A: number; B: number; C: number }, constraints: { min: number; max: number; total: number } } {
     
     const { U1, U2, U3 } = measuredVoltages;
-    console.log(`📊 Phase 2: Calcul déséquilibre à partir des tensions U1=${U1}V, U2=${U2}V, U3=${U3}V`);
+    console.log(`📊 Phase 2: Calcul déséquilibre productions à partir des tensions U1=${U1}V, U2=${U2}V, U3=${U3}V`);
     
-    // Trouver la tension maximale comme référence
-    const maxVoltage = Math.max(U1, U2, U3);
+    // Trouver la tension minimale comme référence
+    const minVoltage = Math.min(U1, U2, U3);
     
-    // Calculer les chutes de tension relatives par rapport au maximum
-    const voltageDrops = {
-      A: maxVoltage - U1,
-      B: maxVoltage - U2, 
-      C: maxVoltage - U3
+    // Calculer les surélévations de tension par rapport au minimum
+    const voltageElevations = {
+      A: U1 - minVoltage,
+      B: U2 - minVoltage, 
+      C: U3 - minVoltage
     };
     
-    console.log(`  Chutes de tension: A=${voltageDrops.A.toFixed(1)}V, B=${voltageDrops.B.toFixed(1)}V, C=${voltageDrops.C.toFixed(1)}V`);
+    console.log(`  Surélévations de tension: A=${voltageElevations.A.toFixed(1)}V, B=${voltageElevations.B.toFixed(1)}V, C=${voltageElevations.C.toFixed(1)}V`);
     
-    // Les phases avec plus de chute de tension ont plus de charge
-    const totalDrops = voltageDrops.A + voltageDrops.B + voltageDrops.C;
+    // Les phases avec plus de surélévation ont plus de production
+    const totalElevations = voltageElevations.A + voltageElevations.B + voltageElevations.C;
     
-    let charges = { A: 33.33, B: 33.33, C: 33.33 };
+    let productions = { A: 33.33, B: 33.33, C: 33.33 };
     
-    if (totalDrops > 0) {
-      // Répartition basée sur les chutes de tension (plus de chute = plus de charge)
+    if (totalElevations > 0) {
+      // Répartition basée sur les surélévations de tension (plus de surélévation = plus de production)
       const basePercentage = 100 / 3; // 33.33%
-      const dropWeights = {
-        A: voltageDrops.A / totalDrops,
-        B: voltageDrops.B / totalDrops,
-        C: voltageDrops.C / totalDrops
+      const elevationWeights = {
+        A: voltageElevations.A / totalElevations,
+        B: voltageElevations.B / totalElevations,
+        C: voltageElevations.C / totalElevations
       };
       
       // Ajuster par rapport à la répartition équilibrée
-      charges = {
-        A: basePercentage + (dropWeights.A - 1/3) * 100,
-        B: basePercentage + (dropWeights.B - 1/3) * 100, 
-        C: basePercentage + (dropWeights.C - 1/3) * 100
+      productions = {
+        A: basePercentage + (elevationWeights.A - 1/3) * 100,
+        B: basePercentage + (elevationWeights.B - 1/3) * 100, 
+        C: basePercentage + (elevationWeights.C - 1/3) * 100
       };
       
       // S'assurer que ça somme à 100%
-      const total = charges.A + charges.B + charges.C;
-      charges.A = (charges.A / total) * 100;
-      charges.B = (charges.B / total) * 100;
-      charges.C = (charges.C / total) * 100;
+      const total = productions.A + productions.B + productions.C;
+      productions.A = (productions.A / total) * 100;
+      productions.B = (productions.B / total) * 100;
+      productions.C = (productions.C / total) * 100;
     }
     
-    console.log(`  Répartitions calculées: A=${charges.A.toFixed(1)}%, B=${charges.B.toFixed(1)}%, C=${charges.C.toFixed(1)}%`);
+    console.log(`  Répartitions productions calculées: A=${productions.A.toFixed(1)}%, B=${productions.B.toFixed(1)}%, C=${productions.C.toFixed(1)}%`);
     
     return {
-      charges,
-      productions: { A: 33.33, B: 33.33, C: 33.33 }, // Productions équilibrées par défaut
+      charges: { A: 33.33, B: 33.33, C: 33.33 }, // Charges équilibrées
+      productions,
       constraints: { min: 10, max: 80, total: 100 }
     };
   }
