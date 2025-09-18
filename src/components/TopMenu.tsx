@@ -284,7 +284,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 <div className="flex items-start gap-4">
                   {/* Curseurs de foisonnement verticaux */}
                   <div className="flex items-start gap-4">
-                    {/* Charges Slider - Vertical */}
+                    {/* Charges Slider - Vertical avec valeurs */}
                     <div className="flex flex-col items-center gap-2">
                       <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
                         Charges
@@ -317,6 +317,38 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                             <span className="text-xs ml-1 text-orange-200">(sim)</span>
                           )}
                         </span>
+                        
+                        {/* Valeurs des charges par phase */}
+                        {currentProject.loadModel === 'monophase_reparti' && (() => {
+                          // Calculer les totaux de charges
+                          let totalCharges = 0;
+                          currentProject.nodes.forEach(node => {
+                            if (node.clients && node.clients.length > 0) {
+                              node.clients.forEach(client => {
+                                totalCharges += (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
+                              });
+                            }
+                          });
+                          
+                          // Appliquer les pourcentages de distribution
+                          const charges = { A: 0, B: 0, C: 0 };
+                          if (currentProject.manualPhaseDistribution) {
+                            const chargesDist = currentProject.manualPhaseDistribution.charges;
+                            charges.A = totalCharges * (chargesDist.A / 100);
+                            charges.B = totalCharges * (chargesDist.B / 100);
+                            charges.C = totalCharges * (chargesDist.C / 100);
+                          }
+
+                          return (
+                            <div className="mt-2 text-center">
+                              <div className="text-xs space-y-0.5 text-blue-300">
+                                <div>A: {charges.A.toFixed(1)}kVA</div>
+                                <div>B: {charges.B.toFixed(1)}kVA</div>
+                                <div>C: {charges.C.toFixed(1)}kVA</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
@@ -346,70 +378,45 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                         <span className="text-xs mt-1 font-medium">
                           {currentProject.foisonnementProductions}%
                         </span>
+                        
+                        {/* Valeurs des productions par phase */}
+                        {currentProject.loadModel === 'monophase_reparti' && (() => {
+                          // Calculer les totaux de productions
+                          let totalProductions = 0;
+                          currentProject.nodes.forEach(node => {
+                            if (node.productions && node.productions.length > 0) {
+                              node.productions.forEach(production => {
+                                totalProductions += (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
+                              });
+                            }
+                          });
+                          
+                          // Appliquer les pourcentages de distribution
+                          const productions = { A: 0, B: 0, C: 0 };
+                          if (currentProject.manualPhaseDistribution) {
+                            const productionsDist = currentProject.manualPhaseDistribution.productions;
+                            productions.A = totalProductions * (productionsDist.A / 100);
+                            productions.B = totalProductions * (productionsDist.B / 100);
+                            productions.C = totalProductions * (productionsDist.C / 100);
+                          }
+
+                          if ((productions.A + productions.B + productions.C) > 0) {
+                            return (
+                              <div className="mt-2 text-center">
+                                <div className="text-xs space-y-0.5 text-green-300">
+                                  <div>A: {productions.A.toFixed(1)}kVA</div>
+                                  <div>B: {productions.B.toFixed(1)}kVA</div>
+                                  <div>C: {productions.C.toFixed(1)}kVA</div>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
                   </div>
 
-                  {/* Puissances par phase */}
-                  {currentProject.loadModel === 'monophase_reparti' && (() => {
-                    // Calculer les totaux de charges et productions
-                    let totalCharges = 0;
-                    let totalProductions = 0;
-                    
-                    currentProject.nodes.forEach(node => {
-                      if (node.clients && node.clients.length > 0) {
-                        node.clients.forEach(client => {
-                          totalCharges += (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
-                        });
-                      }
-                      
-                      if (node.productions && node.productions.length > 0) {
-                        node.productions.forEach(production => {
-                          totalProductions += (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
-                        });
-                      }
-                    });
-                    
-                    // Appliquer les pourcentages de distribution manuelle
-                    const charges = { A: 0, B: 0, C: 0 };
-                    const productions = { A: 0, B: 0, C: 0 };
-                    
-                    if (currentProject.manualPhaseDistribution) {
-                      const chargesDist = currentProject.manualPhaseDistribution.charges;
-                      const productionsDist = currentProject.manualPhaseDistribution.productions;
-                      
-                      charges.A = totalCharges * (chargesDist.A / 100);
-                      charges.B = totalCharges * (chargesDist.B / 100);
-                      charges.C = totalCharges * (chargesDist.C / 100);
-                      
-                      productions.A = totalProductions * (productionsDist.A / 100);
-                      productions.B = totalProductions * (productionsDist.B / 100);
-                      productions.C = totalProductions * (productionsDist.C / 100);
-                    }
-
-                    return (
-                      <div className="ml-4 space-y-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs font-medium text-blue-300">Charges:</Label>
-                          <div className="text-xs space-y-0.5">
-                            <div>A: {charges.A.toFixed(1)}kVA</div>
-                            <div>B: {charges.B.toFixed(1)}kVA</div>
-                            <div>C: {charges.C.toFixed(1)}kVA</div>
-                          </div>
-                        </div>
-                        {(productions.A + productions.B + productions.C) > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs font-medium text-green-300">Productions:</Label>
-                            <div className="text-xs space-y-0.5">
-                              <div>A: {productions.A.toFixed(1)}kVA</div>
-                              <div>B: {productions.B.toFixed(1)}kVA</div>
-                              <div>C: {productions.C.toFixed(1)}kVA</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </div>
               </div>
 
