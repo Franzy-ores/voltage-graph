@@ -412,6 +412,54 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Estime une répartition initiale des charges et productions par phase
+   * à partir des tensions mesurées et de la charge/production totales.
+   *
+   * Hypothèse : la chute de tension ΔU négative est proportionnelle à la charge,
+   * la surtension ΔU positive est proportionnelle à la production.
+   */
+  private estimateInitialDistribution(
+    measuredVoltages: { U1: number; U2: number; U3: number },
+    totalLoad_kVA: number,
+    totalProd_kVA: number
+  ): { charges: { A: number; B: number; C: number }, productions: { A: number; B: number; C: number }, constraints: { min: number; max: number; total: number } } {
+    
+    const { U1, U2, U3 } = measuredVoltages;
+    const U_moy = (U1 + U2 + U3) / 3;
+
+    // Écarts par rapport à la moyenne
+    const deltas = { A: U1 - U_moy, B: U2 - U_moy, C: U3 - U_moy };
+
+    // Charges (deltas négatifs)
+    const negSum = Object.values(deltas).filter(d => d < 0).reduce((a, b) => a + Math.abs(b), 0);
+    const charges = { A: 0, B: 0, C: 0 };
+    if (negSum > 0) {
+      (Object.keys(deltas) as (keyof typeof deltas)[]).forEach(phase => {
+        charges[phase] = deltas[phase] < 0 ? (Math.abs(deltas[phase]) / negSum) * 100 : 0;
+      });
+    } else {
+      charges.A = charges.B = charges.C = 100 / 3;
+    }
+
+    // Productions (deltas positifs)
+    const posSum = Object.values(deltas).filter(d => d > 0).reduce((a, b) => a + b, 0);
+    const productions = { A: 0, B: 0, C: 0 };
+    if (posSum > 0) {
+      (Object.keys(deltas) as (keyof typeof deltas)[]).forEach(phase => {
+        productions[phase] = deltas[phase] > 0 ? (deltas[phase] / posSum) * 100 : 0;
+      });
+    } else {
+      productions.A = productions.B = productions.C = 100 / 3;
+    }
+
+    return {
+      charges,
+      productions,
+      constraints: { min: 10, max: 80, total: 100 }
+    };
+  }
+
+  /**
    * Convergence sur le déséquilibre avec ajustement des répartitions par phase (Phase 2)
    * Ajuste phase par phase pour atteindre les tensions mesurées
    */
@@ -430,14 +478,30 @@ export class SimulationCalculator extends ElectricalCalculator {
   } {
     console.log(`📊 Phase 2: Convergence déséquilibre par phase pour tensions cibles A=${targetVoltages.U1}V, B=${targetVoltages.U2}V, C=${targetVoltages.U3}V`);
     
-    // Initialiser la répartition des phases
-    let currentDistribution = project.manualPhaseDistribution ? 
-      { ...project.manualPhaseDistribution } : 
-      {
-        charges: { A: 33.33, B: 33.33, C: 33.34 },
-        productions: { A: 33.33, B: 33.33, C: 33.34 },
-        constraints: { min: 15, max: 70, total: 100 }
-      };
+    // Initialiser la répartition des phases avec estimation analytique
+    let currentDistribution;
+    if (project.manualPhaseDistribution) {
+      currentDistribution = { ...project.manualPhaseDistribution };
+    } else {
+      // Utiliser l'estimation analytique si les données totales sont disponibles
+      if (project.totalLoad_kVA && project.totalProd_kVA) {
+        console.log(`📊 Estimation initiale basée sur les tensions mesurées (charges: ${project.totalLoad_kVA}kVA, productions: ${project.totalProd_kVA}kVA)`);
+        currentDistribution = this.estimateInitialDistribution(
+          targetVoltages,        // tensions mesurées
+          project.totalLoad_kVA, // charge totale
+          project.totalProd_kVA  // production totale
+        );
+        console.log(`📊 Distribution estimée - Charges: A=${currentDistribution.charges.A.toFixed(1)}%, B=${currentDistribution.charges.B.toFixed(1)}%, C=${currentDistribution.charges.C.toFixed(1)}%`);
+        console.log(`📊 Distribution estimée - Productions: A=${currentDistribution.productions.A.toFixed(1)}%, B=${currentDistribution.productions.B.toFixed(1)}%, C=${currentDistribution.productions.C.toFixed(1)}%`);
+      } else {
+        console.log(`📊 Fallback vers répartition équilibrée (données totales non disponibles)`);
+        currentDistribution = {
+          charges: { A: 33.33, B: 33.33, C: 33.34 },
+          productions: { A: 33.33, B: 33.33, C: 33.34 },
+          constraints: { min: 15, max: 70, total: 100 }
+        };
+      }
+    }
     
     let iterationResult: CalculationResult;
     

@@ -114,6 +114,8 @@ export interface Project {
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
   defaultProductionKVA: number; // production par défaut pour nouveaux nœuds (kVA)
+  totalLoad_kVA?: number; // charge totale du réseau (kVA) - pour estimation initiale
+  totalProd_kVA?: number; // production totale du réseau (kVA) - pour estimation initiale
   transformerConfig: TransformerConfig; // Configuration du transformateur HT1/BT
   // Configuration tension HT pour calcul source réaliste
   htVoltageConfig?: {
