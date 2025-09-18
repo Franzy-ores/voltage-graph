@@ -279,7 +279,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
-                {/* Foisonnement Sliders - Vertical */}
+                {/* Foisonnement Sliders - Vertical avec barres colorées */}
                 <div className="flex items-start gap-6">
                   {/* Charges Slider - Vertical */}
                   <div className="flex flex-col items-center gap-2">
@@ -287,16 +287,27 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                       Charges
                     </Label>
                     <div className="relative flex flex-col items-center">
-                      <Slider
-                        value={[currentProject.foisonnementCharges]}
-                        onValueChange={(value) => setFoisonnementCharges(value[0])}
-                        max={100}
-                        min={0}
-                        step={1}
-                        orientation="vertical"
-                        className="h-20 slider-charges"
-                        disabled={simulationPreview.isActive}
-                      />
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
+                          style={{ 
+                            height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
+                          }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementCharges]}
+                          onValueChange={(value) => setFoisonnementCharges(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-charges opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
+                      </div>
                       <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
                         {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
                         {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
@@ -310,16 +321,25 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                   <div className="flex flex-col items-center gap-2">
                     <Label className="text-xs font-medium text-center">Productions</Label>
                     <div className="relative flex flex-col items-center">
-                      <Slider
-                        value={[currentProject.foisonnementProductions]}
-                        onValueChange={(value) => setFoisonnementProductions(value[0])}
-                        max={100}
-                        min={0}
-                        step={1}
-                        orientation="vertical"
-                        className="h-20 slider-productions"
-                        disabled={simulationPreview.isActive}
-                      />
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
+                          style={{ height: `${currentProject.foisonnementProductions}%` }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementProductions]}
+                          onValueChange={(value) => setFoisonnementProductions(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-productions opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
+                      </div>
                       <span className="text-xs mt-1 font-medium">
                         {currentProject.foisonnementProductions}%
                       </span>
