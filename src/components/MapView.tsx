@@ -626,10 +626,19 @@ export const MapView = () => {
               } else {
                 // Mode normal : afficher une seule tension
                 // En mode polyphasé équilibré avec système 400V, afficher la tension phase-neutre
+                // CORRECTION: Pour les sources monophasées en réseau 400V, afficher aussi phase-neutre
                 let displayVoltage = nodeVoltage;
                 let voltageLabel = 'V';
                 
-                if (currentProject.loadModel === 'polyphase_equilibre' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') {
+                const shouldDisplayPhaseNeutral = (
+                  // Cas 1: Mode polyphasé équilibré avec système 400V (comportement existant)
+                  (currentProject.loadModel === 'polyphase_equilibre' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') ||
+                  // Cas 2: Source monophasée dans un réseau 400V (nouveau comportement)
+                  (node.isSource && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && 
+                   (connectionType === 'MONO_230V_PN' || connectionType === 'MONO_230V_PP'))
+                );
+                
+                if (shouldDisplayPhaseNeutral) {
                   // Convertir de phase-phase vers phase-neutre pour l'affichage
                   displayVoltage = nodeVoltage / Math.sqrt(3);
                   voltageLabel = 'V (PN)';
