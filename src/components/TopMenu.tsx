@@ -279,39 +279,51 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
-                {/* Foisonnement Sliders */}
-                <div className="flex items-center gap-4">
-                  {/* Charges Slider */}
-                  <div className="flex items-center gap-2">
-                    <Label className={`text-sm font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
-                      Charges {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
-                      {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
-                        <span className="text-xs ml-1 text-orange-200">(sim)</span>
-                      )}
+                {/* Foisonnement Sliders - Vertical */}
+                <div className="flex items-start gap-6">
+                  {/* Charges Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                      Charges
                     </Label>
-                    <Slider
-                      value={[currentProject.foisonnementCharges]}
-                      onValueChange={(value) => setFoisonnementCharges(value[0])}
-                      max={100}
-                      min={0}
-                      step={1}
-                      className="w-32 slider-charges"
-                      disabled={simulationPreview.isActive}
-                    />
+                    <div className="relative flex flex-col items-center">
+                      <Slider
+                        value={[currentProject.foisonnementCharges]}
+                        onValueChange={(value) => setFoisonnementCharges(value[0])}
+                        max={100}
+                        min={0}
+                        step={1}
+                        orientation="vertical"
+                        className="h-20 slider-charges"
+                        disabled={simulationPreview.isActive}
+                      />
+                      <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
+                          <span className="text-xs ml-1 text-orange-200">(sim)</span>
+                        )}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Productions Slider */}
-                  <div className="flex items-center gap-2">
-                    <Label className="text-sm font-medium">Productions {currentProject.foisonnementProductions}%</Label>
-                    <Slider
-                      value={[currentProject.foisonnementProductions]}
-                      onValueChange={(value) => setFoisonnementProductions(value[0])}
-                      max={100}
-                      min={0}
-                      step={1}
-                      className="w-32 slider-productions"
-                      disabled={simulationPreview.isActive}
-                    />
+                  {/* Productions Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className="text-xs font-medium text-center">Productions</Label>
+                    <div className="relative flex flex-col items-center">
+                      <Slider
+                        value={[currentProject.foisonnementProductions]}
+                        onValueChange={(value) => setFoisonnementProductions(value[0])}
+                        max={100}
+                        min={0}
+                        step={1}
+                        orientation="vertical"
+                        className="h-20 slider-productions"
+                        disabled={simulationPreview.isActive}
+                      />
+                      <span className="text-xs mt-1 font-medium">
+                        {currentProject.foisonnementProductions}%
+                      </span>
+                    </div>
                   </div>
                 </div>
 
