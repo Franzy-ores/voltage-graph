@@ -1,6 +1,5 @@
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useNetworkStore } from "@/store/networkStore";
 
 interface PhaseDistributionSlidersProps {
@@ -14,6 +13,31 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
   if (!currentProject || !currentProject.manualPhaseDistribution) return null;
   
   const distribution = currentProject.manualPhaseDistribution[type];
+  
+  // Calcul des valeurs kVA par phase
+  const calculateKVAValues = () => {
+    let totalValue = 0;
+    
+    currentProject.nodes.forEach(node => {
+      if (type === 'charges' && node.clients && node.clients.length > 0) {
+        node.clients.forEach(client => {
+          totalValue += (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
+        });
+      } else if (type === 'productions' && node.productions && node.productions.length > 0) {
+        node.productions.forEach(production => {
+          totalValue += (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
+        });
+      }
+    });
+    
+    return {
+      A: totalValue * (distribution.A / 100),
+      B: totalValue * (distribution.B / 100),
+      C: totalValue * (distribution.C / 100)
+    };
+  };
+
+  const kvaValues = calculateKVAValues();
   
   const handlePhaseChange = (phase: 'A' | 'B' | 'C', newValue: number) => {
     const otherPhases = phase === 'A' ? ['B', 'C'] as const : 
@@ -57,24 +81,48 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
     }
   };
 
+  const colorClasses = type === 'charges' 
+    ? 'from-blue-500 to-blue-300' 
+    : 'from-green-500 to-green-300';
+
   return (
-    <div className="flex flex-col gap-2 p-3 bg-white/5 rounded border border-white/10">
-      <Label className="text-xs font-medium text-primary-foreground">{title}</Label>
-      <div className="flex gap-3">
+    <div className="flex flex-col gap-3 p-3 bg-white/5 rounded border border-white/10">
+      <Label className="text-xs font-medium text-primary-foreground text-center">{title}</Label>
+      <div className="flex justify-center gap-4">
         {(['A', 'B', 'C'] as const).map((phase) => (
-          <div key={phase} className="flex flex-col gap-1 min-w-[60px]">
-            <div className="flex justify-between items-center">
-              <Label className="text-xs text-primary-foreground/80">{phase}</Label>
-              <span className="text-xs font-mono text-primary-foreground">{distribution[phase].toFixed(1)}%</span>
+          <div key={phase} className="flex flex-col items-center gap-2">
+            <Label className="text-xs text-primary-foreground/80 font-medium">{phase}</Label>
+            
+            {/* Vertical Slider avec barre colorée */}
+            <div className="relative flex flex-col items-center">
+              <div className="relative w-6 h-20 bg-muted rounded-md border">
+                {/* Barre de progression colorée */}
+                <div 
+                  className={`absolute bottom-0 w-full bg-gradient-to-t ${colorClasses} rounded-md transition-all duration-200`}
+                  style={{ height: `${(distribution[phase] / 53.33) * 100}%` }}
+                />
+                {/* Curseur traditionnel par-dessus */}
+                <Slider
+                  value={[distribution[phase]]}
+                  onValueChange={(values) => handlePhaseChange(phase, values[0])}
+                  min={13.33}
+                  max={53.33}
+                  step={0.1}
+                  orientation="vertical"
+                  className="absolute inset-0 h-20 opacity-80"
+                />
+              </div>
             </div>
-            <Slider
-              value={[distribution[phase]]}
-              onValueChange={(values) => handlePhaseChange(phase, values[0])}
-              min={13.33}
-              max={53.33}
-              step={0.1}
-              className="w-full"
-            />
+            
+            {/* Affichage des valeurs */}
+            <div className="text-center">
+              <div className="text-xs font-mono text-primary-foreground">
+                {distribution[phase].toFixed(1)}%
+              </div>
+              <div className="text-xs text-primary-foreground/80">
+                {kvaValues[phase].toFixed(1)}kVA
+              </div>
+            </div>
           </div>
         ))}
       </div>
