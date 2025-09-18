@@ -177,8 +177,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
 
             <div className="flex items-center gap-4">
               {/* System Info */}
-              <div className="text-xs text-primary-foreground/120">
-                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
+              <div className="text-sm text-primary-foreground/120">
+                <span className="font-bold">{currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'}</span> - cos φ = {currentProject.cosPhi} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
             </div>
