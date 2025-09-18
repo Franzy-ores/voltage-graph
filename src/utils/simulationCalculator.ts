@@ -179,19 +179,19 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
     
     // === PHASE 2: CALCUL DIRECT DU DÉSÉQUILIBRE ===
-    console.log('📊 Phase 2: Calcul direct du déséquilibre à partir des tensions mesurées');
+    console.log('📊 Phase 2: Calcul direct du déséquilibre productions à partir des tensions mesurées');
     
-    // Calculer directement les répartitions à partir des tensions mesurées
+    // Calculer directement les répartitions de productions à partir des tensions mesurées
     const finalDistribution = this.calculateImbalanceFromVoltages({ U1, U2, U3 });
     
-    // Exécuter une simulation finale avec ces répartitions
+    // Exécuter une simulation finale avec foisonnement productions à 100% et répartition calculée
     const finalResult = this.calculateScenario(
       project.nodes,
       project.cables,
       project.cableTypes,
       scenario,
-      foisonnementCharges,
-      100, // Productions à 100%
+      foisonnementCharges, // Utiliser le foisonnement charges calculé en phase 1
+      100, // Foisonnement productions à 100%
       project.transformerConfig,
       'monophase_reparti',
       0, // Pas de déséquilibre global
@@ -206,11 +206,13 @@ export class SimulationCalculator extends ElectricalCalculator {
       maxError: 0
     };
     
-    // Mise à jour finale des répartitions dans l'interface
+    // Mise à jour finale dans l'interface - conserver la modifiabilité des curseurs
     const finalUpdateEvent = new CustomEvent('updateProjectFoisonnement', { 
       detail: { 
         foisonnementCharges,
-        finalDistribution: convergenceResult.finalDistribution
+        foisonnementProductions: 100, // Foisonnement productions fixé à 100%
+        finalDistribution: convergenceResult.finalDistribution,
+        keepSliderEnabled: true // Permettre la modification des curseurs après simulation
       } 
     });
     window.dispatchEvent(finalUpdateEvent);

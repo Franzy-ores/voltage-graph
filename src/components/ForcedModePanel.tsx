@@ -32,12 +32,24 @@ export const ForcedModePanel = () => {
           foisonnementCharges: event.detail.foisonnementCharges
         });
         
+        // Mettre à jour le foisonnement productions si spécifié
+        if (event.detail.foisonnementProductions !== undefined) {
+          updateProjectConfig({
+            foisonnementProductions: event.detail.foisonnementProductions
+          });
+        }
+        
         // Mettre à jour les répartitions si disponibles
         if (event.detail.finalDistribution) {
           updateProjectConfig({
             manualPhaseDistribution: event.detail.finalDistribution
           });
           console.log('🔄 Répartitions des phases mises à jour:', event.detail.finalDistribution);
+        }
+        
+        // Maintenir la modifiabilité des curseurs après simulation
+        if (event.detail.keepSliderEnabled) {
+          console.log('🔄 Curseurs maintenus modifiables après simulation');
         }
       };
 
@@ -146,6 +158,9 @@ export const ForcedModePanel = () => {
         } else {
           toast.warning("Simulation terminée sans convergence complète");
         }
+        
+        // Débloquer les curseurs après la simulation
+        clearSimulationPreview();
       } else {
         toast.error("Échec de la simulation forcée");
       }
