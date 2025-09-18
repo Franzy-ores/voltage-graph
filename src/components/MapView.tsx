@@ -625,7 +625,17 @@ export const MapView = () => {
                 }
               } else {
                 // Mode normal : afficher une seule tension
-                let displayText = `${nodeVoltage.toFixed(0)}V`;
+                // En mode polyphasé équilibré avec système 400V, afficher la tension phase-neutre
+                let displayVoltage = nodeVoltage;
+                let voltageLabel = 'V';
+                
+                if (currentProject.loadModel === 'polyphase_equilibre' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') {
+                  // Convertir de phase-phase vers phase-neutre pour l'affichage
+                  displayVoltage = nodeVoltage / Math.sqrt(3);
+                  voltageLabel = 'V (PN)';
+                }
+                
+                let displayText = `${displayVoltage.toFixed(0)}${voltageLabel}`;
                 if (hasDisplayableLoad) {
                   displayText += `<br>${(totalCharge * (currentProject.foisonnementCharges / 100)).toFixed(1)}kVA`;
                 }
