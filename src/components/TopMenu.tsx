@@ -253,8 +253,8 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
             </div>
           )}
 
-          {/* Phase Distribution Display - Masqué car intégré dans la micro fenêtre */}
-          {/* <PhaseDistributionDisplay /> */}
+          {/* Phase Distribution Display */}
+          <PhaseDistributionDisplay />
 
           {/* Third Row: Load Model and Controls */}
           <div className="flex items-center justify-between gap-4">
@@ -279,146 +279,73 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </Select>
               </div>
 
-              {/* Micro fenêtre Foisonnement avec curseurs et puissances */}
-              <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-                <div className="flex items-start gap-4">
-                  {/* Curseurs de foisonnement verticaux */}
-                  <div className="flex items-start gap-4">
-                    {/* Charges Slider - Vertical avec valeurs */}
-                    <div className="flex flex-col items-center gap-2">
-                      <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
-                        Charges
-                      </Label>
-                      <div className="relative flex flex-col items-center">
-                        {/* Barre de fond */}
-                        <div className="relative w-6 h-16 bg-muted rounded-md border">
-                          {/* Barre de progression colorée */}
-                          <div 
-                            className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
-                            style={{ 
-                              height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
-                            }}
-                          />
-                          {/* Curseur traditionnel par-dessus */}
-                          <Slider
-                            value={[currentProject.foisonnementCharges]}
-                            onValueChange={(value) => setFoisonnementCharges(value[0])}
-                            max={100}
-                            min={0}
-                            step={1}
-                            orientation="vertical"
-                            className="absolute inset-0 h-16 slider-charges opacity-80"
-                            disabled={simulationPreview.isActive}
-                          />
-                        </div>
-                        <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
-                          {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
-                          {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
-                            <span className="text-xs ml-1 text-orange-200">(sim)</span>
-                          )}
-                        </span>
-                        
-                        {/* Valeurs des charges par phase */}
-                        {currentProject.loadModel === 'monophase_reparti' && (() => {
-                          // Calculer les totaux de charges
-                          let totalCharges = 0;
-                          currentProject.nodes.forEach(node => {
-                            if (node.clients && node.clients.length > 0) {
-                              node.clients.forEach(client => {
-                                totalCharges += (client.S_kVA || 0) * (currentProject.foisonnementCharges / 100);
-                              });
-                            }
-                          });
-                          
-                          // Appliquer les pourcentages de distribution
-                          const charges = { A: 0, B: 0, C: 0 };
-                          if (currentProject.manualPhaseDistribution) {
-                            const chargesDist = currentProject.manualPhaseDistribution.charges;
-                            charges.A = totalCharges * (chargesDist.A / 100);
-                            charges.B = totalCharges * (chargesDist.B / 100);
-                            charges.C = totalCharges * (chargesDist.C / 100);
-                          }
-
-                          return (
-                            <div className="mt-2 text-center">
-                              <div className="text-xs space-y-0.5 text-blue-300">
-                                <div>A: {charges.A.toFixed(1)}kVA</div>
-                                <div>B: {charges.B.toFixed(1)}kVA</div>
-                                <div>C: {charges.C.toFixed(1)}kVA</div>
-                              </div>
-                            </div>
-                          );
-                        })()}
+                {/* Foisonnement Sliders - Vertical avec barres colorées */}
+                <div className="flex items-start gap-6">
+                  {/* Charges Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className={`text-xs font-medium text-center ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                      Charges
+                    </Label>
+                    <div className="relative flex flex-col items-center">
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
+                          style={{ 
+                            height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
+                          }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementCharges]}
+                          onValueChange={(value) => setFoisonnementCharges(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-charges opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
                       </div>
-                    </div>
-
-                    {/* Productions Slider - Vertical */}
-                    <div className="flex flex-col items-center gap-2">
-                      <Label className="text-xs font-medium text-center">Productions</Label>
-                      <div className="relative flex flex-col items-center">
-                        {/* Barre de fond */}
-                        <div className="relative w-6 h-16 bg-muted rounded-md border">
-                          {/* Barre de progression colorée */}
-                          <div 
-                            className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
-                            style={{ height: `${currentProject.foisonnementProductions}%` }}
-                          />
-                          {/* Curseur traditionnel par-dessus */}
-                          <Slider
-                            value={[currentProject.foisonnementProductions]}
-                            onValueChange={(value) => setFoisonnementProductions(value[0])}
-                            max={100}
-                            min={0}
-                            step={1}
-                            orientation="vertical"
-                            className="absolute inset-0 h-16 slider-productions opacity-80"
-                            disabled={simulationPreview.isActive}
-                          />
-                        </div>
-                        <span className="text-xs mt-1 font-medium">
-                          {currentProject.foisonnementProductions}%
-                        </span>
-                        
-                        {/* Valeurs des productions par phase */}
-                        {currentProject.loadModel === 'monophase_reparti' && (() => {
-                          // Calculer les totaux de productions
-                          let totalProductions = 0;
-                          currentProject.nodes.forEach(node => {
-                            if (node.productions && node.productions.length > 0) {
-                              node.productions.forEach(production => {
-                                totalProductions += (production.S_kVA || 0) * (currentProject.foisonnementProductions / 100);
-                              });
-                            }
-                          });
-                          
-                          // Appliquer les pourcentages de distribution
-                          const productions = { A: 0, B: 0, C: 0 };
-                          if (currentProject.manualPhaseDistribution) {
-                            const productionsDist = currentProject.manualPhaseDistribution.productions;
-                            productions.A = totalProductions * (productionsDist.A / 100);
-                            productions.B = totalProductions * (productionsDist.B / 100);
-                            productions.C = totalProductions * (productionsDist.C / 100);
-                          }
-
-                          if ((productions.A + productions.B + productions.C) > 0) {
-                            return (
-                              <div className="mt-2 text-center">
-                                <div className="text-xs space-y-0.5 text-green-300">
-                                  <div>A: {productions.A.toFixed(1)}kVA</div>
-                                  <div>B: {productions.B.toFixed(1)}kVA</div>
-                                  <div>C: {productions.C.toFixed(1)}kVA</div>
-                                </div>
-                              </div>
-                            );
-                          }
-                          return null;
-                        })()}
-                      </div>
+                      <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
+                          <span className="text-xs ml-1 text-orange-200">(sim)</span>
+                        )}
+                      </span>
                     </div>
                   </div>
 
+                  {/* Productions Slider - Vertical */}
+                  <div className="flex flex-col items-center gap-2">
+                    <Label className="text-xs font-medium text-center">Productions</Label>
+                    <div className="relative flex flex-col items-center">
+                      {/* Barre de fond */}
+                      <div className="relative w-6 h-20 bg-muted rounded-md border">
+                        {/* Barre de progression colorée */}
+                        <div 
+                          className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
+                          style={{ height: `${currentProject.foisonnementProductions}%` }}
+                        />
+                        {/* Curseur traditionnel par-dessus */}
+                        <Slider
+                          value={[currentProject.foisonnementProductions]}
+                          onValueChange={(value) => setFoisonnementProductions(value[0])}
+                          max={100}
+                          min={0}
+                          step={1}
+                          orientation="vertical"
+                          className="absolute inset-0 h-20 slider-productions opacity-80"
+                          disabled={simulationPreview.isActive}
+                        />
+                      </div>
+                      <span className="text-xs mt-1 font-medium">
+                        {currentProject.foisonnementProductions}%
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
               {/* Phase Distribution Sliders */}
               {currentProject.loadModel === 'monophase_reparti' && (

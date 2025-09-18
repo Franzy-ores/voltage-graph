@@ -57,13 +57,9 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
     }
   };
 
-  const colorConfig = type === 'charges' 
-    ? { from: 'from-blue-500', to: 'to-blue-300', label: 'text-blue-300' }
-    : { from: 'from-green-500', to: 'to-green-300', label: 'text-green-300' };
-
   return (
     <div className="flex flex-col gap-2 p-3 bg-white/5 rounded border border-white/10">
-      <Label className={`text-xs font-medium ${colorConfig.label}`}>{title}</Label>
+      <Label className="text-xs font-medium text-primary-foreground">{title}</Label>
       <div className="flex gap-3">
         {(['A', 'B', 'C'] as const).map((phase) => (
           <div key={phase} className="flex flex-col gap-1 min-w-[60px]">
@@ -71,25 +67,14 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
               <Label className="text-xs text-primary-foreground/80">{phase}</Label>
               <span className="text-xs font-mono text-primary-foreground">{distribution[phase].toFixed(1)}%</span>
             </div>
-            <div className="relative">
-              {/* Barre de fond */}
-              <div className="w-full h-6 bg-muted rounded border">
-                {/* Barre de progression colorée */}
-                <div 
-                  className={`h-full bg-gradient-to-r ${colorConfig.from} ${colorConfig.to} rounded transition-all duration-200`}
-                  style={{ width: `${Math.max(0, Math.min(100, (distribution[phase] - 13.33) / (53.33 - 13.33) * 100))}%` }}
-                />
-                {/* Curseur traditionnel par-dessus */}
-                <Slider
-                  value={[distribution[phase]]}
-                  onValueChange={(values) => handlePhaseChange(phase, values[0])}
-                  min={13.33}
-                  max={53.33}
-                  step={0.1}
-                  className="absolute inset-0 w-full opacity-80"
-                />
-              </div>
-            </div>
+            <Slider
+              value={[distribution[phase]]}
+              onValueChange={(values) => handlePhaseChange(phase, values[0])}
+              min={13.33}
+              max={53.33}
+              step={0.1}
+              className="w-full"
+            />
           </div>
         ))}
       </div>
