@@ -410,13 +410,13 @@ export class SimulationCalculator extends ElectricalCalculator {
         bestVoltage = actualVoltage;
       }
 
-      // CORRECTIF: Logique de dichotomie corrigée (identique au store)
+      // CORRECT: Logique de dichotomie corrigée
       if (actualVoltage < config.targetVoltage) {
-        // Tension trop basse → réduire le foisonnement
-        high = testFoisonnement - 0.1;
+        // Tension trop basse → réduire le foisonnement → chercher dans la partie basse
+        high = testFoisonnement;
       } else {
-        // Tension trop haute → augmenter le foisonnement  
-        low = testFoisonnement + 0.1;
+        // Tension trop haute → augmenter le foisonnement → chercher dans la partie haute
+        low = testFoisonnement;
       }
 
       if (high - low < 0.1) break;

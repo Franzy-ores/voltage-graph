@@ -1007,9 +1007,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
 
       if (actualVoltage < targetVoltage) {
-        high = testFoisonnement - 0.1;
+        // Tension trop basse → réduire le foisonnement → chercher dans la partie basse
+        high = testFoisonnement;
       } else {
-        low = testFoisonnement + 0.1;
+        // Tension trop haute → augmenter le foisonnement → chercher dans la partie haute
+        low = testFoisonnement;
       }
 
       if (high - low < 0.1) break;
