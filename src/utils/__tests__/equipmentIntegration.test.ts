@@ -12,23 +12,27 @@ describe('Equipment Integration Tests', () => {
     mockProject = {
       id: 'test-project',
       name: 'Test Project',
-      description: 'Integration test project',
       voltageSystem: 'TÉTRAPHASÉ_400V',
-      loadModel: 'monophase_reparti' as const,
+      cosPhi: 0.95,
       foisonnementCharges: 100,
       foisonnementProductions: 0,
+      defaultChargeKVA: 5,
+      defaultProductionKVA: 0,
+      loadModel: 'monophase_reparti' as const,
       desequilibrePourcent: 0,
       transformerConfig: {
-        power_kVA: 100,
+        rating: '400kVA',
+        nominalPower_kVA: 400,
         nominalVoltage_V: 400,
-        type: 'TRI_400V'
+        shortCircuitVoltage_percent: 4,
+        cosPhi: 0.95
       },
       nodes: [
         {
           id: 'source',
           name: 'Source',
-          latitude: 0,
-          longitude: 0,
+          lat: 0,
+          lng: 0,
           isSource: true,
           connectionType: 'TÉTRA_3P+N_230_400V' as const,
           clients: [],
@@ -37,8 +41,8 @@ describe('Equipment Integration Tests', () => {
         {
           id: 'intermediate',
           name: 'Intermediate Node',
-          latitude: 0.001,
-          longitude: 0.001,
+          lat: 0.001,
+          lng: 0.001,
           isSource: false,
           connectionType: 'TÉTRA_3P+N_230_400V' as const,
           clients: [],
@@ -47,17 +51,19 @@ describe('Equipment Integration Tests', () => {
         {
           id: 'load-node',
           name: 'Load Node',
-          latitude: 0.002,
-          longitude: 0.002,
+          lat: 0.002,
+          lng: 0.002,
           isSource: false,
           connectionType: 'TÉTRA_3P+N_230_400V' as const,
-          clients: [{ S_kVA: 20, description: 'Test Load' }],
+          clients: [{ id: 'load1', label: 'Test Load', S_kVA: 20 }],
           productions: []
         }
       ],
       cables: [
         {
           id: 'cable1',
+          name: 'Cable 1',
+          pose: 'SOUTERRAIN',
           nodeAId: 'source',
           nodeBId: 'intermediate',
           typeId: 'cable-type-1',
@@ -68,6 +74,8 @@ describe('Equipment Integration Tests', () => {
         },
         {
           id: 'cable2',
+          name: 'Cable 2',
+          pose: 'SOUTERRAIN',
           nodeAId: 'intermediate',  
           nodeBId: 'load-node',
           typeId: 'cable-type-1',
@@ -79,13 +87,14 @@ describe('Equipment Integration Tests', () => {
       ],
       cableTypes: [{
         id: 'cable-type-1',
-        name: 'Standard Cable',
+        label: 'Standard Cable',
         R12_ohm_per_km: 0.5,
         X12_ohm_per_km: 0.3,
         R0_ohm_per_km: 0.8,
         X0_ohm_per_km: 0.4,
-        Imax_A: 100,
-        price_euro_per_m: 15
+        matiere: 'CUIVRE',
+        posesPermises: ['SOUTERRAIN'],
+        maxCurrent_A: 100
       }]
     };
   });
@@ -107,7 +116,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR', 
+        'PRÉLÈVEMENT', 
         equipment
       );
 
@@ -154,7 +163,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 
@@ -171,11 +180,11 @@ describe('Equipment Integration Tests', () => {
     it('should apply voltage balance correction', () => {
       // Modify project to have unbalanced loads
       mockProject.nodes[2].clients = [
-        { S_kVA: 10, description: 'Load Phase A' },
-        { S_kVA: 5, description: 'Load Phase B' }, 
-        { S_kVA: 15, description: 'Load Phase C' }
+        { id: 'load-a', label: 'Load Phase A', S_kVA: 10 },
+        { id: 'load-b', label: 'Load Phase B', S_kVA: 5 }, 
+        { id: 'load-c', label: 'Load Phase C', S_kVA: 15 }
       ];
-      mockProject.loadModel = 'triphase_desequilibre';
+      mockProject.loadModel = 'polyphase_equilibre';
       mockProject.desequilibrePourcent = 30;
 
       const equipment: SimulationEquipment = {
@@ -184,6 +193,7 @@ describe('Equipment Integration Tests', () => {
           id: 'comp1',
           nodeId: 'load-node',
           maxPower_kVA: 50,
+          tolerance_A: 1.0,
           enabled: true
         }],
         cableUpgrades: []
@@ -191,7 +201,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 
@@ -212,9 +222,9 @@ describe('Equipment Integration Tests', () => {
     it('should apply both voltage regulator and compensator together', () => {
       // Unbalanced load configuration
       mockProject.nodes[2].clients = [
-        { S_kVA: 8, description: 'Load A' },
-        { S_kVA: 6, description: 'Load B' },
-        { S_kVA: 10, description: 'Load C' }
+        { id: 'load-a', label: 'Load A', S_kVA: 8 },
+        { id: 'load-b', label: 'Load B', S_kVA: 6 },
+        { id: 'load-c', label: 'Load C', S_kVA: 10 }
       ];
       mockProject.desequilibrePourcent = 20;
 
@@ -231,6 +241,7 @@ describe('Equipment Integration Tests', () => {
           id: 'comp1',
           nodeId: 'load-node',
           maxPower_kVA: 50,
+          tolerance_A: 1.0,
           enabled: true
         }],
         cableUpgrades: []
@@ -238,7 +249,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 
@@ -276,7 +287,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 
@@ -308,6 +319,7 @@ describe('Equipment Integration Tests', () => {
           id: 'comp1',
           nodeId: 'load-node',
           maxPower_kVA: 50,
+          tolerance_A: 1.0,
           enabled: false // Disabled
         }],
         cableUpgrades: []
@@ -315,7 +327,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 
@@ -345,7 +357,7 @@ describe('Equipment Integration Tests', () => {
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'JOUR',
+        'PRÉLÈVEMENT',
         equipment
       );
 

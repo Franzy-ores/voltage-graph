@@ -717,14 +717,7 @@ export class ElectricalCalculator {
       result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = regulatedVoltages;
 
       // Recalculate the entire network downstream from the regulated node
-      result = this.recalculateNetworkFromRegulator(
-        regulator.nodeId,
-        targetVoltage,
-        nodes,
-        cables,
-        cableTypes,
-        result
-      );
+      this.recalculateNetworkFromNode(regulator.nodeId, nodes, cables, cableTypes, result, targetVoltage);
 
       console.log(`✅ Voltage regulator applied: Voltage set to ${targetVoltage}V, downstream network recalculated`);
     }

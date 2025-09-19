@@ -253,6 +253,15 @@ export interface CalculationResult {
     nodeId: string; 
     voltagesPerPhase: { A: number; B: number; C: number };
     voltageDropsPerPhase: { A: number; B: number; C: number };
+    currentPerPhase?: { A: number; B: number; C: number };
+    powerPerPhase?: { A: number; B: number; C: number };
+    equi8?: {
+      UEQUI8: { A: number; B: number; C: number };
+      I_EQUI8: number;
+      dU_init: number;
+      dU_EQUI8: number;
+      ratios: { A: number; B: number; C: number };
+    };
   }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel

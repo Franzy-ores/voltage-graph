@@ -15,12 +15,14 @@ describe('Voltage Regulator Tests', () => {
     // Mock cable type
     mockCableTypes = [{
       id: 'cable1',
+      label: 'Test Cable',
       R12_ohm_per_km: 0.5,
       X12_ohm_per_km: 0.3,
       R0_ohm_per_km: 0.8,
       X0_ohm_per_km: 0.4,
-      Imax_A: 100,
-      price_euro_per_m: 10
+      matiere: 'CUIVRE',
+      posesPermises: ['SOUTERRAIN'],
+      maxCurrent_A: 100
     }];
 
     // Mock nodes
@@ -28,8 +30,8 @@ describe('Voltage Regulator Tests', () => {
       {
         id: 'source',
         name: 'Source',
-        latitude: 0,
-        longitude: 0,
+        lat: 0,
+        lng: 0,
         isSource: true,
         connectionType: 'TÉTRA_3P+N_230_400V' as const,
         clients: [],
@@ -38,8 +40,8 @@ describe('Voltage Regulator Tests', () => {
       {
         id: 'regulator-node',
         name: 'Regulator Node',
-        latitude: 0.001,
-        longitude: 0.001,
+        lat: 0.001,
+        lng: 0.001,
         isSource: false,
         connectionType: 'TÉTRA_3P+N_230_400V' as const,
         clients: [],
@@ -48,11 +50,11 @@ describe('Voltage Regulator Tests', () => {
       {
         id: 'load-node',
         name: 'Load Node',
-        latitude: 0.002,
-        longitude: 0.002,
+        lat: 0.002,
+        lng: 0.002,
         isSource: false,
         connectionType: 'TÉTRA_3P+N_230_400V' as const,
-        clients: [{ S_kVA: 10, name: 'Test Load' }],
+        clients: [{ id: 'load1', label: 'Test Load', S_kVA: 10 }],
         productions: []
       }
     ];
@@ -61,6 +63,8 @@ describe('Voltage Regulator Tests', () => {
     mockCables = [
       {
         id: 'cable1',
+        name: 'Cable 1',
+        pose: 'SOUTERRAIN',
         nodeAId: 'source',
         nodeBId: 'regulator-node',
         typeId: 'cable1',
@@ -71,6 +75,8 @@ describe('Voltage Regulator Tests', () => {
       },
       {
         id: 'cable2',
+        name: 'Cable 2',
+        pose: 'SOUTERRAIN',
         nodeAId: 'regulator-node',
         nodeBId: 'load-node',
         typeId: 'cable1',
@@ -83,29 +89,36 @@ describe('Voltage Regulator Tests', () => {
 
     // Mock base result
     mockBaseResult = {
-      nodeMetrics: [],
+      scenario: 'PRÉLÈVEMENT',
+      cables: mockCables,
+      totalLoads_kVA: 10,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0,
+      maxVoltageDropPercent: 2.5,
+      compliance: 'normal',
       nodeMetricsPerPhase: [
         {
           nodeId: 'source',
           voltagesPerPhase: { A: 400, B: 400, C: 400 },
+          voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
           currentPerPhase: { A: 0, B: 0, C: 0 },
           powerPerPhase: { A: 0, B: 0, C: 0 }
         },
         {
           nodeId: 'regulator-node',
           voltagesPerPhase: { A: 395, B: 395, C: 395 },
+          voltageDropsPerPhase: { A: 5, B: 5, C: 5 },
           currentPerPhase: { A: 5, B: 5, C: 5 },
           powerPerPhase: { A: 1975, B: 1975, C: 1975 }
         },
         {
           nodeId: 'load-node',
           voltagesPerPhase: { A: 390, B: 390, C: 390 },
+          voltageDropsPerPhase: { A: 10, B: 10, C: 10 },
           currentPerPhase: { A: 10, B: 10, C: 10 },
           powerPerPhase: { A: 3900, B: 3900, C: 3900 }
         }
       ],
-      cableResults: [],
-      nodeVoltageDrops: [],
       virtualBusbar: {
         voltage_V: 400,
         current_A: 0,
@@ -114,18 +127,6 @@ describe('Voltage Regulator Tests', () => {
         deltaU_percent: 0,
         losses_kW: 0,
         circuits: []
-      },
-      totalLosses_kW: 0,
-      summary: {
-        totalLoad_kVA: 10,
-        totalProduction_kVA: 0,
-        netBalance_kVA: 10,
-        averageVoltage_V: 395,
-        minVoltage_V: 390,
-        maxVoltage_V: 400,
-        voltageSpread_percent: 2.56,
-        totalLosses_kW: 0,
-        efficiency_percent: 100
       }
     };
   });
@@ -214,7 +215,7 @@ describe('Voltage Regulator Tests', () => {
   describe('Power Limit Tests', () => {
     it('should respect power limits based on downstream load', () => {
       // Add high load downstream
-      mockNodes[2].clients = [{ S_kVA: 100, description: 'High Load' }]; // 100kVA load
+      mockNodes[2].clients = [{ id: 'high-load', label: 'High Load', S_kVA: 100 }]; // 100kVA load
 
       const regulator: VoltageRegulator = {
         id: 'reg1',
