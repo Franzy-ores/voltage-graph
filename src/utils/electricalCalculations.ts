@@ -1,4 +1,4 @@
-import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel, NeutralCompensator } from '@/types/network';
+import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel, NeutralCompensator, VoltageRegulator } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
 import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
@@ -737,6 +737,23 @@ export class ElectricalCalculator {
 
     return result;
   }
+
+  /**
+   * Applique les compensateurs de neutre EQUI8 aux résultats de calcul
+   * @param nodes Liste des nœuds du réseau
+   * @param cables Liste des câbles du réseau
+   * @param compensators Liste des compensateurs actifs
+   * @param baseResult Résultats de base avant compensation
+   * @param cableTypes Types de câbles disponibles
+   * @returns Résultats modifiés avec compensateurs appliqués
+   */
+  applyNeutralCompensation(
+    nodes: Node[],
+    cables: Cable[],
+    compensators: NeutralCompensator[],
+    baseResult: CalculationResult,
+    cableTypes: CableType[]
+  ): CalculationResult {
     if (!compensators || compensators.length === 0) {
       console.log('🔧 No compensators provided, returning base result');
       return baseResult;

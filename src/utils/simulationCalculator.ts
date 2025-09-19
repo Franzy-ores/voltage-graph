@@ -552,7 +552,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
-      baseResult = this.applyVoltageRegulators(project.nodes, project.cables, activeRegulators, baseResult, project.cableTypes);
+      baseResult = (this as any).applyVoltageRegulators(project.nodes, project.cables, activeRegulators, baseResult, project.cableTypes);
       
       console.log('📊 Result AFTER voltage regulation:', {
         hasNodeMetrics: !!baseResult.nodeMetrics,
