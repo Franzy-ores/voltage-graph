@@ -617,6 +617,7 @@ export class ElectricalCalculator {
 
   /**
    * Applique les régulateurs de tension aux résultats de calcul
+   * Corrigé pour respecter la puissance limitée et propager correctement les tensions
    * @param nodes Liste des nœuds du réseau
    * @param cables Liste des câbles du réseau
    * @param regulators Liste des régulateurs actifs
@@ -670,76 +671,62 @@ export class ElectricalCalculator {
         continue;
       }
 
-      // PHASE 4: Check power limits for voltage regulators  
+      // Check power limits for voltage regulators based on downstream load
       const downstreamLoad_kVA = this.calculateDownstreamLoad(regulator.nodeId, nodes, cables, 100);
       console.log(`⚡ Regulator at node ${regulator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${regulator.maxPower_kVA}kVA`);
+      
+      if (downstreamLoad_kVA > regulator.maxPower_kVA) {
+        console.warn(`⚠️ Régulateur ${regulator.id} surchargé! Charge aval=${downstreamLoad_kVA.toFixed(1)}kVA > Limite=${regulator.maxPower_kVA}kVA`);
+        (regulator as any).isLimited = true;
+        (regulator as any).limitReason = `Charge aval (${downstreamLoad_kVA.toFixed(1)}kVA) dépasse la limite (${regulator.maxPower_kVA}kVA)`;
+        continue;
+      }
       
       // Calculate average current voltage
       const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
       const targetVoltage = regulator.targetVoltage_V;
       
-      // Determine if regulation is needed and possible
-      const voltageDifference = targetVoltage - avgCurrentVoltage;
-      const regulationEfficiency = 0.95; // 95% efficiency
-      
-      console.log(`📊 Regulator ${regulator.id}: Current=${avgCurrentVoltage.toFixed(1)}V, Target=${targetVoltage}V, Diff=${voltageDifference.toFixed(1)}V`);
+      console.log(`📊 Regulator ${regulator.id}: Current=${avgCurrentVoltage.toFixed(1)}V, Target=${targetVoltage}V`);
 
-      // Check if regulation is within capacity
-      if (Math.abs(voltageDifference) < 1.0) {
-        console.log(`✅ Voltage already close to target, minimal regulation needed`);
-        // Update regulator status
+      // Check if regulation is needed
+      const voltageTolerance = 1.0; // 1V tolerance
+      if (Math.abs(targetVoltage - avgCurrentVoltage) < voltageTolerance) {
+        console.log(`✅ Voltage already at target (within ${voltageTolerance}V), minimal regulation needed`);
         (regulator as any).isActive = false;
         (regulator as any).actualVoltage_V = avgCurrentVoltage;
         (regulator as any).reactivePower_kVAr = 0;
         continue;
       }
 
-      // Apply voltage regulation (simplified model)
+      // The regulator forces the voltage to the target value
       const regulatedVoltages = {
-        A: currentVoltages.A + (voltageDifference * regulationEfficiency),
-        B: currentVoltages.B + (voltageDifference * regulationEfficiency),
-        C: currentVoltages.C + (voltageDifference * regulationEfficiency)
+        A: targetVoltage,
+        B: targetVoltage,
+        C: targetVoltage
       };
 
-      // Ensure voltages stay within reasonable bounds
-      regulatedVoltages.A = Math.max(180, Math.min(280, regulatedVoltages.A));
-      regulatedVoltages.B = Math.max(180, Math.min(280, regulatedVoltages.B));
-      regulatedVoltages.C = Math.max(180, Math.min(280, regulatedVoltages.C));
-
-      console.log(`📊 Regulated voltages: A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`);
-
-      // Calculate required reactive power (simplified estimation)
-      const estimatedReactivePower = Math.abs(voltageDifference) * 0.1; // kVAr per V difference
-      
-      // Check if within regulator capacity
-      if (estimatedReactivePower > regulator.maxPower_kVA) {
-        console.warn(`⚠️ Régulateur ${regulator.id} limité! Puissance requise=${estimatedReactivePower.toFixed(1)}kVAr > Disponible=${regulator.maxPower_kVA}kVAr`);
-        (regulator as any).isLimited = true;
-        // Apply partial regulation
-        const reductionFactor = regulator.maxPower_kVA / estimatedReactivePower;
-        regulatedVoltages.A = currentVoltages.A + (voltageDifference * regulationEfficiency * reductionFactor);
-        regulatedVoltages.B = currentVoltages.B + (voltageDifference * regulationEfficiency * reductionFactor);
-        regulatedVoltages.C = currentVoltages.C + (voltageDifference * regulationEfficiency * reductionFactor);
-      } else {
-        (regulator as any).isLimited = false;
-      }
+      console.log(`📊 Regulated voltages: A=${regulatedVoltages.A}V, B=${regulatedVoltages.B}V, C=${regulatedVoltages.C}V`);
 
       // Update regulator status
       (regulator as any).isActive = true;
-      (regulator as any).actualVoltage_V = (regulatedVoltages.A + regulatedVoltages.B + regulatedVoltages.C) / 3;
-      (regulator as any).reactivePower_kVAr = Math.min(estimatedReactivePower, regulator.maxPower_kVA);
+      (regulator as any).isLimited = false;
+      (regulator as any).actualVoltage_V = targetVoltage;
+      (regulator as any).reactivePower_kVAr = Math.abs(targetVoltage - avgCurrentVoltage) * downstreamLoad_kVA / targetVoltage; // Approximate Q
 
-      // Apply regulation and recalculate downstream network
-      result = this.recalculateNetworkFromNode(
+      // Update the voltage at the regulator node
+      result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = regulatedVoltages;
+
+      // Recalculate the entire network downstream from the regulated node
+      result = this.recalculateNetworkFromRegulator(
         regulator.nodeId,
-        regulatedVoltages,
+        targetVoltage,
         nodes,
         cables,
         cableTypes,
         result
       );
 
-      console.log(`✅ Voltage regulator applied: ${voltageDifference.toFixed(1)}V adjustment, ${(regulator as any).reactivePower_kVAr.toFixed(1)}kVAr reactive power`);
+      console.log(`✅ Voltage regulator applied: Voltage set to ${targetVoltage}V, downstream network recalculated`);
     }
 
     return result;
@@ -788,7 +775,70 @@ export class ElectricalCalculator {
   }
 
   /**
+   * Fonction de calcul EQUI8 selon les formules exactes du constructeur
+   * @param Uinit Tensions initiales [ph1, ph2, ph3] en V
+   * @param Zph Impédance de phase en Ω
+   * @param Zn Impédance de neutre en Ω
+   * @returns Résultats EQUI8 complets
+   */
+  computeEqui8(
+    Uinit: [number, number, number], 
+    Zph: number, 
+    Zn: number
+  ): {
+    UEQUI8: [number, number, number];
+    I_EQUI8: number;
+    dU_init: number;
+    dU_EQUI8: number;
+    ratios: [number, number, number];
+    warning?: string;
+  } {
+    const [U1, U2, U3] = Uinit;
+    
+    // Validation du domaine de validité
+    if (Zph <= 0.15 || Zn <= 0.15) {
+      const warning = `⚠️ Impédances hors domaine de validité fournisseur: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω (min: 0.15Ω)`;
+      console.warn(warning);
+    }
+
+    // Calcul des statistiques initiales
+    const Umoy = (U1 + U2 + U3) / 3;
+    const Umax = Math.max(U1, U2, U3);
+    const Umin = Math.min(U1, U2, U3);
+    const dU_init = Umax - Umin;
+
+    // Calcul des ratios par phase
+    const ratio1 = dU_init > 0 ? (U1 - Umoy) / dU_init : 0;
+    const ratio2 = dU_init > 0 ? (U2 - Umoy) / dU_init : 0;
+    const ratio3 = dU_init > 0 ? (U3 - Umoy) / dU_init : 0;
+
+    // Formule EQUI8 pour (Umax-Umin)EQUI8
+    const logarithmicTerm = 0.9119 * Math.log(Zph) + 3.8654;
+    const impedanceRatio = (2 * Zph) / (Zph + Zn);
+    const dU_EQUI8 = (1 / logarithmicTerm) * dU_init * impedanceRatio;
+
+    // Calcul des tensions corrigées UEQUI8
+    const UEQUI8_1 = Umoy + ratio1 * dU_EQUI8;
+    const UEQUI8_2 = Umoy + ratio2 * dU_EQUI8;  
+    const UEQUI8_3 = Umoy + ratio3 * dU_EQUI8;
+
+    // Calcul du courant neutre EQUI8
+    const I_EQUI8 = (0.392 / Math.pow(Zph, 0.8065)) * dU_init * impedanceRatio;
+
+    return {
+      UEQUI8: [UEQUI8_1, UEQUI8_2, UEQUI8_3],
+      I_EQUI8,
+      dU_init,
+      dU_EQUI8,
+      ratios: [ratio1, ratio2, ratio3],
+      warning: (Zph <= 0.15 || Zn <= 0.15) ? 
+        `Impédances hors domaine: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω` : undefined
+    };
+  }
+
+  /**
    * Applique les compensateurs de neutre EQUI8 aux résultats de calcul
+   * Implémentation avec modèle EQUI8 constructeur et deux modes d'intégration
    * @param nodes Liste des nœuds du réseau
    * @param cables Liste des câbles du réseau
    * @param compensators Liste des compensateurs actifs
@@ -818,7 +868,7 @@ export class ElectricalCalculator {
 
     let result: CalculationResult = JSON.parse(JSON.stringify(baseResult));
 
-    // Apply each compensator and recalculate downstream effects
+    // Apply each compensator
     for (const compensator of activeCompensators) {
       const node = nodes.find(n => n.id === compensator.nodeId);
       if (!node) {
@@ -826,7 +876,7 @@ export class ElectricalCalculator {
         continue;
       }
 
-      // PHASE 1: Check kVA limit against downstream load
+      // Check kVA limit against downstream load
       const downstreamLoad_kVA = this.calculateDownstreamLoad(compensator.nodeId, nodes, cables, 100);
       console.log(`🔧 Compensator at node ${compensator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${compensator.maxPower_kVA}kVA`);
       
@@ -840,9 +890,8 @@ export class ElectricalCalculator {
       }
       
       (compensator as any).isLimited = false;
-      console.log(`🔧 Applying EQUI8 compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
 
-      // Find the node metrics in nodeMetricsPerPhase
+      // Get node voltages
       const nodeMetricIndex = result.nodeMetricsPerPhase?.findIndex(nm => nm.nodeId === compensator.nodeId) ?? -1;
       
       if (nodeMetricIndex < 0 || !result.nodeMetricsPerPhase) {
@@ -852,90 +901,65 @@ export class ElectricalCalculator {
 
       const nodeMetricPerPhase = result.nodeMetricsPerPhase[nodeMetricIndex];
       
-      if (!nodeMetricPerPhase?.voltagesPerPhase?.A || !nodeMetricPerPhase?.voltagesPerPhase?.B || !nodeMetricPerPhase?.voltagesPerPhase?.C) {
-        console.warn(`⚠️ No voltage data available for node ${compensator.nodeId} in nodeMetricsPerPhase`);
+      if (!nodeMetricPerPhase?.voltagesPerPhase) {
+        console.warn(`⚠️ No voltage data available for node ${compensator.nodeId}`);
         continue;
       }
 
-      // Initial phase voltages (Ph-N) from simulation
-      const Uinit_ph1 = nodeMetricPerPhase.voltagesPerPhase.A;
-      const Uinit_ph2 = nodeMetricPerPhase.voltagesPerPhase.B;
-      const Uinit_ph3 = nodeMetricPerPhase.voltagesPerPhase.C;
-
-      console.log(`📊 Initial voltages: A=${Uinit_ph1.toFixed(1)}V, B=${Uinit_ph2.toFixed(1)}V, C=${Uinit_ph3.toFixed(1)}V`);
-
-      // Calculate initial voltage statistics
-      const Umoy_3ph_init = (Uinit_ph1 + Uinit_ph2 + Uinit_ph3) / 3;
-      const Umax_3ph_init = Math.max(Uinit_ph1, Uinit_ph2, Uinit_ph3);
-      const Umin_3ph_init = Math.min(Uinit_ph1, Uinit_ph2, Uinit_ph3);
-      const Umax_Umin_init = Umax_3ph_init - Umin_3ph_init;
-
-      console.log(`📊 Initial imbalance: ${Umax_Umin_init.toFixed(1)}V (${Umin_3ph_init.toFixed(1)}V - ${Umax_3ph_init.toFixed(1)}V)`);
-
-      // Skip compensation if voltages are already well balanced
-      if (Umax_Umin_init < 1.0) {
-        console.log(`✅ Voltages already balanced, skipping compensation`);
-        // Update compensator results with minimal effect
-        (compensator as any).currentIN_A = 0;
-        (compensator as any).reductionPercent = 0;
-        (compensator as any).u1p_V = Uinit_ph1;
-        (compensator as any).u2p_V = Uinit_ph2;
-        (compensator as any).u3p_V = Uinit_ph3;
-        continue;
-      }
-
-      // Calculate phase ratios according to EQUI8 formula
-      const Ratio_ph1 = Umax_Umin_init > 0 ? (Uinit_ph1 - Umoy_3ph_init) / Umax_Umin_init : 0;
-      const Ratio_ph2 = Umax_Umin_init > 0 ? (Uinit_ph2 - Umoy_3ph_init) / Umax_Umin_init : 0;
-      const Ratio_ph3 = Umax_Umin_init > 0 ? (Uinit_ph3 - Umoy_3ph_init) / Umax_Umin_init : 0;
+      const { A: U1, B: U2, C: U3 } = nodeMetricPerPhase.voltagesPerPhase;
+      console.log(`📊 Initial voltages: A=${U1.toFixed(1)}V, B=${U2.toFixed(1)}V, C=${U3.toFixed(1)}V`);
 
       // Calculate network impedances
       const { Zph, Zn } = this.calculateNetworkImpedances(compensator.nodeId, nodes, cables, cableTypes);
-      
       console.log(`⚡ Network impedances: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω`);
 
-      // EQUI8 main formula
-      const logarithmicFactor = 0.9119 * Math.log(Zph) + 3.8654;
-      const impedanceRatio = (2 * Zph) / (Zph + Zn);
-      const Umax_Umin_EQUI8 = (1 / logarithmicFactor) * Umax_Umin_init * impedanceRatio;
+      // Apply EQUI8 computation
+      const equi8Result = this.computeEqui8([U1, U2, U3], Zph, Zn);
+      
+      if (equi8Result.warning) {
+        console.warn(equi8Result.warning);
+      }
 
-      // Calculate compensated voltages using EQUI8 formulas
-      const UEQUI8_ph1 = Umoy_3ph_init + Ratio_ph1 * Umax_Umin_EQUI8;
-      const UEQUI8_ph2 = Umoy_3ph_init + Ratio_ph2 * Umax_Umin_EQUI8;
-      const UEQUI8_ph3 = Umoy_3ph_init + Ratio_ph3 * Umax_Umin_EQUI8;
+      console.log(`📊 EQUI8 result: [${equi8Result.UEQUI8.map(v => v.toFixed(1)).join(', ')}]V, I_N=${equi8Result.I_EQUI8.toFixed(1)}A`);
 
-      // Calculate EQUI8 neutral current
-      const I_EQUI8 = 0.392 * Math.pow(Zph, -0.8065) * Umax_Umin_init * impedanceRatio;
+      // Update compensator status with EQUI8 results
+      (compensator as any).currentIN_A = Math.round(equi8Result.I_EQUI8 * 10) / 10;
+      (compensator as any).reductionPercent = Math.min(100, ((equi8Result.dU_init - equi8Result.dU_EQUI8) / equi8Result.dU_init) * 100);
+      (compensator as any).u1p_V = Math.round(equi8Result.UEQUI8[0] * 10) / 10;
+      (compensator as any).u2p_V = Math.round(equi8Result.UEQUI8[1] * 10) / 10;
+      (compensator as any).u3p_V = Math.round(equi8Result.UEQUI8[2] * 10) / 10;
 
-      const compensatedVoltages = {
-        A: Math.round(UEQUI8_ph1 * 10) / 10,
-        B: Math.round(UEQUI8_ph2 * 10) / 10,
-        C: Math.round(UEQUI8_ph3 * 10) / 10
+      // Store EQUI8 results for post-processing display (Mode fournisseur par défaut)
+      if (!result.nodeMetricsPerPhase[nodeMetricIndex].equi8) {
+        result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {};
+      }
+      result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {
+        UEQUI8: equi8Result.UEQUI8,
+        I_EQUI8: equi8Result.I_EQUI8,
+        dU_init: equi8Result.dU_init,
+        dU_EQUI8: equi8Result.dU_EQUI8,
+        ratios: equi8Result.ratios,
+        warning: equi8Result.warning
       };
 
-      console.log(`📊 After EQUI8: A=${compensatedVoltages.A}V, B=${compensatedVoltages.B}V, C=${compensatedVoltages.C}V`);
+      // Mode intégré si applyToFlow=true (approximatif)
+      if ((compensator as any).applyToFlow) {
+        console.log(`🔧 Mode intégré activé pour compensateur ${compensator.id}`);
+        
+        const compensatedVoltages = {
+          A: equi8Result.UEQUI8[0],
+          B: equi8Result.UEQUI8[1], 
+          C: equi8Result.UEQUI8[2]
+        };
 
-      // Calculate voltage improvement
-      const voltageImprovement = Umax_Umin_init - Umax_Umin_EQUI8;
+        // Update voltages and recalculate downstream (approximation)
+        result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = compensatedVoltages;
+        
+        // Note: Dans une vraie implémentation, il faudrait recalculer avec injection équivalente
+        console.log(`⚠️ Mode intégré approximatif - les inductances ne sont pas prises en compte`);
+      }
 
-      // Update compensator results
-      (compensator as any).currentIN_A = Math.round(I_EQUI8 * 2) / 2;
-      (compensator as any).reductionPercent = Math.min(100, (voltageImprovement / Umax_Umin_init) * 100);
-      (compensator as any).u1p_V = compensatedVoltages.A;
-      (compensator as any).u2p_V = compensatedVoltages.B;
-      (compensator as any).u3p_V = compensatedVoltages.C;
-
-      // Apply compensation and recalculate downstream network
-      result = this.recalculateNetworkFromNode(
-        compensator.nodeId,
-        compensatedVoltages,
-        nodes,
-        cables,
-        cableTypes,
-        result
-      );
-
-      console.log(`✅ EQUI8 compensator applied: ${voltageImprovement.toFixed(1)}V improvement, ${I_EQUI8.toFixed(1)}A neutral current`);
+      console.log(`✅ EQUI8 compensator applied: ${(equi8Result.dU_init - equi8Result.dU_EQUI8).toFixed(1)}V improvement`);
     }
     
     return result;
