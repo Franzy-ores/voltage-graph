@@ -457,8 +457,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario,
     equipment: SimulationEquipment
   ): CalculationResult {
-    // Utiliser le scénario de base modifié avec équipements
-    return this.calculateScenario(
+    console.log('🔧 SimulationCalculator: Calculating scenario with equipment');
+    console.log('Equipment:', {
+      regulators: equipment.regulators.filter(r => r.enabled).length,
+      compensators: equipment.neutralCompensators.filter(c => c.enabled).length,
+      upgrades: equipment.cableUpgrades.length
+    });
+
+    // Étape 1: Calcul de base sans équipements
+    let baseResult = this.calculateScenario(
       project.nodes,
       project.cables,
       project.cableTypes,
@@ -470,6 +477,27 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.desequilibrePourcent,
       project.manualPhaseDistribution
     );
+
+    // Étape 2: Appliquer les compensateurs de neutre
+    const activeCompensators = equipment.neutralCompensators.filter(c => c.enabled);
+    if (activeCompensators.length > 0) {
+      console.log(`🔧 Applying ${activeCompensators.length} neutral compensators`);
+      baseResult = this.applyNeutralCompensation(project.nodes, project.cables, activeCompensators, baseResult);
+    }
+
+    // Étape 3: Appliquer les régulateurs de tension (future implementation)
+    const activeRegulators = equipment.regulators.filter(r => r.enabled);
+    if (activeRegulators.length > 0) {
+      console.log(`🔧 Note: ${activeRegulators.length} voltage regulators found but not yet implemented`);
+    }
+
+    // Étape 4: Appliquer les améliorations de câbles (future implementation)
+    if (equipment.cableUpgrades.length > 0) {
+      console.log(`🔧 Note: ${equipment.cableUpgrades.length} cable upgrades found but not yet implemented`);
+    }
+
+    console.log('✅ Simulation equipment applied');
+    return baseResult;
   }
 
   /**

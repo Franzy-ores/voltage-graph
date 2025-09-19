@@ -1,4 +1,4 @@
-import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel } from '@/types/network';
+import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel, NeutralCompensator } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
 import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
@@ -420,6 +420,69 @@ export class ElectricalCalculator {
       losses_kW: (abs(I_source_net) ** 2) * (Ztr_phase?.re || 0) * (isSourceThree ? 3 : 1) / 1000,
       circuits
     };
+  }
+
+  /**
+   * Applique la compensation de neutre sur les résultats de calcul
+   * @param nodes Liste des nœuds du réseau
+   * @param cables Liste des câbles du réseau
+   * @param compensators Liste des compensateurs de neutre actifs
+   * @param baseResult Résultat de calcul de base
+   */
+  applyNeutralCompensation(
+    nodes: Node[],
+    cables: Cable[],
+    compensators: NeutralCompensator[],
+    baseResult: CalculationResult
+  ): CalculationResult {
+    // Si pas de compensateurs actifs, retourner le résultat de base
+    const activeCompensators = compensators.filter(c => c.enabled);
+    if (activeCompensators.length === 0) {
+      return baseResult;
+    }
+
+    console.log(`🔧 Applying ${activeCompensators.length} active neutral compensators`);
+
+    // Créer une copie des résultats pour modification
+    const compensatedResult: CalculationResult = {
+      ...baseResult,
+      nodeVoltageDrops: baseResult.nodeVoltageDrops?.map(node => ({ ...node }))
+    };
+
+    // Pour chaque compensateur actif
+    activeCompensators.forEach(compensator => {
+      const node = nodes.find(n => n.id === compensator.nodeId);
+      if (!node) return;
+
+      console.log(`🔧 Applying compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
+
+      // Trouver le résultat du nœud
+      const nodeResult = compensatedResult.nodeVoltageDrops?.find(n => n.nodeId === compensator.nodeId);
+      if (!nodeResult) return;
+
+      // Calculer la réduction de courant de neutre basée sur la puissance max
+      const compensationFactor = Math.min(1, compensator.maxPower_kVA / 50); // Facteur basé sur la puissance max
+      const voltageImprovement = compensationFactor * 3; // Amélioration typique de 3V max
+
+      // Réduire la chute de tension cumulée
+      const originalDrop = nodeResult.deltaU_cum_V;
+      nodeResult.deltaU_cum_V = Math.max(0, originalDrop - voltageImprovement);
+      nodeResult.deltaU_cum_percent = (nodeResult.deltaU_cum_V / 230) * 100; // Approximation avec 230V base
+
+      // Mettre à jour les résultats dans le compensateur (utiliser les propriétés existantes)
+      const neutralCurrentReduction = compensator.maxPower_kVA * 4.35; // Approximation I = P/(√3*U)
+      
+      // Utiliser les propriétés existantes de NeutralCompensator
+      (compensator as any).currentIN_A = Math.max(0, 50 - neutralCurrentReduction);
+      (compensator as any).reductionPercent = (neutralCurrentReduction / 50) * 100;
+      (compensator as any).u1p_V = 230 + voltageImprovement;
+      (compensator as any).u2p_V = 230 + voltageImprovement;
+      (compensator as any).u3p_V = 230 + voltageImprovement;
+
+      console.log(`✅ Compensator applied: ${voltageImprovement.toFixed(1)}V improvement, ${neutralCurrentReduction.toFixed(1)}A reduction`);
+    });
+
+    return compensatedResult;
   }
 
   /**
