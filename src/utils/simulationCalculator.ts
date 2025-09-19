@@ -610,10 +610,27 @@ export class SimulationCalculator extends ElectricalCalculator {
       id: `regulator_${nodeId}_${Date.now()}`,
       nodeId,
       type: regulatorType,
-      targetVoltage_V: sourceVoltage > 300 ? 400 : 230,
+      targetVoltage_V: 230, // Toujours 230V : ligne-ligne pour réseau 230V, phase-neutre pour réseau 400V
       maxPower_kVA: maxPower,
       enabled: false
     };
+  }
+
+  /**
+   * Corrige les régulateurs existants avec des valeurs incorrectes de tension cible
+   */
+  fixExistingRegulators(regulators: VoltageRegulator[]): VoltageRegulator[] {
+    return regulators.map(regulator => {
+      // Corriger les régulateurs qui ont encore 400V en consigne 
+      if (regulator.targetVoltage_V === 400) {
+        console.log(`🔧 Correction du régulateur ${regulator.id}: 400V → 230V`);
+        return {
+          ...regulator,
+          targetVoltage_V: 230
+        };
+      }
+      return regulator;
+    });
   }
   
   /**
@@ -928,50 +945,18 @@ export class SimulationCalculator extends ElectricalCalculator {
           throw new Error(`Le régulateur ${regulator.id} n'a pas de capacité maximale définie`);
         }
 
-        // 1. Détection du type de réseau et du référentiel de régulation
+        // 1. Détection du type de réseau 
         const netInfo = networkDetection;
         const V_set = regulator.targetVoltage_V;
         
-        // Déterminer le référentiel de régulation basé sur la tension cible
-        let isPhaseNeutre = false;
-        let convFactor = 1;
-        let referenceType = '';
+        // Logique simplifiée selon le principe de base :
+        // - Réseau 230V : régulation ligne-ligne à 230V, tensions lues = ligne-ligne
+        // - Réseau 400V : régulation phase-neutre à 230V, tensions lues = phase-neutre
+        const convFactor = 1; // Pas de conversion nécessaire
+        const referenceType = netInfo.type === '400V' ? 'phase-neutre' : 'ligne-ligne';
+        const isPhaseNeutre = netInfo.type === '400V'; // true pour 400V (phase-neutre), false pour 230V (ligne-ligne)
         
-        if (netInfo.type === '400V') {
-          // Réseau 400V : détecter automatiquement le référentiel
-          if (V_set >= 210 && V_set <= 250) {
-            // Consigne proche de 230V → régulation phase-neutre
-            isPhaseNeutre = true;
-            convFactor = 1; // tensions lues sont déjà phase-neutre
-            referenceType = 'phase-neutre';
-          } else if (V_set >= 365 && V_set <= 435) {
-            // Consigne proche de 400V → régulation ligne-ligne
-            isPhaseNeutre = false;
-            convFactor = Math.sqrt(3); // convertir phase-neutre vers ligne-ligne
-            referenceType = 'ligne-ligne';
-          } else {
-            // Consigne hors plages standards
-            warnings.push(`⚠️ Régulateur ${regulator.id}: tension cible ${V_set}V ne correspond pas aux standards (230V±20V ou 400V±35V)`);
-            // Par défaut, traiter comme phase-neutre si < 300V, sinon ligne-ligne
-            if (V_set < 300) {
-              isPhaseNeutre = true;
-              convFactor = 1;
-              referenceType = 'phase-neutre (par défaut)';
-            } else {
-              isPhaseNeutre = false;
-              convFactor = Math.sqrt(3);
-              referenceType = 'ligne-ligne (par défaut)';
-            }
-          }
-        } else {
-          // Réseau 230V : toujours ligne-ligne
-          isPhaseNeutre = false;
-          convFactor = 1; // tensions lues sont déjà ligne-ligne
-          referenceType = 'ligne-ligne';
-        }
-        
-        console.log(`📊 Référentiel de régulation détecté: ${referenceType} (facteur: ${convFactor.toFixed(3)})`);
-        console.log(`📊 Réseau ${netInfo.type}, consigne ${V_set}V`);
+        console.log(`📊 Réseau ${netInfo.type}, régulation ${referenceType} à ${V_set}V`);
 
         // 2. Récupérer la tension initiale du nœud (Uinit)
         const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
