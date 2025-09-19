@@ -541,10 +541,36 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
     }
 
-    // Étape 3: Appliquer les régulateurs de tension (future implementation)
+    // Étape 3: Appliquer les régulateurs de tension
     const activeRegulators = equipment.regulators.filter(r => r.enabled);
     if (activeRegulators.length > 0) {
-      console.log(`🔧 Note: ${activeRegulators.length} voltage regulators found but not yet implemented`);
+      console.log(`🔧 Applying ${activeRegulators.length} voltage regulators`);
+      
+      // Log regulators details
+      activeRegulators.forEach(reg => {
+        console.log(`📊 Regulator ${reg.id} on node ${reg.nodeId}: target ${reg.targetVoltage_V}V, capacity ${reg.maxPower_kVA}kVA`);
+      });
+      
+      const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
+      baseResult = this.applyVoltageRegulators(project.nodes, project.cables, activeRegulators, baseResult, project.cableTypes);
+      
+      console.log('📊 Result AFTER voltage regulation:', {
+        hasNodeMetrics: !!baseResult.nodeMetrics,
+        hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
+        nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0
+      });
+
+      // Detailed comparison for regulator nodes
+      activeRegulators.forEach(reg => {
+        const beforeMetrics = resultBeforeRegulators.nodeMetricsPerPhase?.find(n => n.nodeId === reg.nodeId);
+        const afterMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === reg.nodeId);
+        
+        console.log(`🔍 Node ${reg.nodeId} regulation effect:`, {
+          before: beforeMetrics?.voltagesPerPhase,
+          after: afterMetrics?.voltagesPerPhase,
+          changed: JSON.stringify(beforeMetrics?.voltagesPerPhase) !== JSON.stringify(afterMetrics?.voltagesPerPhase)
+        });
+      });
     }
 
     // Étape 4: Appliquer les améliorations de câbles (future implementation)
