@@ -670,6 +670,10 @@ export class ElectricalCalculator {
         continue;
       }
 
+      // PHASE 4: Check power limits for voltage regulators  
+      const downstreamLoad_kVA = this.calculateDownstreamLoad(regulator.nodeId, nodes, cables, 100);
+      console.log(`⚡ Regulator at node ${regulator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${regulator.maxPower_kVA}kVA`);
+      
       // Calculate average current voltage
       const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
       const targetVoltage = regulator.targetVoltage_V;
@@ -709,12 +713,15 @@ export class ElectricalCalculator {
       
       // Check if within regulator capacity
       if (estimatedReactivePower > regulator.maxPower_kVA) {
-        console.warn(`⚠️ Required reactive power ${estimatedReactivePower.toFixed(1)}kVAr exceeds regulator capacity ${regulator.maxPower_kVA}kVA`);
+        console.warn(`⚠️ Régulateur ${regulator.id} limité! Puissance requise=${estimatedReactivePower.toFixed(1)}kVAr > Disponible=${regulator.maxPower_kVA}kVAr`);
+        (regulator as any).isLimited = true;
         // Apply partial regulation
         const reductionFactor = regulator.maxPower_kVA / estimatedReactivePower;
         regulatedVoltages.A = currentVoltages.A + (voltageDifference * regulationEfficiency * reductionFactor);
         regulatedVoltages.B = currentVoltages.B + (voltageDifference * regulationEfficiency * reductionFactor);
         regulatedVoltages.C = currentVoltages.C + (voltageDifference * regulationEfficiency * reductionFactor);
+      } else {
+        (regulator as any).isLimited = false;
       }
 
       // Update regulator status
@@ -736,6 +743,48 @@ export class ElectricalCalculator {
     }
 
     return result;
+  }
+
+  /**
+   * Calculate total downstream load from a given node
+   * @param nodeId Starting node ID
+   * @param nodes List of network nodes
+   * @param cables List of network cables
+   * @param foisonnementCharges Load diversity factor
+   * @returns Total downstream load in kVA
+   */
+  private calculateDownstreamLoad(nodeId: string, nodes: Node[], cables: Cable[], foisonnementCharges: number = 100): number {
+    const visited = new Set<string>();
+    const stack = [nodeId];
+    let totalLoad = 0;
+
+    while (stack.length > 0) {
+      const currentNodeId = stack.pop()!;
+      if (visited.has(currentNodeId)) continue;
+      visited.add(currentNodeId);
+
+      const currentNode = nodes.find(n => n.id === currentNodeId);
+      if (currentNode) {
+        // Add loads from this node
+        const nodeLoad = currentNode.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+        totalLoad += nodeLoad;
+      }
+
+      // Find downstream nodes
+      const downstreamCables = cables.filter(cable => 
+        (cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId) && 
+        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
+      );
+
+      downstreamCables.forEach(cable => {
+        const nextNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+        if (!visited.has(nextNodeId)) {
+          stack.push(nextNodeId);
+        }
+      });
+    }
+
+    return totalLoad * (foisonnementCharges / 100);
   }
 
   /**
@@ -777,6 +826,20 @@ export class ElectricalCalculator {
         continue;
       }
 
+      // PHASE 1: Check kVA limit against downstream load
+      const downstreamLoad_kVA = this.calculateDownstreamLoad(compensator.nodeId, nodes, cables, 100);
+      console.log(`🔧 Compensator at node ${compensator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${compensator.maxPower_kVA}kVA`);
+      
+      if (downstreamLoad_kVA > compensator.maxPower_kVA) {
+        console.warn(`⚠️ Compensateur ${compensator.id} surchargé! Charge=${downstreamLoad_kVA.toFixed(1)}kVA > Limite=${compensator.maxPower_kVA}kVA`);
+        (compensator as any).isLimited = true;
+        (compensator as any).currentIN_A = 0;
+        (compensator as any).reductionPercent = 0;
+        (compensator as any).overloadReason = `Charge aval (${downstreamLoad_kVA.toFixed(1)}kVA) dépasse la limite (${compensator.maxPower_kVA}kVA)`;
+        continue;
+      }
+      
+      (compensator as any).isLimited = false;
       console.log(`🔧 Applying EQUI8 compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
 
       // Find the node metrics in nodeMetricsPerPhase

@@ -191,6 +191,7 @@ export interface NeutralCompensator {
   compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase (si modélisé)
   reductionPercent?: number; // Pourcentage de réduction du courant de neutre
   isLimited?: boolean; // True si limitation par puissance atteinte
+  overloadReason?: string; // Raison de la surcharge
   // Sorties additionnelles EQUI8
   iN_initial_A?: number;    // Courant de neutre initial (A)
   iN_absorbed_A?: number;   // Courant de neutre absorbé (A)

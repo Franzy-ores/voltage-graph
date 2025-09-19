@@ -576,6 +576,29 @@ export const MapView = () => {
       // Obtenir le numéro de circuit
       const circuitNumber = getNodeCircuit(node.id);
       
+      // PHASE 3: Check for active equipment on this node
+      const activeCompensator = simulationEquipment.neutralCompensators.find(c => c.nodeId === node.id && c.enabled);
+      const activeRegulator = simulationEquipment.regulators.find(r => r.nodeId === node.id && r.enabled);
+      
+      // Determine equipment status
+      let equipmentIndicator = '';
+      let equipmentStatus = '';
+      
+      if (activeCompensator) {
+        const isOverloaded = (activeCompensator as any).isLimited;
+        const statusColor = isOverloaded ? 'text-red-500' : 'text-green-500';
+        equipmentIndicator = `<div class="text-[8px] ${statusColor} font-bold">⚖️</div>`;
+        equipmentStatus = isOverloaded ? ' SURCHARGÉ' : ' COMPENSATEUR';
+      }
+      
+      if (activeRegulator) {
+        const isLimited = (activeRegulator as any).isLimited;  
+        const statusColor = isLimited ? 'text-red-500' : 'text-blue-500';
+        const regulatorIcon = equipmentIndicator ? `<div class="text-[8px] ${statusColor} font-bold">⚡</div>` : `<div class="text-[8px] ${statusColor} font-bold">⚡</div>`;
+        equipmentIndicator = equipmentIndicator + regulatorIcon;
+        equipmentStatus += (isLimited ? ' RÉGUL.LIMITÉ' : ' RÉGULATEUR');
+      }
+      
       // Déterminer si on affiche du texte (charge/production uniquement si > 0)
       const hasDisplayableLoad = !node.isSource && totalCharge > 0;
       const hasDisplayableProduction = !node.isSource && totalPV > 0;
@@ -680,12 +703,35 @@ export const MapView = () => {
         iconAnchor: anchorPoint
       });
 
+      // Create popup content with equipment status
+      let popupContent = `<div class="font-bold">${node.name}</div>`;
+      
+      if (activeCompensator) {
+        const isOverloaded = (activeCompensator as any).isLimited;
+        const statusText = isOverloaded ? 'SURCHARGÉ' : 'ACTIF';
+        const statusColor = isOverloaded ? 'red' : 'green';
+        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">⚖️ Compensateur ${statusText}</div>`;
+        if (isOverloaded && (activeCompensator as any).overloadReason) {
+          popupContent += `<div style="color: red; font-size: 12px;">${(activeCompensator as any).overloadReason}</div>`;
+        }
+      }
+      
+      if (activeRegulator) {
+        const isLimited = (activeRegulator as any).isLimited;
+        const statusText = isLimited ? 'LIMITÉ' : 'ACTIF';
+        const statusColor = isLimited ? 'orange' : 'blue';
+        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">⚡ Régulateur ${statusText}</div>`;
+        if (isLimited) {
+          popupContent += `<div style="color: orange; font-size: 12px;">Puissance limitée</div>`;
+        }
+      }
+
       const marker = L.marker([node.lat, node.lng], { 
         icon,
         draggable: selectedTool === 'move'
       })
         .addTo(map)
-        .bindPopup(node.name);
+        .bindPopup(popupContent);
 
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
