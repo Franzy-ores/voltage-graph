@@ -791,8 +791,8 @@ export class SimulationCalculator extends ElectricalCalculator {
           (p: any) => !p.id || !p.id.includes('regulator_')
         );
       }
-      if (modifiedNodes[nodeIndex].charges) {
-        modifiedNodes[nodeIndex].charges = modifiedNodes[nodeIndex].charges.filter(
+      if (modifiedNodes[nodeIndex].clients) {
+        modifiedNodes[nodeIndex].clients = modifiedNodes[nodeIndex].clients.filter(
           (c: any) => !c.id || !c.id.includes('regulator_')
         );
       }
@@ -812,11 +812,11 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`📊 Applied as INJECTION: +${S_inj_total_kVA.toFixed(1)}kVA (production)`);
       } else {
         // Add as charge (absorption/negative injection)
-        if (!modifiedNodes[nodeIndex].charges) {
-          modifiedNodes[nodeIndex].charges = [];
+        if (!modifiedNodes[nodeIndex].clients) {
+          modifiedNodes[nodeIndex].clients = [];
         }
         
-        modifiedNodes[nodeIndex].charges.push({
+        modifiedNodes[nodeIndex].clients.push({
           id: `regulator_absorption_${regNodeId}`,
           label: `Regulator Absorption -${S_inj_total_kVA.toFixed(1)}kVA`,
           S_kVA: S_inj_total_kVA,
