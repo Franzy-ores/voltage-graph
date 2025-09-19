@@ -19,12 +19,12 @@ const Index = () => {
     loadProject,
     openEditPanel,
     calculateAll,
-    simulationMode
+    simulationMode,
+    getActiveEquipmentCount
   } = useNetworkStore();
 
-  // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
-  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
-                              simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  // Calculer le nombre d'équipements actifs de manière réactive
+  const activeEquipmentCount = getActiveEquipmentCount();
   
   console.log('🏠 Index.tsx results selection:', {
     simulationMode,
@@ -34,7 +34,11 @@ const Index = () => {
     selectedScenario,
     simulationResultsForScenario: !!simulationResults?.[selectedScenario],
     calculationResultsForScenario: !!calculationResults?.[selectedScenario],
-    usingSimulation: simulationMode && activeEquipmentCount > 0
+    usingSimulation: simulationMode && activeEquipmentCount > 0,
+    equipmentDetails: {
+      regulators: simulationEquipment.regulators.map(r => ({ id: r.id, enabled: r.enabled })),
+      compensators: simulationEquipment.neutralCompensators.map(c => ({ id: c.id, enabled: c.enabled }))
+    }
   });
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;

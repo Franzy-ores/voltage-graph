@@ -117,6 +117,9 @@ interface NetworkActions {
   toggleCableUpgrade: (upgradeId: string) => void;
   runSimulation: () => void;
   
+  // Reactive getters
+  getActiveEquipmentCount: () => number;
+  
   // Validation
   validateConnectionType: (connectionType: ConnectionType, voltageSystem: VoltageSystem) => boolean;
   
@@ -1296,5 +1299,19 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         isActive: false
       }
     });
+  },
+
+  // Reactive getters
+  getActiveEquipmentCount: () => {
+    const state = get();
+    const count = state.simulationEquipment.regulators.filter(r => r.enabled).length + 
+                 state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+    console.log('📊 Active equipment count calculated:', count, {
+      enabledRegulators: state.simulationEquipment.regulators.filter(r => r.enabled).length,
+      enabledCompensators: state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length,
+      totalRegulators: state.simulationEquipment.regulators.length,
+      totalCompensators: state.simulationEquipment.neutralCompensators.length
+    });
+    return count;
   }
 }));
