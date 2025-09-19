@@ -501,17 +501,20 @@ export class ElectricalCalculator {
 
     console.log(`🔧 Applying ${activeCompensators.length} EQUI8 neutral compensators`);
 
-    // Créer une copie des résultats pour modification
+    // Create a DEEP copy of results for modification
     const compensatedResult: CalculationResult = {
       ...baseResult,
       nodeVoltageDrops: baseResult.nodeVoltageDrops?.map(node => ({ ...node })),
-      nodeMetrics: baseResult.nodeMetrics ? { ...baseResult.nodeMetrics } : undefined,
+      nodeMetrics: baseResult.nodeMetrics?.map(node => ({ ...node })),
       nodeMetricsPerPhase: baseResult.nodeMetricsPerPhase?.map(node => ({
         ...node,
         voltagesPerPhase: { ...node.voltagesPerPhase },
         voltageDropsPerPhase: { ...node.voltageDropsPerPhase }
       }))
     };
+
+    console.log(`🔍 BEFORE compensation - nodeMetrics array length:`, baseResult.nodeMetrics?.length);
+    console.log(`🔍 BEFORE compensation - nodeMetricsPerPhase array length:`, baseResult.nodeMetricsPerPhase?.length);
 
     // Pour chaque compensateur actif
     activeCompensators.forEach(compensator => {
@@ -520,14 +523,16 @@ export class ElectricalCalculator {
 
       console.log(`🔧 Applying EQUI8 compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
 
-      // Get node metrics for voltage information
-      const nodeMetric = compensatedResult.nodeMetrics?.[compensator.nodeId];
+      // Find the node metrics in nodeMetricsPerPhase (this is what's used for display)
+      const nodeMetricPerPhase = compensatedResult.nodeMetricsPerPhase?.find(nm => nm.nodeId === compensator.nodeId);
       
-      if (nodeMetric?.voltageV?.A && nodeMetric?.voltageV?.B && nodeMetric?.voltageV?.C) {
+      if (nodeMetricPerPhase?.voltagesPerPhase?.A && nodeMetricPerPhase?.voltagesPerPhase?.B && nodeMetricPerPhase?.voltagesPerPhase?.C) {
         // Initial phase voltages (Ph-N) from simulation
-        const Uinit_ph1 = nodeMetric.voltageV.A;
-        const Uinit_ph2 = nodeMetric.voltageV.B;
-        const Uinit_ph3 = nodeMetric.voltageV.C;
+        const Uinit_ph1 = nodeMetricPerPhase.voltagesPerPhase.A;
+        const Uinit_ph2 = nodeMetricPerPhase.voltagesPerPhase.B;
+        const Uinit_ph3 = nodeMetricPerPhase.voltagesPerPhase.C;
+
+        console.log(`🔍 BEFORE compensation - voltagesPerPhase:`, nodeMetricPerPhase.voltagesPerPhase);
 
         // Calculate initial voltage statistics
         const Umoy_3ph_init = (Uinit_ph1 + Uinit_ph2 + Uinit_ph3) / 3;
@@ -573,19 +578,18 @@ export class ElectricalCalculator {
         // Calculate EQUI8 neutral current: I-EQUI8 = 0.392 × Zph^(-0.8065) × (Umax-Umin)init × 2×Zph/(Zph+Zn)
         const I_EQUI8 = 0.392 * Math.pow(Zph, -0.8065) * Umax_Umin_init * impedanceRatio;
 
-        // Apply compensated voltages with EQUI8 precision (±2V)
-        nodeMetric.voltageV.A = Math.round(UEQUI8_ph1 * 10) / 10;
-        nodeMetric.voltageV.B = Math.round(UEQUI8_ph2 * 10) / 10;  
-        nodeMetric.voltageV.C = Math.round(UEQUI8_ph3 * 10) / 10;
+        console.log(`🔍 BEFORE applying voltages - About to modify voltagesPerPhase:`, nodeMetricPerPhase.voltagesPerPhase);
 
-        // Also update nodeMetricsPerPhase for display consistency
-        const nodeMetricPerPhase = compensatedResult.nodeMetricsPerPhase?.find(nm => nm.nodeId === compensator.nodeId);
-        if (nodeMetricPerPhase) {
-          nodeMetricPerPhase.voltagesPerPhase.A = Math.round(UEQUI8_ph1 * 10) / 10;
-          nodeMetricPerPhase.voltagesPerPhase.B = Math.round(UEQUI8_ph2 * 10) / 10;
-          nodeMetricPerPhase.voltagesPerPhase.C = Math.round(UEQUI8_ph3 * 10) / 10;
-          console.log(`📊 Updated nodeMetricsPerPhase for display: A=${nodeMetricPerPhase.voltagesPerPhase.A}V, B=${nodeMetricPerPhase.voltagesPerPhase.B}V, C=${nodeMetricPerPhase.voltagesPerPhase.C}V`);
-        }
+        // Apply compensated voltages with EQUI8 precision (±2V)
+        const oldVoltages = { A: nodeMetricPerPhase.voltagesPerPhase.A, B: nodeMetricPerPhase.voltagesPerPhase.B, C: nodeMetricPerPhase.voltagesPerPhase.C };
+        nodeMetricPerPhase.voltagesPerPhase.A = Math.round(UEQUI8_ph1 * 10) / 10;
+        nodeMetricPerPhase.voltagesPerPhase.B = Math.round(UEQUI8_ph2 * 10) / 10;  
+        nodeMetricPerPhase.voltagesPerPhase.C = Math.round(UEQUI8_ph3 * 10) / 10;
+
+        console.log(`🔍 AFTER applying voltages - voltagesPerPhase:`, nodeMetricPerPhase.voltagesPerPhase);
+        console.log(`🔍 Voltage changes: A: ${oldVoltages.A.toFixed(1)}→${nodeMetricPerPhase.voltagesPerPhase.A.toFixed(1)}, B: ${oldVoltages.B.toFixed(1)}→${nodeMetricPerPhase.voltagesPerPhase.B.toFixed(1)}, C: ${oldVoltages.C.toFixed(1)}→${nodeMetricPerPhase.voltagesPerPhase.C.toFixed(1)}`);
+
+        console.log(`📊 Updated nodeMetricsPerPhase for display: A=${nodeMetricPerPhase.voltagesPerPhase.A}V, B=${nodeMetricPerPhase.voltagesPerPhase.B}V, C=${nodeMetricPerPhase.voltagesPerPhase.C}V`);
 
         // Calculate voltage improvement
         const voltageImprovement = Umax_Umin_init - Umax_Umin_EQUI8;
@@ -602,10 +606,13 @@ export class ElectricalCalculator {
 
         console.log(`✅ EQUI8 compensator applied: ${voltageImprovement.toFixed(1)}V improvement, ${I_EQUI8.toFixed(1)}A neutral current`);
       } else {
-        console.log(`⚠️ No voltage data available for node ${compensator.nodeId}, skipping EQUI8 compensation`);
+        console.log(`⚠️ No voltage data available for node ${compensator.nodeId} in nodeMetricsPerPhase, skipping EQUI8 compensation`);
       }
     });
 
+    console.log(`🔍 FINAL RESULT - compensatedResult.nodeMetrics length:`, compensatedResult.nodeMetrics?.length);
+    console.log(`🔍 FINAL RESULT - compensatedResult.nodeMetricsPerPhase length:`, compensatedResult.nodeMetricsPerPhase?.length);
+    
     return compensatedResult;
   }
 
