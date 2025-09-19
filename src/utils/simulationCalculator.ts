@@ -985,16 +985,17 @@ export class SimulationCalculator extends ElectricalCalculator {
 
         console.log(`📊 Required currents: [${Ireq.map(i => i.toFixed(2)).join(', ')}]A`);
 
-        // 7. Puissance requise (Sreq)
+        // 7. Puissance requise (conserve le signe)
         const SreqPhase: [number, number, number] = [
-          Math.abs(Utarget[0] * Ireq[0]),
-          Math.abs(Utarget[1] * Ireq[1]),
-          Math.abs(Utarget[2] * Ireq[2])
+          Utarget[0] * Ireq[0],
+          Utarget[1] * Ireq[1],
+          Utarget[2] * Ireq[2]
         ];
-        const S_req_total_kVA = SreqPhase.reduce((a, b) => a + b, 0) / 1000;
+        const S_req_total_VA = SreqPhase.reduce((a, b) => a + b, 0);
+        const S_req_total_kVA = Math.abs(S_req_total_VA / 1000); // valeur absolue pour comparaison avec capacité
 
         console.log(`📊 Required power per phase: [${SreqPhase.map(s => (s/1000).toFixed(1)).join(', ')}]kVA`);
-        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA`);
+        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA (${S_req_total_VA >= 0 ? 'injection' : 'absorption'})`);
 
         // 8. Vérification de la capacité du régulateur
         const S_cap_kVA = regulator.maxPower_kVA; // ❌ NE PAS UTILISER DE CONSTANTE
@@ -1033,9 +1034,10 @@ export class SimulationCalculator extends ElectricalCalculator {
           }
         }
 
-        // 10. Application des pertes du régulateur
-        const lossFactor = 0.01; // 1%
-        const injected_kVA = alpha * S_req_total_kVA * (1 - lossFactor);
+        // 10. Application des pertes du régulateur (≈ 1 %)
+        const lossFactor = 0.01;
+        const injected_kVA = alpha * (S_req_total_VA / 1000) * (1 - lossFactor);
+        // injected_kVA conserve le signe : >0 → injection, <0 → absorption
 
         console.log(`📊 Applied power (with ${(lossFactor*100).toFixed(0)}% losses): ${injected_kVA.toFixed(1)}kVA`);
 
@@ -1047,8 +1049,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         }
 
         // 11. Injection dans le réseau
-        const direction = S_req_total_kVA > 0 ? 'production' : 'absorption';
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, injected_kVA, direction);
+        const direction = injected_kVA >= 0 ? 'inject' : 'absorb';
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, injected_kVA);
 
         console.log(`📊 Applied injection: ${injected_kVA.toFixed(1)}kVA as ${direction}`);
 
@@ -1084,13 +1086,13 @@ export class SimulationCalculator extends ElectricalCalculator {
           nodeId: regulator.nodeId,
           targetVoltage_V: V_set,
           appliedPower_kVA: injected_kVA,
-          requestedPower_kVA: S_req_total_kVA,
+          requestedPower_kVA: S_req_total_VA / 1000, // conserve le signe original
           saturated,
           alpha,
+          direction,
           beforeVoltages: Uinit,
           afterVoltages: afterVoltages,
           warnings: warnings.filter(w => w.includes(regulator.id)),
-          direction,
           lossFactor,
           conversionFactor: convFactor,
           isPhaseNeutralReference: isPhaseNeutre
