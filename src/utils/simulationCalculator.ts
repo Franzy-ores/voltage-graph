@@ -907,7 +907,94 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Applique les régulateurs de tension polyphasés selon l'algorithme exact défini
+   * Applique la logique de régulation SRG2 réaliste avec seuils de commutation
+   */
+  private applySRG2RegulationLogic(
+    regulator: VoltageRegulator,
+    voltagesPerPhase: { A: number; B: number; C: number },
+    networkType: '400V' | '230V'
+  ): { 
+    adjustmentPerPhase: { A: number; B: number; C: number };
+    switchStates: { A: string; B: string; C: string };
+    canRegulate: boolean;
+  } {
+    const V_nominal = 230; // Toujours 230V pour SRG2
+    
+    // Seuils SRG2 selon documentation
+    const thresholds = networkType === '400V' ? {
+      // SRG2-400 : ±16V (7%) phase-neutre
+      UL: 246,  // LO2 - abaissement complet
+      LO1: 238, // (230 + 246) / 2 
+      BO1: 222, // (230 + 214) / 2
+      UB: 214   // BO2 - augmentation complète
+    } : {
+      // SRG2-230 : ±14V (6%) ligne-ligne  
+      UL: 244,  // LO2
+      LO1: 237, // (230 + 244) / 2
+      BO1: 223, // (230 + 216) / 2  
+      UB: 216   // BO2
+    };
+    
+    const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
+    const adjustmentPerPhase = { A: 0, B: 0, C: 0 };
+    const switchStates = { A: 'BYP', B: 'BYP', C: 'BYP' };
+    
+    // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
+    ['A', 'B', 'C'].forEach(phase => {
+      const voltage = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
+      
+      if (voltage >= thresholds.UL) {
+        // Abaissement complet (-ΔU)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment;
+        switchStates[phase as keyof typeof switchStates] = 'LO2';
+      } else if (voltage >= thresholds.LO1) {
+        // Abaissement partiel (-ΔU/2)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment/2;
+        switchStates[phase as keyof typeof switchStates] = 'LO1';
+      } else if (voltage <= thresholds.UB) {
+        // Augmentation complète (+ΔU)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment;
+        switchStates[phase as keyof typeof switchStates] = 'BO2';
+      } else if (voltage <= thresholds.BO1) {
+        // Augmentation partielle (+ΔU/2)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment/2;
+        switchStates[phase as keyof typeof switchStates] = 'BO1';
+      }
+      // Sinon reste en BYP (bypass)
+    });
+    
+    // Contraintes SRG2-230 : pas d'actions opposées simultanées
+    if (networkType === '230V') {
+      const hasIncrease = Object.values(adjustmentPerPhase).some(adj => adj > 0);
+      const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
+      
+      if (hasIncrease && hasDecrease) {
+        // Priorité à la phase avec écart maximum
+        const deviations = {
+          A: Math.abs(voltagesPerPhase.A - V_nominal),
+          B: Math.abs(voltagesPerPhase.B - V_nominal), 
+          C: Math.abs(voltagesPerPhase.C - V_nominal)
+        };
+        
+        const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
+        const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
+        
+        // Annuler les autres ajustements
+        ['A', 'B', 'C'].forEach(phase => {
+          if (phase !== priorityPhase) {
+            adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
+            switchStates[phase as keyof typeof switchStates] = 'BYP';
+          }
+        });
+      }
+    }
+    
+    const canRegulate = Object.values(adjustmentPerPhase).some(adj => adj !== 0);
+    return { adjustmentPerPhase, switchStates, canRegulate };
+  }
+
+  /**
+   * Applique les régulateurs de tension SRG2 avec logique réaliste
    */
   private applyPolyphaseVoltageRegulators(
     nodes: Node[],
@@ -918,10 +1005,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     project: Project,
     scenario: CalculationScenario
   ): CalculationResult {
-    console.log('🔧 Starting polyphase voltage regulation with corrected algorithm');
+    console.log('🔧 Starting SRG2 voltage regulation with realistic switching logic');
 
-    // Construire les structures nécessaires
-    const parentMap = this.buildParentMap(nodes, cables);
     const networkDetection = this.detectNetworkType(project);
     
     console.log(`📋 Network type detected: ${networkDetection.type} (confidence: ${networkDetection.confidence})`);
@@ -931,220 +1016,138 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
 
     let result = JSON.parse(JSON.stringify(baseResult));
-    let currentNodes = nodes;
     const warnings: string[] = [];
     const regulatorLog: any[] = [];
 
     // Appliquer chaque régulateur séquentiellement
     for (const regulator of regulators) {
       try {
-        console.log(`🔧 Processing regulator ${regulator.id} at node ${regulator.nodeId}`);
+        console.log(`🔧 Processing SRG2 regulator ${regulator.id} at node ${regulator.nodeId}`);
 
-        // Validation de la capacité maximale
-        if (!regulator.maxPower_kVA || regulator.maxPower_kVA <= 0) {
-          throw new Error(`Le régulateur ${regulator.id} n'a pas de capacité maximale définie`);
-        }
-
-        // 1. Détection du type de réseau 
-        const netInfo = networkDetection;
-        const V_set = regulator.targetVoltage_V;
-        
-        // Logique simplifiée selon le principe de base :
-        // - Réseau 230V : régulation ligne-ligne à 230V, tensions lues = ligne-ligne
-        // - Réseau 400V : régulation phase-neutre à 230V, tensions lues = phase-neutre
-        const convFactor = 1; // Pas de conversion nécessaire
-        const referenceType = netInfo.type === '400V' ? 'phase-neutre' : 'ligne-ligne';
-        const isPhaseNeutre = netInfo.type === '400V'; // true pour 400V (phase-neutre), false pour 230V (ligne-ligne)
-        
-        console.log(`📊 Réseau ${netInfo.type}, régulation ${referenceType} à ${V_set}V`);
-
-        // 2. Récupérer la tension initiale du nœud (Uinit)
+        // 1. Récupérer la tension initiale du nœud
         const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
         if (!nodeMetrics) {
           console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
           continue;
         }
 
-        // Convertir en tension ligne-ligne si nécessaire
-        const Uinit: [number, number, number] = [
-          nodeMetrics.voltagesPerPhase.A * convFactor,
-          nodeMetrics.voltagesPerPhase.B * convFactor,
-          nodeMetrics.voltagesPerPhase.C * convFactor
-        ];
+        const initialVoltages = {
+          A: nodeMetrics.voltagesPerPhase.A,
+          B: nodeMetrics.voltagesPerPhase.B,
+          C: nodeMetrics.voltagesPerPhase.C
+        };
 
-        console.log(`📊 Initial voltages (après conversion): [${Uinit.map(v => v.toFixed(1)).join(', ')}]V`);
+        console.log(`📊 Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
 
-        // 3. Définir la tension cible (Utarget)
-        const Utarget: [number, number, number] = [V_set, V_set, V_set];
+        // 2. Appliquer la logique SRG2 réaliste
+        const regulationResult = this.applySRG2RegulationLogic(
+          regulator,
+          initialVoltages,
+          networkDetection.type
+        );
 
-        // 4. Calcul du ΔU par phase
-        const deltaU: [number, number, number] = [
-          Utarget[0] - Uinit[0],
-          Utarget[1] - Uinit[1],
-          Utarget[2] - Uinit[2]
-        ];
-
-        console.log(`📊 Required ΔU: [${deltaU.map(v => v.toFixed(1)).join(', ')}]V`);
-
-        // 5. Impédance amont (Zup)
-        const Zup = this.computeUpstreamImpedancePerPhase(regulator.nodeId, parentMap, cables, cableTypes);
-        console.log(`📊 Upstream impedances: [${Zup.map(z => z.toFixed(4)).join(', ')}]Ω`);
-
-        // Vérifier impédance nulle
-        if (Zup.some(z => z <= 1e-6)) {
-          const warning = `Impédance amont très faible pour régulateur ${regulator.id}, saturation immédiate`;
-          console.warn(`⚠️ ${warning}`);
-          warnings.push(warning);
+        if (!regulationResult.canRegulate) {
+          console.log(`📊 Regulator ${regulator.id}: all phases within normal range, no action needed`);
+          
+          // Log pour cohérence même sans régulation
+          const logEntry = {
+            id: regulator.id,
+            nodeId: regulator.nodeId,
+            targetVoltage_V: 230,
+            appliedPower_kVA: 0,
+            requestedPower_kVA: 0,
+            saturated: false,
+            alpha: 1,
+            direction: 'bypass' as const,
+            beforeVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
+            afterVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
+            warnings: [],
+            switchStates: regulationResult.switchStates,
+            adjustments: regulationResult.adjustmentPerPhase,
+            networkType: networkDetection.type
+          };
+          
+          regulatorLog.push(logEntry);
+          
+          // Stocker métadonnées
+          (regulator as any).appliedPower_kVA = 0;
+          (regulator as any).saturated = false;
+          (regulator as any).requestedPower_kVA = 0;
+          (regulator as any).beforeVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
+          (regulator as any).afterVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
+          
           continue;
         }
 
-        // 6. Courant requis par phase (Ireq)
-        const Ireq: [number, number, number] = [
-          Zup[0] ? deltaU[0] / Zup[0] : 0,
-          Zup[1] ? deltaU[1] / Zup[1] : 0,
-          Zup[2] ? deltaU[2] / Zup[2] : 0
-        ];
+        // 3. Calculer les nouvelles tensions après régulation
+        const afterVoltages = {
+          A: initialVoltages.A + regulationResult.adjustmentPerPhase.A,
+          B: initialVoltages.B + regulationResult.adjustmentPerPhase.B, 
+          C: initialVoltages.C + regulationResult.adjustmentPerPhase.C
+        };
 
-        console.log(`📊 Required currents: [${Ireq.map(i => i.toFixed(2)).join(', ')}]A`);
+        console.log(`📊 SRG2 switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
+        console.log(`📊 Voltage adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+        console.log(`📊 After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
 
-        // 7. Puissance requise (avec tension initiale pour calcul correct)
-        const SreqPhase: [number, number, number] = [
-          Math.abs(Uinit[0] * Ireq[0]),
-          Math.abs(Uinit[1] * Ireq[1]),
-          Math.abs(Uinit[2] * Ireq[2])
-        ];
-        const S_req_total_kVA = SreqPhase.reduce((a, b) => a + b, 0) / 1000;
-
-        // Déterminer la direction basée sur l'écart moyen
-        const averageDeltaU = (deltaU[0] + deltaU[1] + deltaU[2]) / 3;
-        const needsVoltageIncrease = averageDeltaU > 0;
-
-        console.log(`📊 Required power per phase: [${SreqPhase.map(s => (s/1000).toFixed(1)).join(', ')}]kVA`);
-        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA`);
-        console.log(`📊 Average ΔU: ${averageDeltaU.toFixed(1)}V → ${needsVoltageIncrease ? 'needs voltage increase' : 'needs voltage decrease'}`);
-
-        // 8. Vérification de la capacité du régulateur
-        const S_cap_kVA = regulator.maxPower_kVA; // ❌ NE PAS UTILISER DE CONSTANTE
-        let alpha = 1;
-        let saturated = false;
-        
-        if (S_req_total_kVA > S_cap_kVA) {
-          alpha = S_cap_kVA / S_req_total_kVA;
-          saturated = true;
-          const warning = `Régulateur ${regulator.id} saturé: demandé ${S_req_total_kVA.toFixed(1)}kVA > capacité ${S_cap_kVA}kVA (α=${alpha.toFixed(3)})`;
-          console.warn(`⚠️ ${warning}`);
-          warnings.push(warning);
-        }
-
-        // 9. Vérification du courant du câble d'alimentation (optionnel mais recommandé)
-        const Ireq_max = Math.max(...Ireq.map(i => Math.abs(i)));
-        // Trouver le câble d'alimentation
-        const parentId = parentMap.get(regulator.nodeId);
-        if (parentId) {
-          const feedCable = cables.find(c => 
-            (c.nodeAId === parentId && c.nodeBId === regulator.nodeId) ||
-            (c.nodeAId === regulator.nodeId && c.nodeBId === parentId)
-          );
-          if (feedCable) {
-            const feedCableType = cableTypes.find(ct => ct.id === feedCable.typeId);
-            if (feedCableType?.maxCurrent_A && Ireq_max > feedCableType.maxCurrent_A) {
-              const currentAlpha = feedCableType.maxCurrent_A / Ireq_max;
-              if (currentAlpha < alpha) {
-                alpha = currentAlpha;
-                saturated = true;
-                const warning = `Régulateur ${regulator.id} limité par courant câble: ${Ireq_max.toFixed(1)}A > ${feedCableType.maxCurrent_A}A`;
-                console.warn(`⚠️ ${warning}`);
-                warnings.push(warning);
+        // 4. Appliquer directement les corrections de tension aux métriques (SRG2 = transformateur à prises)
+        const updatedNodeMetrics = result.nodeMetricsPerPhase?.map(node => {
+          if (node.nodeId === regulator.nodeId) {
+            return {
+              ...node,
+              voltagesPerPhase: {
+                A: afterVoltages.A,
+                B: afterVoltages.B, 
+                C: afterVoltages.C
               }
-            }
+            };
           }
+          return node;
+        });
+
+        if (updatedNodeMetrics) {
+          result.nodeMetricsPerPhase = updatedNodeMetrics;
         }
 
-        // 10. Application des pertes du régulateur (≈ 1 %) selon la direction
-        const lossFactor = 0.01;
-        let applied_kVA = alpha * S_req_total_kVA;
-        if (needsVoltageIncrease) {
-          applied_kVA = applied_kVA * (1 - lossFactor); // Production: réduction des pertes
-        } else {
-          applied_kVA = applied_kVA * (1 + lossFactor); // Absorption: augmentation pour compenser les pertes  
-        }
+        // 5. Calculer la puissance équivalente pour logging (information seulement)
+        const totalAdjustment = Math.abs(regulationResult.adjustmentPerPhase.A) + 
+                               Math.abs(regulationResult.adjustmentPerPhase.B) + 
+                               Math.abs(regulationResult.adjustmentPerPhase.C);
+        const equivalentPower_kVA = totalAdjustment * 0.1; // Approximation pour le log
 
-        console.log(`📊 Applied power (with ${(lossFactor*100).toFixed(0)}% losses): ${applied_kVA.toFixed(1)}kVA`);
-
-        // Vérifier les pertes excessives
-        if (lossFactor > 0.05) {
-          const warning = `Perte du régulateur ${regulator.id} hors norme: ${(lossFactor*100).toFixed(1)}%`;
-          console.warn(`⚠️ ${warning}`);
-          warnings.push(warning);
-        }
-
-        // 11. Injection dans le réseau avec direction correcte
-        const direction = needsVoltageIncrease ? 'production' : 'absorption';
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, Math.abs(applied_kVA), direction);
-
-        console.log(`📊 Applied injection: ${Math.abs(applied_kVA).toFixed(1)}kVA as ${direction} (${needsVoltageIncrease ? 'augmente' : 'diminue'} la tension)`);
-
-        // 12. Recalcul du scénario
-        console.log(`🔄 Recalculating network with regulator injection`);
-        
-        const newResult = this.calculateScenario(
-          modifiedNodes,
-          cables,
-          cableTypes,
-          scenario,
-          project.foisonnementCharges,
-          project.foisonnementProductions,
-          project.transformerConfig,
-          project.loadModel,
-          project.desequilibrePourcent,
-          project.manualPhaseDistribution
-        );
-
-        // 13. Extraire les nouvelles tensions
-        const afterNodeMetrics = newResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
-        const afterVoltages: [number, number, number] = afterNodeMetrics ? [
-          afterNodeMetrics.voltagesPerPhase.A * convFactor,
-          afterNodeMetrics.voltagesPerPhase.B * convFactor,
-          afterNodeMetrics.voltagesPerPhase.C * convFactor
-        ] : Uinit;
-
-        console.log(`📊 After voltages: [${afterVoltages.map(v => v.toFixed(1)).join(', ')}]V`);
-
-        // 14. Journal de régulateur
+        // 6. Journal de régulateur
         const logEntry = {
           id: regulator.id,
           nodeId: regulator.nodeId,
-          targetVoltage_V: V_set,
-          appliedPower_kVA: needsVoltageIncrease ? applied_kVA : -applied_kVA, // Conserve le signe selon la direction
-          requestedPower_kVA: S_req_total_kVA, // Puissance demandée (toujours positive)
-          saturated,
-          alpha,
-          direction,
-          beforeVoltages: Uinit,
-          afterVoltages: afterVoltages,
+          targetVoltage_V: 230,
+          appliedPower_kVA: 0, // SRG2 ne consomme pas de puissance (transformateur)
+          requestedPower_kVA: equivalentPower_kVA,
+          saturated: false, // SRG2 n'a pas de limitation de puissance dans ce sens
+          alpha: 1,
+          direction: 'transformer' as const, // Type spécial pour SRG2
+          beforeVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
+          afterVoltages: [afterVoltages.A, afterVoltages.B, afterVoltages.C] as [number, number, number],
           warnings: warnings.filter(w => w.includes(regulator.id)),
-          lossFactor,
-          conversionFactor: convFactor,
-          isPhaseNeutralReference: isPhaseNeutre
+          switchStates: regulationResult.switchStates,
+          adjustments: regulationResult.adjustmentPerPhase,
+          networkType: networkDetection.type
         };
 
         regulatorLog.push(logEntry);
 
-        // Stocker métadonnées dans l'objet régulateur pour compatibilité
-        (regulator as any).appliedPower_kVA = needsVoltageIncrease ? applied_kVA : -applied_kVA;
-        (regulator as any).saturated = saturated;
-        (regulator as any).requestedPower_kVA = S_req_total_kVA;
-        (regulator as any).beforeVoltages = Uinit;
-        (regulator as any).afterVoltages = afterVoltages;
+        // 7. Stocker métadonnées dans l'objet régulateur pour compatibilité
+        (regulator as any).appliedPower_kVA = 0;
+        (regulator as any).saturated = false;
+        (regulator as any).requestedPower_kVA = equivalentPower_kVA;
+        (regulator as any).beforeVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
+        (regulator as any).afterVoltages = [afterVoltages.A, afterVoltages.B, afterVoltages.C];
+        (regulator as any).switchStates = regulationResult.switchStates;
+        (regulator as any).adjustments = regulationResult.adjustmentPerPhase;
 
-        // 15. Mettre à jour result pour régulateurs suivants
-        result = newResult;
-        currentNodes = modifiedNodes;
-
-        console.log(`✅ Regulator ${regulator.id} applied successfully`);
+        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully with transformer logic`);
 
       } catch (error) {
-        const errorMsg = `Échec application régulateur ${regulator.nodeId}: ${error}`;
+        const errorMsg = `Échec application régulateur SRG2 ${regulator.nodeId}: ${error}`;
         console.error(`❌ ${errorMsg}`);
         warnings.push(errorMsg);
         continue;
@@ -1159,7 +1162,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Ajouter le journal détaillé des régulateurs
     (result as any).regulatorLog = regulatorLog;
 
-    console.log('✅ Polyphase voltage regulation completed with detailed logging');
+    console.log('✅ SRG2 voltage regulation completed with realistic transformer logic');
     return result;
   }
 }
