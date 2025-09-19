@@ -505,7 +505,12 @@ export class ElectricalCalculator {
     const compensatedResult: CalculationResult = {
       ...baseResult,
       nodeVoltageDrops: baseResult.nodeVoltageDrops?.map(node => ({ ...node })),
-      nodeMetrics: baseResult.nodeMetrics ? { ...baseResult.nodeMetrics } : undefined
+      nodeMetrics: baseResult.nodeMetrics ? { ...baseResult.nodeMetrics } : undefined,
+      nodeMetricsPerPhase: baseResult.nodeMetricsPerPhase?.map(node => ({
+        ...node,
+        voltagesPerPhase: { ...node.voltagesPerPhase },
+        voltageDropsPerPhase: { ...node.voltageDropsPerPhase }
+      }))
     };
 
     // Pour chaque compensateur actif
@@ -572,6 +577,15 @@ export class ElectricalCalculator {
         nodeMetric.voltageV.A = Math.round(UEQUI8_ph1 * 10) / 10;
         nodeMetric.voltageV.B = Math.round(UEQUI8_ph2 * 10) / 10;  
         nodeMetric.voltageV.C = Math.round(UEQUI8_ph3 * 10) / 10;
+
+        // Also update nodeMetricsPerPhase for display consistency
+        const nodeMetricPerPhase = compensatedResult.nodeMetricsPerPhase?.find(nm => nm.nodeId === compensator.nodeId);
+        if (nodeMetricPerPhase) {
+          nodeMetricPerPhase.voltagesPerPhase.A = Math.round(UEQUI8_ph1 * 10) / 10;
+          nodeMetricPerPhase.voltagesPerPhase.B = Math.round(UEQUI8_ph2 * 10) / 10;
+          nodeMetricPerPhase.voltagesPerPhase.C = Math.round(UEQUI8_ph3 * 10) / 10;
+          console.log(`📊 Updated nodeMetricsPerPhase for display: A=${nodeMetricPerPhase.voltagesPerPhase.A}V, B=${nodeMetricPerPhase.voltagesPerPhase.B}V, C=${nodeMetricPerPhase.voltagesPerPhase.C}V`);
+        }
 
         // Calculate voltage improvement
         const voltageImprovement = Umax_Umin_init - Umax_Umin_EQUI8;
