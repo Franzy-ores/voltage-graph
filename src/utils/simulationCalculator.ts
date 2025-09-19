@@ -1071,10 +1071,10 @@ export class SimulationCalculator extends ElectricalCalculator {
         }
 
         // 11. Injection dans le réseau
-        const direction = injected_kVA >= 0 ? 'inject' : 'absorb';
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, injected_kVA);
+        const direction = injected_kVA >= 0 ? 'production' : 'absorption';
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, Math.abs(injected_kVA), direction);
 
-        console.log(`📊 Applied injection: ${injected_kVA.toFixed(1)}kVA as ${direction}`);
+        console.log(`📊 Applied injection: ${Math.abs(injected_kVA).toFixed(1)}kVA as ${direction} (${injected_kVA >= 0 ? 'augmente' : 'diminue'} la tension)`);
 
         // 12. Recalcul du scénario
         console.log(`🔄 Recalculating network with regulator injection`);
