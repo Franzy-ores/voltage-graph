@@ -411,6 +411,16 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario,
     equipment: SimulationEquipment
   ): SimulationResult {
+    console.log('🚀 SimulationCalculator.calculateWithSimulation START');
+    console.log('📊 Input parameters:', {
+      scenario,
+      equipment: {
+        regulators: equipment.regulators.filter(r => r.enabled).length,
+        compensators: equipment.neutralCompensators.filter(c => c.enabled).length,
+        upgrades: equipment.cableUpgrades.length
+      }
+    });
+
     // D'abord calculer le scénario de base (sans équipements)
     let baselineResult: CalculationResult;
     
@@ -433,6 +443,12 @@ export class SimulationCalculator extends ElectricalCalculator {
       );
     }
 
+    console.log('📊 Baseline result structure:', {
+      hasNodeMetrics: !!baselineResult.nodeMetrics,
+      hasNodeMetricsPerPhase: !!baselineResult.nodeMetricsPerPhase,
+      nodeMetricsPerPhaseCount: baselineResult.nodeMetricsPerPhase?.length || 0
+    });
+
     // Ensuite calculer avec les équipements de simulation actifs
     const simulationResult = this.calculateScenarioWithEquipment(
       project,
@@ -440,13 +456,22 @@ export class SimulationCalculator extends ElectricalCalculator {
       equipment
     );
 
-    return {
+    console.log('📊 Final simulation result structure:', {
+      hasNodeMetrics: !!simulationResult.nodeMetrics,
+      hasNodeMetricsPerPhase: !!simulationResult.nodeMetricsPerPhase,
+      nodeMetricsPerPhaseCount: simulationResult.nodeMetricsPerPhase?.length || 0
+    });
+
+    const result = {
       ...simulationResult,
       isSimulation: true,
       equipment,
       baselineResult,
       convergenceStatus: (simulationResult as any).convergenceStatus || (baselineResult as any).convergenceStatus
     };
+
+    console.log('✅ SimulationCalculator.calculateWithSimulation COMPLETE');
+    return result;
   }
 
   /**
@@ -457,7 +482,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario,
     equipment: SimulationEquipment
   ): CalculationResult {
-    console.log('🔧 SimulationCalculator: Calculating scenario with equipment');
+    console.log('🔧 SimulationCalculator.calculateScenarioWithEquipment START');
     console.log('Equipment:', {
       regulators: equipment.regulators.filter(r => r.enabled).length,
       compensators: equipment.neutralCompensators.filter(c => c.enabled).length,
@@ -478,11 +503,42 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.manualPhaseDistribution
     );
 
+    console.log('📊 Base result BEFORE equipment application:', {
+      hasNodeMetrics: !!baseResult.nodeMetrics,
+      hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
+      nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0
+    });
+
     // Étape 2: Appliquer les compensateurs de neutre
     const activeCompensators = equipment.neutralCompensators.filter(c => c.enabled);
     if (activeCompensators.length > 0) {
       console.log(`🔧 Applying ${activeCompensators.length} neutral compensators`);
+      
+      // Log compensators details
+      activeCompensators.forEach(comp => {
+        console.log(`📊 Compensator ${comp.id} on node ${comp.nodeId}`);
+      });
+      
+      const resultBeforeCompensation = JSON.parse(JSON.stringify(baseResult));
       baseResult = this.applyNeutralCompensation(project.nodes, project.cables, activeCompensators, baseResult, project.cableTypes);
+      
+      console.log('📊 Result AFTER neutral compensation:', {
+        hasNodeMetrics: !!baseResult.nodeMetrics,
+        hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
+        nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0
+      });
+
+      // Detailed comparison for compensator nodes
+      activeCompensators.forEach(comp => {
+        const beforeMetrics = resultBeforeCompensation.nodeMetricsPerPhase?.find(n => n.nodeId === comp.nodeId);
+        const afterMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === comp.nodeId);
+        
+        console.log(`🔍 Node ${comp.nodeId} compensation effect:`, {
+          before: beforeMetrics?.voltagesPerPhase,
+          after: afterMetrics?.voltagesPerPhase,
+          changed: JSON.stringify(beforeMetrics?.voltagesPerPhase) !== JSON.stringify(afterMetrics?.voltagesPerPhase)
+        });
+      });
     }
 
     // Étape 3: Appliquer les régulateurs de tension (future implementation)
@@ -496,7 +552,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.log(`🔧 Note: ${equipment.cableUpgrades.length} cable upgrades found but not yet implemented`);
     }
 
-    console.log('✅ Simulation equipment applied');
+    console.log('✅ SimulationCalculator.calculateScenarioWithEquipment COMPLETE');
     return baseResult;
   }
 

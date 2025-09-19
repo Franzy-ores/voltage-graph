@@ -18,14 +18,26 @@ const Index = () => {
     createNewProject,
     loadProject,
     openEditPanel,
-    calculateAll
+    calculateAll,
+    simulationMode
   } = useNetworkStore();
 
-  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
   const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
+  console.log('🏠 Index.tsx results selection:', {
+    simulationMode,
+    activeEquipmentCount,
+    hasSimulationResults: !!simulationResults,
+    hasCalculationResults: !!calculationResults,
+    selectedScenario,
+    simulationResultsForScenario: !!simulationResults?.[selectedScenario],
+    calculationResultsForScenario: !!calculationResults?.[selectedScenario],
+    usingSimulation: simulationMode && activeEquipmentCount > 0
+  });
+  
+  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
 
   const handleNewNetwork = () => {
     createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");

@@ -64,10 +64,22 @@ export const MapView = () => {
     simulationMode,
     activeEquipmentCount,
     usingSimulation: simulationMode && activeEquipmentCount > 0,
-    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION'
+    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION',
+    hasSimulationResults: !!simulationResults,
+    hasCalculationResults: !!calculationResults,
+    selectedScenario,
+    simulationResultsForScenario: !!simulationResults?.[selectedScenario],
+    calculationResultsForScenario: !!calculationResults?.[selectedScenario]
   });
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
+  
+  console.log('🐛 MapView final results selection:', {
+    resultsToUse: resultsToUse === simulationResults ? 'SIMULATION' : 'CALCULATION',
+    hasResultsForScenario: !!resultsToUse?.[selectedScenario],
+    hasNodeMetricsPerPhase: !!resultsToUse?.[selectedScenario]?.nodeMetricsPerPhase,
+    nodeMetricsPerPhaseCount: resultsToUse?.[selectedScenario]?.nodeMetricsPerPhase?.length || 0
+  });
 
   // Fonction pour zoomer sur le projet chargé
   const zoomToProject = (event?: CustomEvent) => {
@@ -593,7 +605,9 @@ export const MapView = () => {
                   activeEquipmentCount,
                   usingSimulation: isUsingSimulation,
                   hasPhaseMetrics: !!phaseMetrics,
-                  voltages: phaseMetrics?.voltagesPerPhase
+                  voltages: phaseMetrics?.voltagesPerPhase,
+                  resultsSourceType: results === simulationResults?.[selectedScenario] ? 'SIMULATION' : 'CALCULATION',
+                  compensators: simulationEquipment.neutralCompensators.filter(c => c.enabled).map(c => c.nodeId)
                 });
                 
                 // Comparaison spéciale pour le nœud compensateur
