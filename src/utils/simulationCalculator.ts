@@ -767,36 +767,59 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Applique une injection de puissance sur une copie des nœuds
+   * Supporte maintenant les deux directions: production (injection) et absorption (charge)
    */
   private applyInjectionOnCopy(
     nodesCopy: Node[],
     regNodeId: string,
-    S_inj_total_kVA: number
+    S_inj_total_kVA: number,
+    direction: 'production' | 'absorption' = 'production'
   ): Node[] {
     const modifiedNodes = JSON.parse(JSON.stringify(nodesCopy));
     const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regNodeId);
     
     if (nodeIndex >= 0) {
-      // Ajouter comme production équivalente (injection positive)
-      if (!modifiedNodes[nodeIndex].productions) {
-        modifiedNodes[nodeIndex].productions = [];
+      // Nettoyer les anciennes injections de régulateur
+      if (modifiedNodes[nodeIndex].productions) {
+        modifiedNodes[nodeIndex].productions = modifiedNodes[nodeIndex].productions.filter(
+          (p: any) => !p.id || !p.id.includes('regulator_injection')
+        );
       }
+      if (modifiedNodes[nodeIndex].clients) {
+        modifiedNodes[nodeIndex].clients = modifiedNodes[nodeIndex].clients.filter(
+          (c: any) => !c.id || !c.id.includes('regulator_injection')
+        );
+      }
+
+      const absS_kVA = Math.abs(S_inj_total_kVA);
       
-      // Remplacer ou ajouter la production du régulateur
-      const existingRegulatorIndex = modifiedNodes[nodeIndex].productions.findIndex(
-        (p: any) => p.id && p.id.includes('regulator_injection')
-      );
-      
-      const regulatorProduction = {
-        id: `regulator_injection_${regNodeId}`,
-        label: `Regulator Injection ${S_inj_total_kVA.toFixed(1)}kVA`,
-        S_kVA: S_inj_total_kVA
-      };
-      
-      if (existingRegulatorIndex >= 0) {
-        modifiedNodes[nodeIndex].productions[existingRegulatorIndex] = regulatorProduction;
+      if (direction === 'production') {
+        // Injection comme production (pour augmenter la tension)
+        if (!modifiedNodes[nodeIndex].productions) {
+          modifiedNodes[nodeIndex].productions = [];
+        }
+        
+        modifiedNodes[nodeIndex].productions.push({
+          id: `regulator_injection_${regNodeId}`,
+          label: `Régulateur Production ${absS_kVA.toFixed(1)}kVA`,
+          S_kVA: absS_kVA
+        });
+
+        console.log(`📊 Applied ${absS_kVA.toFixed(1)}kVA as PRODUCTION for voltage regulation`);
+        
       } else {
-        modifiedNodes[nodeIndex].productions.push(regulatorProduction);
+        // Absorption comme charge (pour diminuer la tension)
+        if (!modifiedNodes[nodeIndex].clients) {
+          modifiedNodes[nodeIndex].clients = [];
+        }
+        
+        modifiedNodes[nodeIndex].clients.push({
+          id: `regulator_injection_${regNodeId}`,
+          label: `Régulateur Absorption ${absS_kVA.toFixed(1)}kVA`,
+          S_kVA: absS_kVA
+        });
+
+        console.log(`📊 Applied ${absS_kVA.toFixed(1)}kVA as ABSORPTION for voltage regulation`);
       }
     }
     
@@ -867,7 +890,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Applique les régulateurs de tension polyphasés selon l'algorithme exact
+   * Applique les régulateurs de tension polyphasés selon l'algorithme exact défini
    */
   private applyPolyphaseVoltageRegulators(
     nodes: Node[],
@@ -878,7 +901,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     project: Project,
     scenario: CalculationScenario
   ): CalculationResult {
-    console.log('🔧 Starting polyphase voltage regulation');
+    console.log('🔧 Starting polyphase voltage regulation with corrected algorithm');
 
     // Construire les structures nécessaires
     const parentMap = this.buildParentMap(nodes, cables);
@@ -893,101 +916,143 @@ export class SimulationCalculator extends ElectricalCalculator {
     let result = JSON.parse(JSON.stringify(baseResult));
     let currentNodes = nodes;
     const warnings: string[] = [];
+    const regulatorLog: any[] = [];
 
     // Appliquer chaque régulateur séquentiellement
     for (const regulator of regulators) {
       try {
         console.log(`🔧 Processing regulator ${regulator.id} at node ${regulator.nodeId}`);
 
-        // a. Déterminer le setpoint et la représentation
-        const V_set = regulator.targetVoltage_V;
-        const isPhaseNeutral = networkDetection.type === '400V' && V_set <= 250;
-        
-        console.log(`📊 Setpoint: ${V_set}V (${isPhaseNeutral ? 'Ph-N' : 'Ph-Ph'} representation)`);
+        // Validation de la capacité maximale
+        if (!regulator.maxPower_kVA || regulator.maxPower_kVA <= 0) {
+          throw new Error(`Le régulateur ${regulator.id} n'a pas de capacité maximale définie`);
+        }
 
-        // b. Obtenir Uinit
+        // 1. Détection du type de réseau et conversion
+        const netInfo = networkDetection;
+        const V_set = regulator.targetVoltage_V;
+        const isPhaseNeutre = netInfo.type === '400V' && V_set <= 250;
+        const convFactor = isPhaseNeutre ? Math.sqrt(3) : 1;
+        
+        console.log(`📊 Network: ${netInfo.type}, setpoint: ${V_set}V (${isPhaseNeutre ? 'Ph-N' : 'Ph-Ph'}), convFactor: ${convFactor.toFixed(3)}`);
+
+        // 2. Récupérer la tension initiale du nœud (Uinit)
         const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
         if (!nodeMetrics) {
           console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
           continue;
         }
 
+        // Convertir en tension ligne-ligne si nécessaire
         const Uinit: [number, number, number] = [
-          nodeMetrics.voltagesPerPhase.A,
-          nodeMetrics.voltagesPerPhase.B,
-          nodeMetrics.voltagesPerPhase.C
+          nodeMetrics.voltagesPerPhase.A * convFactor,
+          nodeMetrics.voltagesPerPhase.B * convFactor,
+          nodeMetrics.voltagesPerPhase.C * convFactor
         ];
 
-        console.log(`📊 Initial voltages: [${Uinit.map(v => v.toFixed(1)).join(', ')}]V`);
+        console.log(`📊 Initial voltages (après conversion): [${Uinit.map(v => v.toFixed(1)).join(', ')}]V`);
 
-        // c. Construire Utarget
+        // 3. Définir la tension cible (Utarget)
         const Utarget: [number, number, number] = [V_set, V_set, V_set];
 
-        // d. Calculer ΔV par phase
-        const deltaV_initial: [number, number, number] = [
+        // 4. Calcul du ΔU par phase
+        const deltaU: [number, number, number] = [
           Utarget[0] - Uinit[0],
-          Utarget[1] - Uinit[1], 
+          Utarget[1] - Uinit[1],
           Utarget[2] - Uinit[2]
         ];
 
-        console.log(`📊 Required ΔV: [${deltaV_initial.map(v => v.toFixed(1)).join(', ')}]V`);
+        console.log(`📊 Required ΔU: [${deltaU.map(v => v.toFixed(1)).join(', ')}]V`);
 
-        // e. Récupérer Z_up par phase
+        // 5. Impédance amont (Zup)
         const Zup = this.computeUpstreamImpedancePerPhase(regulator.nodeId, parentMap, cables, cableTypes);
         console.log(`📊 Upstream impedances: [${Zup.map(z => z.toFixed(4)).join(', ')}]Ω`);
 
-        // f,g. Calculer puissance requise
-        const requirement = this.computeRegulatorRequirement(Uinit, Utarget, Zup);
-        const S_req_total_kVA = requirement.S_req_total_VA / 1000;
+        // Vérifier impédance nulle
+        if (Zup.some(z => z <= 1e-6)) {
+          const warning = `Impédance amont très faible pour régulateur ${regulator.id}, saturation immédiate`;
+          console.warn(`⚠️ ${warning}`);
+          warnings.push(warning);
+          continue;
+        }
 
-        console.log(`📊 Required power: ${S_req_total_kVA.toFixed(1)}kVA`);
+        // 6. Courant requis par phase (Ireq)
+        const Ireq: [number, number, number] = [
+          Zup[0] ? deltaU[0] / Zup[0] : 0,
+          Zup[1] ? deltaU[1] / Zup[1] : 0,
+          Zup[2] ? deltaU[2] / Zup[2] : 0
+        ];
 
-        // h. Déterminer capacité autorisée
-        const S_cap_kVA = networkDetection.type === '400V' ? 44 : 30;
+        console.log(`📊 Required currents: [${Ireq.map(i => i.toFixed(2)).join(', ')}]A`);
+
+        // 7. Puissance requise (Sreq)
+        const SreqPhase: [number, number, number] = [
+          Math.abs(Utarget[0] * Ireq[0]),
+          Math.abs(Utarget[1] * Ireq[1]),
+          Math.abs(Utarget[2] * Ireq[2])
+        ];
+        const S_req_total_kVA = SreqPhase.reduce((a, b) => a + b, 0) / 1000;
+
+        console.log(`📊 Required power per phase: [${SreqPhase.map(s => (s/1000).toFixed(1)).join(', ')}]kVA`);
+        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA`);
+
+        // 8. Vérification de la capacité du régulateur
+        const S_cap_kVA = regulator.maxPower_kVA; // ❌ NE PAS UTILISER DE CONSTANTE
+        let alpha = 1;
+        let saturated = false;
         
-        console.log(`📊 Available capacity: ${S_cap_kVA}kVA`);
-
-        // i. Décision saturation
-        let applied_kVA: number;
-        let alpha: number;
-        let saturated: boolean;
-
-        if (S_req_total_kVA <= S_cap_kVA) {
-          applied_kVA = S_req_total_kVA;
-          alpha = 1;
-          saturated = false;
-          console.log(`✅ No saturation needed`);
-        } else {
-          applied_kVA = S_cap_kVA;
+        if (S_req_total_kVA > S_cap_kVA) {
           alpha = S_cap_kVA / S_req_total_kVA;
           saturated = true;
-          const warning = `Regulator at node ${regulator.nodeId} saturated: requested ${S_req_total_kVA.toFixed(1)} kVA > cap ${S_cap_kVA} kVA — applying ${S_cap_kVA} kVA (α=${alpha.toFixed(3)})`;
+          const warning = `Régulateur ${regulator.id} saturé: demandé ${S_req_total_kVA.toFixed(1)}kVA > capacité ${S_cap_kVA}kVA (α=${alpha.toFixed(3)})`;
           console.warn(`⚠️ ${warning}`);
           warnings.push(warning);
         }
 
-        // j. Calculer correction effective
-        const deltaV_effective: [number, number, number] = [
-          alpha * deltaV_initial[0],
-          alpha * deltaV_initial[1],
-          alpha * deltaV_initial[2]
-        ];
+        // 9. Vérification du courant du câble d'alimentation (optionnel mais recommandé)
+        const Ireq_max = Math.max(...Ireq.map(i => Math.abs(i)));
+        // Trouver le câble d'alimentation
+        const parentId = parentMap.get(regulator.nodeId);
+        if (parentId) {
+          const feedCable = cables.find(c => 
+            (c.nodeAId === parentId && c.nodeBId === regulator.nodeId) ||
+            (c.nodeAId === regulator.nodeId && c.nodeBId === parentId)
+          );
+          if (feedCable) {
+            const feedCableType = cableTypes.find(ct => ct.id === feedCable.typeId);
+            if (feedCableType?.maxCurrent_A && Ireq_max > feedCableType.maxCurrent_A) {
+              const currentAlpha = feedCableType.maxCurrent_A / Ireq_max;
+              if (currentAlpha < alpha) {
+                alpha = currentAlpha;
+                saturated = true;
+                const warning = `Régulateur ${regulator.id} limité par courant câble: ${Ireq_max.toFixed(1)}A > ${feedCableType.maxCurrent_A}A`;
+                console.warn(`⚠️ ${warning}`);
+                warnings.push(warning);
+              }
+            }
+          }
+        }
 
-        console.log(`📊 Effective ΔV: [${deltaV_effective.map(v => v.toFixed(1)).join(', ')}]V`);
+        // 10. Application des pertes du régulateur
+        const lossFactor = 0.01; // 1%
+        const injected_kVA = alpha * S_req_total_kVA * (1 - lossFactor);
 
-        // k,l. Appliquer injection et stocker métadonnées
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, applied_kVA);
+        console.log(`📊 Applied power (with ${(lossFactor*100).toFixed(0)}% losses): ${injected_kVA.toFixed(1)}kVA`);
 
-        // Stocker métadonnées dans l'objet régulateur
-        (regulator as any).appliedPower_kVA = applied_kVA;
-        (regulator as any).saturated = saturated;
-        (regulator as any).requestedPower_kVA = S_req_total_kVA;
-        (regulator as any).achievedDeltaV_perPhase = deltaV_effective;
-        (regulator as any).beforeVoltages = Uinit;
+        // Vérifier les pertes excessives
+        if (lossFactor > 0.05) {
+          const warning = `Perte du régulateur ${regulator.id} hors norme: ${(lossFactor*100).toFixed(1)}%`;
+          console.warn(`⚠️ ${warning}`);
+          warnings.push(warning);
+        }
 
-        console.log(`📊 Regulator metadata stored: applied ${applied_kVA}kVA, saturated=${saturated}`);
+        // 11. Injection dans le réseau
+        const direction = S_req_total_kVA > 0 ? 'production' : 'absorption';
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, injected_kVA, direction);
 
-        // m. Relancer la simulation
+        console.log(`📊 Applied injection: ${injected_kVA.toFixed(1)}kVA as ${direction}`);
+
+        // 12. Recalcul du scénario
         console.log(`🔄 Recalculating network with regulator injection`);
         
         const newResult = this.calculateScenario(
@@ -1003,41 +1068,66 @@ export class SimulationCalculator extends ElectricalCalculator {
           project.manualPhaseDistribution
         );
 
-        // n. Récupérer tensions après et mettre à jour
+        // 13. Extraire les nouvelles tensions
         const afterNodeMetrics = newResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
-        if (afterNodeMetrics) {
-          const Uafter: [number, number, number] = [
-            afterNodeMetrics.voltagesPerPhase.A,
-            afterNodeMetrics.voltagesPerPhase.B,
-            afterNodeMetrics.voltagesPerPhase.C
-          ];
-          
-          (regulator as any).afterVoltages = Uafter;
-          console.log(`📊 After voltages: [${Uafter.map(v => v.toFixed(1)).join(', ')}]V`);
-        }
+        const afterVoltages: [number, number, number] = afterNodeMetrics ? [
+          afterNodeMetrics.voltagesPerPhase.A * convFactor,
+          afterNodeMetrics.voltagesPerPhase.B * convFactor,
+          afterNodeMetrics.voltagesPerPhase.C * convFactor
+        ] : Uinit;
 
-        // o. Mettre à jour result pour régulateurs suivants
+        console.log(`📊 After voltages: [${afterVoltages.map(v => v.toFixed(1)).join(', ')}]V`);
+
+        // 14. Journal de régulateur
+        const logEntry = {
+          id: regulator.id,
+          nodeId: regulator.nodeId,
+          targetVoltage_V: V_set,
+          appliedPower_kVA: injected_kVA,
+          requestedPower_kVA: S_req_total_kVA,
+          saturated,
+          alpha,
+          beforeVoltages: Uinit,
+          afterVoltages: afterVoltages,
+          warnings: warnings.filter(w => w.includes(regulator.id)),
+          direction,
+          lossFactor,
+          conversionFactor: convFactor,
+          isPhaseNeutralReference: isPhaseNeutre
+        };
+
+        regulatorLog.push(logEntry);
+
+        // Stocker métadonnées dans l'objet régulateur pour compatibilité
+        (regulator as any).appliedPower_kVA = injected_kVA;
+        (regulator as any).saturated = saturated;
+        (regulator as any).requestedPower_kVA = S_req_total_kVA;
+        (regulator as any).beforeVoltages = Uinit;
+        (regulator as any).afterVoltages = afterVoltages;
+
+        // 15. Mettre à jour result pour régulateurs suivants
         result = newResult;
-        currentNodes = modifiedNodes; // Mise à jour pour les régulateurs suivants
+        currentNodes = modifiedNodes;
 
         console.log(`✅ Regulator ${regulator.id} applied successfully`);
 
       } catch (error) {
-        const errorMsg = `Regulator application failed for node ${regulator.nodeId}: ${error}`;
+        const errorMsg = `Échec application régulateur ${regulator.nodeId}: ${error}`;
         console.error(`❌ ${errorMsg}`);
         warnings.push(errorMsg);
-        
-        // Rollback: garder result inchangé pour ce régulateur
         continue;
       }
     }
 
-    // Ajouter warnings au résultat
+    // Ajouter warnings et log au résultat
     if (warnings.length > 0) {
       (result as any).warnings = [...((result as any).warnings || []), ...warnings];
     }
 
-    console.log('✅ Polyphase voltage regulation completed');
+    // Ajouter le journal détaillé des régulateurs
+    (result as any).regulatorLog = regulatorLog;
+
+    console.log('✅ Polyphase voltage regulation completed with detailed logging');
     return result;
   }
 }
