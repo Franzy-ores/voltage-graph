@@ -741,7 +741,6 @@ export class SimulationCalculator extends ElectricalCalculator {
     S_req_total_VA: number;
     Ireq_per_phase: [number, number, number];
     deltaV: [number, number, number];
-    direction: 'injection' | 'absorption';
   } {
     const deltaV: [number, number, number] = [
       Utarget[0] - Uinit[0],
@@ -750,26 +749,20 @@ export class SimulationCalculator extends ElectricalCalculator {
     ];
 
     const Ireq_per_phase: [number, number, number] = [
-      Math.abs(Zup[0]) > 1e-12 ? deltaV[0] / Zup[0] : 0,
-      Math.abs(Zup[1]) > 1e-12 ? deltaV[1] / Zup[1] : 0,
-      Math.abs(Zup[2]) > 1e-12 ? deltaV[2] / Zup[2] : 0
+      Zup[0] > 0 ? deltaV[0] / Zup[0] : 0,
+      Zup[1] > 0 ? deltaV[1] / Zup[1] : 0,
+      Zup[2] > 0 ? deltaV[2] / Zup[2] : 0
     ];
 
-    // Keep the sign for power calculation - positive = injection, negative = absorption
     const S_req_phase_VA: [number, number, number] = [
-      Utarget[0] * Ireq_per_phase[0], // Preserve sign
-      Utarget[1] * Ireq_per_phase[1], // Preserve sign
-      Utarget[2] * Ireq_per_phase[2]  // Preserve sign
+      Math.abs(Utarget[0] * Ireq_per_phase[0]),
+      Math.abs(Utarget[1] * Ireq_per_phase[1]),
+      Math.abs(Utarget[2] * Ireq_per_phase[2])
     ];
 
-    // Total power magnitude for saturation check
-    const S_req_total_VA = Math.abs(S_req_phase_VA[0]) + Math.abs(S_req_phase_VA[1]) + Math.abs(S_req_phase_VA[2]);
+    const S_req_total_VA = S_req_phase_VA[0] + S_req_phase_VA[1] + S_req_phase_VA[2];
 
-    // Determine overall direction (injection if average deltaV > 0, absorption if < 0)
-    const avgDeltaV = (deltaV[0] + deltaV[1] + deltaV[2]) / 3;
-    const direction = avgDeltaV >= 0 ? 'injection' : 'absorption';
-
-    return { S_req_phase_VA, S_req_total_VA, Ireq_per_phase, deltaV, direction };
+    return { S_req_phase_VA, S_req_total_VA, Ireq_per_phase, deltaV };
   }
 
   /**
@@ -778,52 +771,32 @@ export class SimulationCalculator extends ElectricalCalculator {
   private applyInjectionOnCopy(
     nodesCopy: Node[],
     regNodeId: string,
-    S_inj_total_kVA: number,
-    direction: 'injection' | 'absorption'
+    S_inj_total_kVA: number
   ): Node[] {
     const modifiedNodes = JSON.parse(JSON.stringify(nodesCopy));
     const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regNodeId);
     
     if (nodeIndex >= 0) {
-      // Clean up any existing regulator entries first
-      if (modifiedNodes[nodeIndex].productions) {
-        modifiedNodes[nodeIndex].productions = modifiedNodes[nodeIndex].productions.filter(
-          (p: any) => !p.id || !p.id.includes('regulator_')
-        );
+      // Ajouter comme production équivalente (injection positive)
+      if (!modifiedNodes[nodeIndex].productions) {
+        modifiedNodes[nodeIndex].productions = [];
       }
-      if (modifiedNodes[nodeIndex].clients) {
-        modifiedNodes[nodeIndex].clients = modifiedNodes[nodeIndex].clients.filter(
-          (c: any) => !c.id || !c.id.includes('regulator_')
-        );
-      }
-
-      if (direction === 'injection') {
-        // Add as production (positive injection)
-        if (!modifiedNodes[nodeIndex].productions) {
-          modifiedNodes[nodeIndex].productions = [];
-        }
-        
-        modifiedNodes[nodeIndex].productions.push({
-          id: `regulator_injection_${regNodeId}`,
-          label: `Regulator Injection +${S_inj_total_kVA.toFixed(1)}kVA`,
-          S_kVA: S_inj_total_kVA
-        });
-        
-        console.log(`📊 Applied as INJECTION: +${S_inj_total_kVA.toFixed(1)}kVA (production)`);
+      
+      // Remplacer ou ajouter la production du régulateur
+      const existingRegulatorIndex = modifiedNodes[nodeIndex].productions.findIndex(
+        (p: any) => p.id && p.id.includes('regulator_injection')
+      );
+      
+      const regulatorProduction = {
+        id: `regulator_injection_${regNodeId}`,
+        label: `Regulator Injection ${S_inj_total_kVA.toFixed(1)}kVA`,
+        S_kVA: S_inj_total_kVA
+      };
+      
+      if (existingRegulatorIndex >= 0) {
+        modifiedNodes[nodeIndex].productions[existingRegulatorIndex] = regulatorProduction;
       } else {
-        // Add as charge (absorption/negative injection)
-        if (!modifiedNodes[nodeIndex].clients) {
-          modifiedNodes[nodeIndex].clients = [];
-        }
-        
-        modifiedNodes[nodeIndex].clients.push({
-          id: `regulator_absorption_${regNodeId}`,
-          label: `Regulator Absorption -${S_inj_total_kVA.toFixed(1)}kVA`,
-          S_kVA: S_inj_total_kVA,
-          cosPhi: 1.0 // Unity power factor for pure voltage regulation
-        });
-        
-        console.log(`📊 Applied as ABSORPTION: -${S_inj_total_kVA.toFixed(1)}kVA (charge)`);
+        modifiedNodes[nodeIndex].productions.push(regulatorProduction);
       }
     }
     
@@ -967,8 +940,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         const requirement = this.computeRegulatorRequirement(Uinit, Utarget, Zup);
         const S_req_total_kVA = requirement.S_req_total_VA / 1000;
 
-        console.log(`📊 Required power: ${S_req_total_kVA.toFixed(1)}kVA (${requirement.direction})`);
-        console.log(`📊 Delta V per phase: [${requirement.deltaV.map(v => v.toFixed(1)).join(', ')}]V`);
+        console.log(`📊 Required power: ${S_req_total_kVA.toFixed(1)}kVA`);
 
         // h. Déterminer capacité autorisée
         const S_cap_kVA = networkDetection.type === '400V' ? 44 : 30;
@@ -1004,7 +976,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`📊 Effective ΔV: [${deltaV_effective.map(v => v.toFixed(1)).join(', ')}]V`);
 
         // k,l. Appliquer injection et stocker métadonnées
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, applied_kVA, requirement.direction);
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, applied_kVA);
 
         // Stocker métadonnées dans l'objet régulateur
         (regulator as any).appliedPower_kVA = applied_kVA;
