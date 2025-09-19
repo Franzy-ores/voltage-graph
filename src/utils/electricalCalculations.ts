@@ -717,7 +717,7 @@ export class ElectricalCalculator {
       result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = regulatedVoltages;
 
       // Recalculate the entire network downstream from the regulated node
-      this.recalculateNetworkFromNode(regulator.nodeId, nodes, cables, cableTypes, result, targetVoltage);
+      this.recalculateNetworkFromNode(regulator.nodeId, regulatedVoltages, nodes, cables, cableTypes, result);
 
       console.log(`✅ Voltage regulator applied: Voltage set to ${targetVoltage}V, downstream network recalculated`);
     }
@@ -924,15 +924,20 @@ export class ElectricalCalculator {
 
       // Store EQUI8 results for post-processing display (Mode fournisseur par défaut)
       if (!result.nodeMetricsPerPhase[nodeMetricIndex].equi8) {
-        result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {};
+        result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {
+          UEQUI8: { A: 0, B: 0, C: 0 },
+          I_EQUI8: 0,
+          dU_init: 0,
+          dU_EQUI8: 0,
+          ratios: { A: 0, B: 0, C: 0 }
+        };
       }
       result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {
-        UEQUI8: equi8Result.UEQUI8,
+        UEQUI8: { A: equi8Result.UEQUI8[0], B: equi8Result.UEQUI8[1], C: equi8Result.UEQUI8[2] },
         I_EQUI8: equi8Result.I_EQUI8,
         dU_init: equi8Result.dU_init,
         dU_EQUI8: equi8Result.dU_EQUI8,
-        ratios: equi8Result.ratios,
-        warning: equi8Result.warning
+        ratios: { A: equi8Result.ratios[0], B: equi8Result.ratios[1], C: equi8Result.ratios[2] }
       };
 
       // Mode intégré si applyToFlow=true (approximatif)

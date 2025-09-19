@@ -541,10 +541,10 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
     }
 
-    // Étape 3: Appliquer les régulateurs de tension
+    // Étape 3: Appliquer les régulateurs de tension polyphasés
     const activeRegulators = equipment.regulators.filter(r => r.enabled);
     if (activeRegulators.length > 0) {
-      console.log(`🔧 Applying ${activeRegulators.length} voltage regulators`);
+      console.log(`🔧 Applying ${activeRegulators.length} polyphase voltage regulators`);
       
       // Log regulators details
       activeRegulators.forEach(reg => {
@@ -552,9 +552,17 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
-      baseResult = (this as any).applyVoltageRegulators(project.nodes, project.cables, activeRegulators, baseResult, project.cableTypes);
+      baseResult = this.applyPolyphaseVoltageRegulators(
+        project.nodes, 
+        project.cables, 
+        project.cableTypes,
+        activeRegulators, 
+        baseResult,
+        project,
+        scenario
+      );
       
-      console.log('📊 Result AFTER voltage regulation:', {
+      console.log('📊 Result AFTER polyphase voltage regulation:', {
         hasNodeMetrics: !!baseResult.nodeMetrics,
         hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
         nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0
@@ -565,10 +573,19 @@ export class SimulationCalculator extends ElectricalCalculator {
         const beforeMetrics = resultBeforeRegulators.nodeMetricsPerPhase?.find(n => n.nodeId === reg.nodeId);
         const afterMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === reg.nodeId);
         
-        console.log(`🔍 Node ${reg.nodeId} regulation effect:`, {
+        console.log(`🔍 Node ${reg.nodeId} polyphase regulation effect:`, {
           before: beforeMetrics?.voltagesPerPhase,
           after: afterMetrics?.voltagesPerPhase,
           changed: JSON.stringify(beforeMetrics?.voltagesPerPhase) !== JSON.stringify(afterMetrics?.voltagesPerPhase)
+        });
+        
+        // Log regulator metadata
+        console.log(`📋 Regulator ${reg.id} metadata:`, {
+          appliedPower_kVA: (reg as any).appliedPower_kVA,
+          saturated: (reg as any).saturated,
+          requestedPower_kVA: (reg as any).requestedPower_kVA,
+          beforeVoltages: (reg as any).beforeVoltages,
+          afterVoltages: (reg as any).afterVoltages
         });
       });
     }
@@ -636,5 +653,391 @@ export class SimulationCalculator extends ElectricalCalculator {
           }
         };
       });
+  }
+
+  /**
+   * Calcule l'impédance équivalente en amont d'un nœud (somme des Z série des câbles)
+   * @param nodeId ID du nœud
+   * @param parentMap Map parent-enfant de la topologie  
+   * @param cables Liste des câbles
+   * @param cableTypes Types des câbles
+   * @returns Impédance par phase [Z_A, Z_B, Z_C] en Ω
+   */
+  private computeUpstreamImpedancePerPhase(
+    nodeId: string,
+    parentMap: Map<string, string>,
+    cables: Cable[],
+    cableTypes: CableType[]
+  ): [number, number, number] {
+    let currentNodeId = nodeId;
+    let totalZA = 0, totalZB = 0, totalZC = 0;
+
+    // Remonter jusqu'à la source en sommant les impédances
+    while (parentMap.has(currentNodeId)) {
+      const parentId = parentMap.get(currentNodeId)!;
+      const cable = cables.find(c => 
+        (c.nodeAId === parentId && c.nodeBId === currentNodeId) ||
+        (c.nodeAId === currentNodeId && c.nodeBId === parentId)
+      );
+
+      if (cable) {
+        const cableType = cableTypes.find(ct => ct.id === cable.typeId);
+        if (cableType) {
+          // Calculer longueur du câble
+          const length_km = this.calculateCableLength(cable.coordinates) / 1000;
+          // Simplification: impédance par phase identique (Z12)
+          const Z_phase = Math.sqrt(
+            Math.pow(cableType.R12_ohm_per_km * length_km, 2) + 
+            Math.pow(cableType.X12_ohm_per_km * length_km, 2)
+          );
+          
+          totalZA += Z_phase;
+          totalZB += Z_phase;
+          totalZC += Z_phase;
+        }
+      }
+
+      currentNodeId = parentId;
+    }
+
+    return [totalZA, totalZB, totalZC];
+  }
+
+  /**
+   * Calcule la longueur d'un câble à partir de ses coordonnées
+   */
+  private calculateCableLength(coordinates: { lat: number; lng: number }[]): number {
+    if (coordinates.length < 2) return 0;
+    
+    let totalLength = 0;
+    for (let i = 1; i < coordinates.length; i++) {
+      const prev = coordinates[i - 1];
+      const curr = coordinates[i];
+      
+      // Distance haversine approximative en mètres
+      const dLat = (curr.lat - prev.lat) * Math.PI / 180;
+      const dLng = (curr.lng - prev.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(prev.lat * Math.PI / 180) * Math.cos(curr.lat * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = 6371000 * c; // Rayon de la Terre en mètres
+      
+      totalLength += distance;
+    }
+    
+    return totalLength;
+  }
+
+  /**
+   * Calcule l'injection requise pour un régulateur polyphasé
+   */
+  private computeRegulatorRequirement(
+    Uinit: [number, number, number],
+    Utarget: [number, number, number],
+    Zup: [number, number, number]
+  ): {
+    S_req_phase_VA: [number, number, number];
+    S_req_total_VA: number;
+    Ireq_per_phase: [number, number, number];
+    deltaV: [number, number, number];
+  } {
+    const deltaV: [number, number, number] = [
+      Utarget[0] - Uinit[0],
+      Utarget[1] - Uinit[1], 
+      Utarget[2] - Uinit[2]
+    ];
+
+    const Ireq_per_phase: [number, number, number] = [
+      Zup[0] > 0 ? deltaV[0] / Zup[0] : 0,
+      Zup[1] > 0 ? deltaV[1] / Zup[1] : 0,
+      Zup[2] > 0 ? deltaV[2] / Zup[2] : 0
+    ];
+
+    const S_req_phase_VA: [number, number, number] = [
+      Math.abs(Utarget[0] * Ireq_per_phase[0]),
+      Math.abs(Utarget[1] * Ireq_per_phase[1]),
+      Math.abs(Utarget[2] * Ireq_per_phase[2])
+    ];
+
+    const S_req_total_VA = S_req_phase_VA[0] + S_req_phase_VA[1] + S_req_phase_VA[2];
+
+    return { S_req_phase_VA, S_req_total_VA, Ireq_per_phase, deltaV };
+  }
+
+  /**
+   * Applique une injection de puissance sur une copie des nœuds
+   */
+  private applyInjectionOnCopy(
+    nodesCopy: Node[],
+    regNodeId: string,
+    S_inj_total_kVA: number
+  ): Node[] {
+    const modifiedNodes = JSON.parse(JSON.stringify(nodesCopy));
+    const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regNodeId);
+    
+    if (nodeIndex >= 0) {
+      // Ajouter comme production équivalente (injection positive)
+      if (!modifiedNodes[nodeIndex].productions) {
+        modifiedNodes[nodeIndex].productions = [];
+      }
+      
+      // Remplacer ou ajouter la production du régulateur
+      const existingRegulatorIndex = modifiedNodes[nodeIndex].productions.findIndex(
+        (p: any) => p.id && p.id.includes('regulator_injection')
+      );
+      
+      const regulatorProduction = {
+        id: `regulator_injection_${regNodeId}`,
+        label: `Regulator Injection ${S_inj_total_kVA.toFixed(1)}kVA`,
+        S_kVA: S_inj_total_kVA
+      };
+      
+      if (existingRegulatorIndex >= 0) {
+        modifiedNodes[nodeIndex].productions[existingRegulatorIndex] = regulatorProduction;
+      } else {
+        modifiedNodes[nodeIndex].productions.push(regulatorProduction);
+      }
+    }
+    
+    return modifiedNodes;
+  }
+
+  /**
+   * Détecte le type de réseau (400V ou 230V) selon la configuration
+   */
+  private detectNetworkType(project: Project): { type: '400V' | '230V'; confidence: 'high' | 'low' } {
+    // 1. Vérifier via transformerConfig
+    if (project.transformerConfig?.nominalVoltage_V) {
+      if (project.transformerConfig.nominalVoltage_V >= 380) {
+        return { type: '400V', confidence: 'high' };
+      } else if (project.transformerConfig.nominalVoltage_V <= 250) {
+        return { type: '230V', confidence: 'high' };
+      }
+    }
+
+    // 2. Analyser les connexions des nœuds
+    const connectionTypes = project.nodes.map(n => n.connectionType);
+    const has400V = connectionTypes.some(ct => ct === 'TÉTRA_3P+N_230_400V' || ct === 'MONO_230V_PN');
+    const has230V = connectionTypes.some(ct => ct === 'TRI_230V_3F' || ct === 'MONO_230V_PP');
+
+    if (has400V && !has230V) {
+      return { type: '400V', confidence: 'high' };
+    } else if (has230V && !has400V) {
+      return { type: '230V', confidence: 'high' };
+    }
+
+    // 3. Par défaut, assumer 400V (plus courant)
+    return { type: '400V', confidence: 'low' };
+  }
+
+  /**
+   * Construit la topologie parent-enfant du réseau
+   */
+  private buildParentMap(nodes: Node[], cables: Cable[]): Map<string, string> {
+    const parentMap = new Map<string, string>();
+    const sourceNode = nodes.find(n => n.isSource);
+    
+    if (!sourceNode) return parentMap;
+
+    // BFS pour construire l'arbre
+    const visited = new Set<string>([sourceNode.id]);
+    const queue = [sourceNode.id];
+
+    while (queue.length > 0) {
+      const currentNodeId = queue.shift()!;
+      
+      // Trouver tous les câbles connectés au nœud courant
+      const connectedCables = cables.filter(c => 
+        c.nodeAId === currentNodeId || c.nodeBId === currentNodeId
+      );
+
+      for (const cable of connectedCables) {
+        const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+        
+        if (!visited.has(otherNodeId)) {
+          visited.add(otherNodeId);
+          parentMap.set(otherNodeId, currentNodeId);
+          queue.push(otherNodeId);
+        }
+      }
+    }
+
+    return parentMap;
+  }
+
+  /**
+   * Applique les régulateurs de tension polyphasés selon l'algorithme exact
+   */
+  private applyPolyphaseVoltageRegulators(
+    nodes: Node[],
+    cables: Cable[], 
+    cableTypes: CableType[],
+    regulators: VoltageRegulator[],
+    baseResult: CalculationResult,
+    project: Project,
+    scenario: CalculationScenario
+  ): CalculationResult {
+    console.log('🔧 Starting polyphase voltage regulation');
+
+    // Construire les structures nécessaires
+    const parentMap = this.buildParentMap(nodes, cables);
+    const networkDetection = this.detectNetworkType(project);
+    
+    console.log(`📋 Network type detected: ${networkDetection.type} (confidence: ${networkDetection.confidence})`);
+    
+    if (networkDetection.confidence === 'low') {
+      console.warn(`⚠️ Network type detection has low confidence, assuming ${networkDetection.type}`);
+    }
+
+    let result = JSON.parse(JSON.stringify(baseResult));
+    let currentNodes = nodes;
+    const warnings: string[] = [];
+
+    // Appliquer chaque régulateur séquentiellement
+    for (const regulator of regulators) {
+      try {
+        console.log(`🔧 Processing regulator ${regulator.id} at node ${regulator.nodeId}`);
+
+        // a. Déterminer le setpoint et la représentation
+        const V_set = regulator.targetVoltage_V;
+        const isPhaseNeutral = networkDetection.type === '400V' && V_set <= 250;
+        
+        console.log(`📊 Setpoint: ${V_set}V (${isPhaseNeutral ? 'Ph-N' : 'Ph-Ph'} representation)`);
+
+        // b. Obtenir Uinit
+        const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        if (!nodeMetrics) {
+          console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
+          continue;
+        }
+
+        const Uinit: [number, number, number] = [
+          nodeMetrics.voltagesPerPhase.A,
+          nodeMetrics.voltagesPerPhase.B,
+          nodeMetrics.voltagesPerPhase.C
+        ];
+
+        console.log(`📊 Initial voltages: [${Uinit.map(v => v.toFixed(1)).join(', ')}]V`);
+
+        // c. Construire Utarget
+        const Utarget: [number, number, number] = [V_set, V_set, V_set];
+
+        // d. Calculer ΔV par phase
+        const deltaV_initial: [number, number, number] = [
+          Utarget[0] - Uinit[0],
+          Utarget[1] - Uinit[1], 
+          Utarget[2] - Uinit[2]
+        ];
+
+        console.log(`📊 Required ΔV: [${deltaV_initial.map(v => v.toFixed(1)).join(', ')}]V`);
+
+        // e. Récupérer Z_up par phase
+        const Zup = this.computeUpstreamImpedancePerPhase(regulator.nodeId, parentMap, cables, cableTypes);
+        console.log(`📊 Upstream impedances: [${Zup.map(z => z.toFixed(4)).join(', ')}]Ω`);
+
+        // f,g. Calculer puissance requise
+        const requirement = this.computeRegulatorRequirement(Uinit, Utarget, Zup);
+        const S_req_total_kVA = requirement.S_req_total_VA / 1000;
+
+        console.log(`📊 Required power: ${S_req_total_kVA.toFixed(1)}kVA`);
+
+        // h. Déterminer capacité autorisée
+        const S_cap_kVA = networkDetection.type === '400V' ? 44 : 30;
+        
+        console.log(`📊 Available capacity: ${S_cap_kVA}kVA`);
+
+        // i. Décision saturation
+        let applied_kVA: number;
+        let alpha: number;
+        let saturated: boolean;
+
+        if (S_req_total_kVA <= S_cap_kVA) {
+          applied_kVA = S_req_total_kVA;
+          alpha = 1;
+          saturated = false;
+          console.log(`✅ No saturation needed`);
+        } else {
+          applied_kVA = S_cap_kVA;
+          alpha = S_cap_kVA / S_req_total_kVA;
+          saturated = true;
+          const warning = `Regulator at node ${regulator.nodeId} saturated: requested ${S_req_total_kVA.toFixed(1)} kVA > cap ${S_cap_kVA} kVA — applying ${S_cap_kVA} kVA (α=${alpha.toFixed(3)})`;
+          console.warn(`⚠️ ${warning}`);
+          warnings.push(warning);
+        }
+
+        // j. Calculer correction effective
+        const deltaV_effective: [number, number, number] = [
+          alpha * deltaV_initial[0],
+          alpha * deltaV_initial[1],
+          alpha * deltaV_initial[2]
+        ];
+
+        console.log(`📊 Effective ΔV: [${deltaV_effective.map(v => v.toFixed(1)).join(', ')}]V`);
+
+        // k,l. Appliquer injection et stocker métadonnées
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, applied_kVA);
+
+        // Stocker métadonnées dans l'objet régulateur
+        (regulator as any).appliedPower_kVA = applied_kVA;
+        (regulator as any).saturated = saturated;
+        (regulator as any).requestedPower_kVA = S_req_total_kVA;
+        (regulator as any).achievedDeltaV_perPhase = deltaV_effective;
+        (regulator as any).beforeVoltages = Uinit;
+
+        console.log(`📊 Regulator metadata stored: applied ${applied_kVA}kVA, saturated=${saturated}`);
+
+        // m. Relancer la simulation
+        console.log(`🔄 Recalculating network with regulator injection`);
+        
+        const newResult = this.calculateScenario(
+          modifiedNodes,
+          cables,
+          cableTypes,
+          scenario,
+          project.foisonnementCharges,
+          project.foisonnementProductions,
+          project.transformerConfig,
+          project.loadModel,
+          project.desequilibrePourcent,
+          project.manualPhaseDistribution
+        );
+
+        // n. Récupérer tensions après et mettre à jour
+        const afterNodeMetrics = newResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        if (afterNodeMetrics) {
+          const Uafter: [number, number, number] = [
+            afterNodeMetrics.voltagesPerPhase.A,
+            afterNodeMetrics.voltagesPerPhase.B,
+            afterNodeMetrics.voltagesPerPhase.C
+          ];
+          
+          (regulator as any).afterVoltages = Uafter;
+          console.log(`📊 After voltages: [${Uafter.map(v => v.toFixed(1)).join(', ')}]V`);
+        }
+
+        // o. Mettre à jour result pour régulateurs suivants
+        result = newResult;
+        currentNodes = modifiedNodes; // Mise à jour pour les régulateurs suivants
+
+        console.log(`✅ Regulator ${regulator.id} applied successfully`);
+
+      } catch (error) {
+        const errorMsg = `Regulator application failed for node ${regulator.nodeId}: ${error}`;
+        console.error(`❌ ${errorMsg}`);
+        warnings.push(errorMsg);
+        
+        // Rollback: garder result inchangé pour ce régulateur
+        continue;
+      }
+    }
+
+    // Ajouter warnings au résultat
+    if (warnings.length > 0) {
+      (result as any).warnings = [...((result as any).warnings || []), ...warnings];
+    }
+
+    console.log('✅ Polyphase voltage regulation completed');
+    return result;
   }
 }
