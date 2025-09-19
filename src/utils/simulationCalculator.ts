@@ -1007,17 +1007,21 @@ export class SimulationCalculator extends ElectricalCalculator {
 
         console.log(`📊 Required currents: [${Ireq.map(i => i.toFixed(2)).join(', ')}]A`);
 
-        // 7. Puissance requise (conserve le signe)
+        // 7. Puissance requise (avec tension initiale pour calcul correct)
         const SreqPhase: [number, number, number] = [
-          Utarget[0] * Ireq[0],
-          Utarget[1] * Ireq[1],
-          Utarget[2] * Ireq[2]
+          Math.abs(Uinit[0] * Ireq[0]),
+          Math.abs(Uinit[1] * Ireq[1]),
+          Math.abs(Uinit[2] * Ireq[2])
         ];
-        const S_req_total_VA = SreqPhase.reduce((a, b) => a + b, 0);
-        const S_req_total_kVA = Math.abs(S_req_total_VA / 1000); // valeur absolue pour comparaison avec capacité
+        const S_req_total_kVA = SreqPhase.reduce((a, b) => a + b, 0) / 1000;
+
+        // Déterminer la direction basée sur l'écart moyen
+        const averageDeltaU = (deltaU[0] + deltaU[1] + deltaU[2]) / 3;
+        const needsVoltageIncrease = averageDeltaU > 0;
 
         console.log(`📊 Required power per phase: [${SreqPhase.map(s => (s/1000).toFixed(1)).join(', ')}]kVA`);
-        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA (${S_req_total_VA >= 0 ? 'injection' : 'absorption'})`);
+        console.log(`📊 Total required power: ${S_req_total_kVA.toFixed(1)}kVA`);
+        console.log(`📊 Average ΔU: ${averageDeltaU.toFixed(1)}V → ${needsVoltageIncrease ? 'needs voltage increase' : 'needs voltage decrease'}`);
 
         // 8. Vérification de la capacité du régulateur
         const S_cap_kVA = regulator.maxPower_kVA; // ❌ NE PAS UTILISER DE CONSTANTE
@@ -1056,12 +1060,16 @@ export class SimulationCalculator extends ElectricalCalculator {
           }
         }
 
-        // 10. Application des pertes du régulateur (≈ 1 %)
+        // 10. Application des pertes du régulateur (≈ 1 %) selon la direction
         const lossFactor = 0.01;
-        const injected_kVA = alpha * (S_req_total_VA / 1000) * (1 - lossFactor);
-        // injected_kVA conserve le signe : >0 → injection, <0 → absorption
+        let applied_kVA = alpha * S_req_total_kVA;
+        if (needsVoltageIncrease) {
+          applied_kVA = applied_kVA * (1 - lossFactor); // Production: réduction des pertes
+        } else {
+          applied_kVA = applied_kVA * (1 + lossFactor); // Absorption: augmentation pour compenser les pertes  
+        }
 
-        console.log(`📊 Applied power (with ${(lossFactor*100).toFixed(0)}% losses): ${injected_kVA.toFixed(1)}kVA`);
+        console.log(`📊 Applied power (with ${(lossFactor*100).toFixed(0)}% losses): ${applied_kVA.toFixed(1)}kVA`);
 
         // Vérifier les pertes excessives
         if (lossFactor > 0.05) {
@@ -1070,11 +1078,11 @@ export class SimulationCalculator extends ElectricalCalculator {
           warnings.push(warning);
         }
 
-        // 11. Injection dans le réseau
-        const direction = injected_kVA >= 0 ? 'production' : 'absorption';
-        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, Math.abs(injected_kVA), direction);
+        // 11. Injection dans le réseau avec direction correcte
+        const direction = needsVoltageIncrease ? 'production' : 'absorption';
+        const modifiedNodes = this.applyInjectionOnCopy(currentNodes, regulator.nodeId, Math.abs(applied_kVA), direction);
 
-        console.log(`📊 Applied injection: ${Math.abs(injected_kVA).toFixed(1)}kVA as ${direction} (${injected_kVA >= 0 ? 'augmente' : 'diminue'} la tension)`);
+        console.log(`📊 Applied injection: ${Math.abs(applied_kVA).toFixed(1)}kVA as ${direction} (${needsVoltageIncrease ? 'augmente' : 'diminue'} la tension)`);
 
         // 12. Recalcul du scénario
         console.log(`🔄 Recalculating network with regulator injection`);
@@ -1107,8 +1115,8 @@ export class SimulationCalculator extends ElectricalCalculator {
           id: regulator.id,
           nodeId: regulator.nodeId,
           targetVoltage_V: V_set,
-          appliedPower_kVA: injected_kVA,
-          requestedPower_kVA: S_req_total_VA / 1000, // conserve le signe original
+          appliedPower_kVA: needsVoltageIncrease ? applied_kVA : -applied_kVA, // Conserve le signe selon la direction
+          requestedPower_kVA: S_req_total_kVA, // Puissance demandée (toujours positive)
           saturated,
           alpha,
           direction,
@@ -1123,7 +1131,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         regulatorLog.push(logEntry);
 
         // Stocker métadonnées dans l'objet régulateur pour compatibilité
-        (regulator as any).appliedPower_kVA = injected_kVA;
+        (regulator as any).appliedPower_kVA = needsVoltageIncrease ? applied_kVA : -applied_kVA;
         (regulator as any).saturated = saturated;
         (regulator as any).requestedPower_kVA = S_req_total_kVA;
         (regulator as any).beforeVoltages = Uinit;
