@@ -482,7 +482,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     const activeCompensators = equipment.neutralCompensators.filter(c => c.enabled);
     if (activeCompensators.length > 0) {
       console.log(`🔧 Applying ${activeCompensators.length} neutral compensators`);
-      baseResult = this.applyNeutralCompensation(project.nodes, project.cables, activeCompensators, baseResult);
+      baseResult = this.applyNeutralCompensation(project.nodes, project.cables, activeCompensators, baseResult, project.cableTypes);
     }
 
     // Étape 3: Appliquer les régulateurs de tension (future implementation)

@@ -423,17 +423,75 @@ export class ElectricalCalculator {
   }
 
   /**
-   * Applique la compensation de neutre sur les résultats de calcul
+   * Calculate network impedances for EQUI8 compensation
+   * @param nodeId ID of the compensator node
+   * @param nodes List of network nodes
+   * @param cables List of network cables  
+   * @param cableTypes Available cable types
+   */
+  private calculateNetworkImpedances(
+    nodeId: string,
+    nodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[]
+  ): { Zph: number; Zn: number } {
+    // Find path from source to compensator node
+    // For simplification, calculate total impedance from all cables in the network path
+    let totalZph = 0;
+    let totalZn = 0;
+
+    // Find cables connected to the compensator node
+    const connectedCables = cables.filter(cable => 
+      cable.nodeAId === nodeId || cable.nodeBId === nodeId
+    );
+
+    // Calculate impedances for each connected cable
+    connectedCables.forEach(cable => {
+      const cableType = cableTypes.find(ct => ct.id === cable.typeId);
+      if (cableType && cable.length_m) {
+        const lengthKm = cable.length_m / 1000; // Convert to km
+        
+        // Phase impedance (magnitude of R + jX)
+        const R12 = cableType.R12_ohm_per_km * lengthKm;
+        const X12 = cableType.X12_ohm_per_km * lengthKm;
+        totalZph += Math.sqrt(R12 * R12 + X12 * X12);
+        
+        // Neutral impedance (using R0, X0 for neutral path)
+        const R0 = cableType.R0_ohm_per_km * lengthKm;
+        const X0 = cableType.X0_ohm_per_km * lengthKm;
+        totalZn += Math.sqrt(R0 * R0 + X0 * X0);
+      }
+    });
+
+    // If no direct connection found, use a default based on typical network
+    if (totalZph === 0) {
+      totalZph = 0.2; // Default phase impedance
+    }
+    if (totalZn === 0) {
+      totalZn = 0.3; // Default neutral impedance
+    }
+
+    // Ensure minimum impedance as per EQUI8 conditions (Zph, Zn > 0.15Ω)
+    return {
+      Zph: Math.max(totalZph, 0.15),
+      Zn: Math.max(totalZn, 0.15)
+    };
+  }
+
+  /**
+   * Applique la compensation de neutre EQUI8 sur les résultats de calcul
    * @param nodes Liste des nœuds du réseau
    * @param cables Liste des câbles du réseau
    * @param compensators Liste des compensateurs de neutre actifs
    * @param baseResult Résultat de calcul de base
+   * @param cableTypes Types de câbles disponibles pour le calcul d'impédances
    */
   applyNeutralCompensation(
     nodes: Node[],
     cables: Cable[],
     compensators: NeutralCompensator[],
-    baseResult: CalculationResult
+    baseResult: CalculationResult,
+    cableTypes: CableType[] = []
   ): CalculationResult {
     // Si pas de compensateurs actifs, retourner le résultat de base
     const activeCompensators = compensators.filter(c => c.enabled);
@@ -441,12 +499,13 @@ export class ElectricalCalculator {
       return baseResult;
     }
 
-    console.log(`🔧 Applying ${activeCompensators.length} active neutral compensators`);
+    console.log(`🔧 Applying ${activeCompensators.length} EQUI8 neutral compensators`);
 
     // Créer une copie des résultats pour modification
     const compensatedResult: CalculationResult = {
       ...baseResult,
-      nodeVoltageDrops: baseResult.nodeVoltageDrops?.map(node => ({ ...node }))
+      nodeVoltageDrops: baseResult.nodeVoltageDrops?.map(node => ({ ...node })),
+      nodeMetrics: baseResult.nodeMetrics ? { ...baseResult.nodeMetrics } : undefined
     };
 
     // Pour chaque compensateur actif
@@ -454,32 +513,83 @@ export class ElectricalCalculator {
       const node = nodes.find(n => n.id === compensator.nodeId);
       if (!node) return;
 
-      console.log(`🔧 Applying compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
+      console.log(`🔧 Applying EQUI8 compensator at node ${compensator.nodeId}: ${compensator.maxPower_kVA}kVA capacity`);
 
-      // Trouver le résultat du nœud
-      const nodeResult = compensatedResult.nodeVoltageDrops?.find(n => n.nodeId === compensator.nodeId);
-      if (!nodeResult) return;
-
-      // Calculer la réduction de courant de neutre basée sur la puissance max
-      const compensationFactor = Math.min(1, compensator.maxPower_kVA / 50); // Facteur basé sur la puissance max
-      const voltageImprovement = compensationFactor * 3; // Amélioration typique de 3V max
-
-      // Réduire la chute de tension cumulée
-      const originalDrop = nodeResult.deltaU_cum_V;
-      nodeResult.deltaU_cum_V = Math.max(0, originalDrop - voltageImprovement);
-      nodeResult.deltaU_cum_percent = (nodeResult.deltaU_cum_V / 230) * 100; // Approximation avec 230V base
-
-      // Mettre à jour les résultats dans le compensateur (utiliser les propriétés existantes)
-      const neutralCurrentReduction = compensator.maxPower_kVA * 4.35; // Approximation I = P/(√3*U)
+      // Get node metrics for voltage information
+      const nodeMetric = compensatedResult.nodeMetrics?.[compensator.nodeId];
       
-      // Utiliser les propriétés existantes de NeutralCompensator
-      (compensator as any).currentIN_A = Math.max(0, 50 - neutralCurrentReduction);
-      (compensator as any).reductionPercent = (neutralCurrentReduction / 50) * 100;
-      (compensator as any).u1p_V = 230 + voltageImprovement;
-      (compensator as any).u2p_V = 230 + voltageImprovement;
-      (compensator as any).u3p_V = 230 + voltageImprovement;
+      if (nodeMetric?.voltageV?.A && nodeMetric?.voltageV?.B && nodeMetric?.voltageV?.C) {
+        // Initial phase voltages (Ph-N) from simulation
+        const Uinit_ph1 = nodeMetric.voltageV.A;
+        const Uinit_ph2 = nodeMetric.voltageV.B;
+        const Uinit_ph3 = nodeMetric.voltageV.C;
 
-      console.log(`✅ Compensator applied: ${voltageImprovement.toFixed(1)}V improvement, ${neutralCurrentReduction.toFixed(1)}A reduction`);
+        // Calculate initial voltage statistics
+        const Umoy_3ph_init = (Uinit_ph1 + Uinit_ph2 + Uinit_ph3) / 3;
+        const Umax_3ph_init = Math.max(Uinit_ph1, Uinit_ph2, Uinit_ph3);
+        const Umin_3ph_init = Math.min(Uinit_ph1, Uinit_ph2, Uinit_ph3);
+        const Umax_Umin_init = Umax_3ph_init - Umin_3ph_init;
+
+        console.log(`📊 Initial voltages: A=${Uinit_ph1.toFixed(1)}V, B=${Uinit_ph2.toFixed(1)}V, C=${Uinit_ph3.toFixed(1)}V`);
+        console.log(`📊 Initial imbalance: ${Umax_Umin_init.toFixed(1)}V (${Umin_3ph_init.toFixed(1)}V - ${Umax_3ph_init.toFixed(1)}V)`);
+
+        // Skip compensation if voltages are already well balanced
+        if (Umax_Umin_init < 1.0) {
+          console.log(`✅ Voltages already balanced, skipping compensation`);
+          // Update compensator results with minimal effect
+          (compensator as any).currentIN_A = 0;
+          (compensator as any).reductionPercent = 0;
+          (compensator as any).u1p_V = Uinit_ph1;
+          (compensator as any).u2p_V = Uinit_ph2;
+          (compensator as any).u3p_V = Uinit_ph3;
+          return;
+        }
+
+        // Calculate phase ratios according to EQUI8 formula
+        const Ratio_ph1 = Umax_Umin_init > 0 ? (Uinit_ph1 - Umoy_3ph_init) / Umax_Umin_init : 0;
+        const Ratio_ph2 = Umax_Umin_init > 0 ? (Uinit_ph2 - Umoy_3ph_init) / Umax_Umin_init : 0;
+        const Ratio_ph3 = Umax_Umin_init > 0 ? (Uinit_ph3 - Umoy_3ph_init) / Umax_Umin_init : 0;
+
+        // Calculate network impedances
+        const { Zph, Zn } = this.calculateNetworkImpedances(compensator.nodeId, nodes, cables, cableTypes);
+        
+        console.log(`⚡ Network impedances: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω`);
+
+        // EQUI8 main formula: (Umax-Umin)EQUI8 = 1/[0.9119×Ln(Zph)+3.8654] × (Umax-Umin)init × 2×Zph/(Zph+Zn)
+        const logarithmicFactor = 0.9119 * Math.log(Zph) + 3.8654;
+        const impedanceRatio = (2 * Zph) / (Zph + Zn);
+        const Umax_Umin_EQUI8 = (1 / logarithmicFactor) * Umax_Umin_init * impedanceRatio;
+
+        // Calculate compensated voltages using EQUI8 formulas
+        const UEQUI8_ph1 = Umoy_3ph_init + Ratio_ph1 * Umax_Umin_EQUI8;
+        const UEQUI8_ph2 = Umoy_3ph_init + Ratio_ph2 * Umax_Umin_EQUI8;
+        const UEQUI8_ph3 = Umoy_3ph_init + Ratio_ph3 * Umax_Umin_EQUI8;
+
+        // Calculate EQUI8 neutral current: I-EQUI8 = 0.392 × Zph^(-0.8065) × (Umax-Umin)init × 2×Zph/(Zph+Zn)
+        const I_EQUI8 = 0.392 * Math.pow(Zph, -0.8065) * Umax_Umin_init * impedanceRatio;
+
+        // Apply compensated voltages with EQUI8 precision (±2V)
+        nodeMetric.voltageV.A = Math.round(UEQUI8_ph1 * 10) / 10;
+        nodeMetric.voltageV.B = Math.round(UEQUI8_ph2 * 10) / 10;  
+        nodeMetric.voltageV.C = Math.round(UEQUI8_ph3 * 10) / 10;
+
+        // Calculate voltage improvement
+        const voltageImprovement = Umax_Umin_init - Umax_Umin_EQUI8;
+
+        console.log(`📊 After EQUI8: A=${UEQUI8_ph1.toFixed(1)}V, B=${UEQUI8_ph2.toFixed(1)}V, C=${UEQUI8_ph3.toFixed(1)}V`);
+        console.log(`📊 Voltage improvement: ${voltageImprovement.toFixed(1)}V, Neutral current: ${I_EQUI8.toFixed(1)}A`);
+
+        // Update compensator results using existing properties with EQUI8 precision
+        (compensator as any).currentIN_A = Math.round(I_EQUI8 * 2) / 2; // ±5A precision (0.5A resolution)
+        (compensator as any).reductionPercent = Math.min(100, (voltageImprovement / Umax_Umin_init) * 100);
+        (compensator as any).u1p_V = Math.round(UEQUI8_ph1 * 10) / 10; // ±2V precision  
+        (compensator as any).u2p_V = Math.round(UEQUI8_ph2 * 10) / 10;
+        (compensator as any).u3p_V = Math.round(UEQUI8_ph3 * 10) / 10;
+
+        console.log(`✅ EQUI8 compensator applied: ${voltageImprovement.toFixed(1)}V improvement, ${I_EQUI8.toFixed(1)}A neutral current`);
+      } else {
+        console.log(`⚠️ No voltage data available for node ${compensator.nodeId}, skipping EQUI8 compensation`);
+      }
     });
 
     return compensatedResult;
