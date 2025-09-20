@@ -747,53 +747,84 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Modifie la tension de référence du nœud régulateur pour simuler l'effet transformateur SRG2
+   * Identifie tous les nœuds en aval d'un nœud donné dans la topologie réseau
    */
-  private applySRG2VoltageReference(
-    nodes: Node[],
-    regulatorNodeId: string,
-    adjustmentPerPhase: { A: number; B: number; C: number }
-  ): Node[] {
-    const modifiedNodes = JSON.parse(JSON.stringify(nodes));
-    const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regulatorNodeId);
+  private getDownstreamNodeIds(nodeId: string, parentMap: Map<string, string>): string[] {
+    const downstreamNodes: string[] = [];
     
-    if (nodeIndex >= 0) {
-      // Le SRG2 agit comme un transformateur à prises variables
-      // On simule cet effet en ajustant une source de tension équivalente
-      
-      // Nettoyer les anciennes références SRG2
-      if (modifiedNodes[nodeIndex].productions) {
-        modifiedNodes[nodeIndex].productions = modifiedNodes[nodeIndex].productions.filter(
-          (p: any) => !p.id || !p.id.includes('srg2_voltage_ref')
-        );
+    // Parcourir tous les nœuds pour trouver ceux qui ont nodeId comme ancêtre
+    parentMap.forEach((parentId, childId) => {
+      if (this.isDescendantOf(childId, nodeId, parentMap)) {
+        downstreamNodes.push(childId);
       }
+    });
+    
+    return downstreamNodes;
+  }
 
-      // Calculer l'ajustement moyen pour déterminer l'effet global du transformateur
-      const averageAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
-      
-      if (Math.abs(averageAdjustment) > 0.5) { // Seuil minimal d'action
-        
-        // Le SRG2 modifie la tension de référence du nœud
-        // Simuler par une source de tension idéale (production fictive à tension forcée)
-        if (!modifiedNodes[nodeIndex].productions) {
-          modifiedNodes[nodeIndex].productions = [];
-        }
-        
-        // Ajouter une "source de tension" qui représente l'effet transformateur
-        // Cette source maintient la tension du nœud au niveau souhaité
-        modifiedNodes[nodeIndex].productions.push({
-          id: `srg2_voltage_ref_${regulatorNodeId}`,
-          label: `SRG2 Tension Ref ${averageAdjustment > 0 ? '+' : ''}${averageAdjustment.toFixed(0)}V`,
-          S_kVA: 0.01, // Puissance minimale pour activation
-          voltageReference_V: 230 + averageAdjustment, // Tension de référence modifiée
-          isVoltageSource: true // Flag spécial pour le calculateur
-        });
-        
-        console.log(`📊 SRG2 voltage reference: ${(230 + averageAdjustment).toFixed(1)}V (${averageAdjustment > 0 ? '+' : ''}${averageAdjustment.toFixed(1)}V)`);
+  /**
+   * Vérifie si un nœud est descendant d'un autre dans l'arbre de topologie
+   */
+  private isDescendantOf(nodeId: string, ancestorId: string, parentMap: Map<string, string>): boolean {
+    let currentId = nodeId;
+    
+    while (parentMap.has(currentId)) {
+      const parentId = parentMap.get(currentId)!;
+      if (parentId === ancestorId) {
+        return true;
       }
+      currentId = parentId;
     }
     
-    return modifiedNodes;
+    return false;
+  }
+
+  /**
+   * Applique directement l'effet SRG2 sur les tensions calculées et propage l'effet en aval
+   */
+  private applySRG2DirectVoltageEffect(
+    result: CalculationResult,
+    regulatorNodeId: string,
+    adjustmentPerPhase: { A: number; B: number; C: number },
+    parentMap: Map<string, string>
+  ): CalculationResult {
+    const modifiedResult = JSON.parse(JSON.stringify(result));
+    
+    // 1. Identifier tous les nœuds affectés (régulateur + tous nœuds en aval)
+    const downstreamNodeIds = this.getDownstreamNodeIds(regulatorNodeId, parentMap);
+    const affectedNodeIds = [regulatorNodeId, ...downstreamNodeIds];
+    
+    console.log(`🔧 SRG2 affecting nodes: ${affectedNodeIds.join(', ')}`);
+    
+    // 2. Appliquer la transformation de tension à tous les nœuds affectés
+    if (modifiedResult.nodeMetricsPerPhase) {
+      modifiedResult.nodeMetricsPerPhase = modifiedResult.nodeMetricsPerPhase.map(nodeMetric => {
+        if (affectedNodeIds.includes(nodeMetric.nodeId)) {
+          const originalVoltages = nodeMetric.voltagesPerPhase;
+          
+          // Pour le nœud régulateur : application directe
+          // Pour les nœuds en aval : propagation de l'effet (peut être atténuée selon la distance)
+          const isRegulatorNode = nodeMetric.nodeId === regulatorNodeId;
+          const propagationFactor = isRegulatorNode ? 1.0 : 0.95; // Légère atténuation en aval
+          
+          const newVoltages = {
+            A: originalVoltages.A + (adjustmentPerPhase.A * propagationFactor),
+            B: originalVoltages.B + (adjustmentPerPhase.B * propagationFactor), 
+            C: originalVoltages.C + (adjustmentPerPhase.C * propagationFactor)
+          };
+          
+          console.log(`📊 Node ${nodeMetric.nodeId} ${isRegulatorNode ? '(regulator)' : '(downstream)'}: A=${originalVoltages.A.toFixed(1)}V → ${newVoltages.A.toFixed(1)}V`);
+          
+          return {
+            ...nodeMetric,
+            voltagesPerPhase: newVoltages
+          };
+        }
+        return nodeMetric;
+      });
+    }
+    
+    return modifiedResult;
   }
 
   /**
@@ -1075,13 +1106,15 @@ export class SimulationCalculator extends ElectricalCalculator {
     project: Project,
     scenario: CalculationScenario
   ): CalculationResult {
-    console.log('🔧 Starting SRG2 voltage regulation with network recalculation');
+    console.log('🔧 Starting SRG2 voltage regulation with direct voltage modification');
 
     const networkDetection = this.detectNetworkType(project);
     let result = JSON.parse(JSON.stringify(baseResult));
-    let currentNodes = JSON.parse(JSON.stringify(nodes));
     const warnings: string[] = [];
     const regulatorLog: any[] = [];
+    
+    // Construire la carte parent-enfant pour identifier les nœuds en aval
+    const parentMap = this.buildParentMap(nodes, cables);
 
     // Traiter chaque régulateur séquentiellement
     for (const regulator of regulators) {
@@ -1102,6 +1135,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         };
 
         console.log(`📊 DIAGNOSTIC SRG2 ${regulator.id}:`);
+        console.log(`  - Node: ${regulator.nodeId}`);
         console.log(`  - Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
         console.log(`  - Network type: ${networkDetection.type}`);
 
@@ -1120,31 +1154,18 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
         console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
 
-        // 3. CLEF : Modifier la tension de référence du nœud régulateur
-        const modifiedNodes = this.applySRG2VoltageReference(
-          currentNodes,
-          regulator.nodeId,
-          regulationResult.adjustmentPerPhase
-        );
-
-        // 4. RECALCUL COMPLET du réseau avec la nouvelle tension de référence
-        console.log(`🔄 Recalculating entire network with modified voltage reference`);
+        // 3. CORRECTION : Application directe de l'effet transformateur sur les tensions
+        console.log(`🔧 Applying direct SRG2 transformer effect to calculated voltages`);
         
-        const newResult = this.calculateScenario(
-          modifiedNodes,
-          cables,
-          cableTypes,
-          scenario,
-          project.foisonnementCharges,
-          project.foisonnementProductions,
-          project.transformerConfig,
-          project.loadModel,
-          project.desequilibrePourcent,
-          project.manualPhaseDistribution
+        result = this.applySRG2DirectVoltageEffect(
+          result,
+          regulator.nodeId,
+          regulationResult.adjustmentPerPhase,
+          parentMap
         );
 
-        // 5. Vérifier l'effet sur le nœud régulateur
-        const afterNodeMetrics = newResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        // 4. Vérifier l'effet sur le nœud régulateur
+        const afterNodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
         const afterVoltages = afterNodeMetrics ? {
           A: afterNodeMetrics.voltagesPerPhase.A,
           B: afterNodeMetrics.voltagesPerPhase.B,
@@ -1153,7 +1174,7 @@ export class SimulationCalculator extends ElectricalCalculator {
 
         console.log(`  - After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
 
-        // 6. Logger l'effet et mettre à jour pour le régulateur suivant
+        // 5. Logger l'effet
         const logEntry = {
           id: regulator.id,
           nodeId: regulator.nodeId,
@@ -1166,12 +1187,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         };
 
         regulatorLog.push(logEntry);
-        
-        // Mettre à jour pour la prochaine itération
-        result = newResult;
-        currentNodes = modifiedNodes;
 
-        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully - network recalculated`);
+        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully - direct voltage modification`);
 
       } catch (error) {
         const errorMsg = `Échec application régulateur SRG2 ${regulator.nodeId}: ${error}`;
