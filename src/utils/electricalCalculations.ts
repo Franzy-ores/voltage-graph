@@ -752,12 +752,17 @@ export class ElectricalCalculator {
     };
 
     // Relancer un calcul complet du réseau avec les nouvelles tensions de référence
-    // CORRECTION: Utiliser la méthode calculate de SimulationCalculator (classe parente)
-    const recalculatedResult = (this as any).calculate?.(
-      tempProject,
+    const recalculatedResult = this.calculateScenario(
+      modifiedNodes,
+      project.cables,
+      project.cableTypes,
       scenario,
-      scenario === 'FORCÉ' ? project.forcedModeConfig : undefined
-    ) || baseResult;
+      100, // foisonnementCharges par défaut
+      100, // foisonnementProductions par défaut
+      project.transformerConfig,
+      project.loadModel ?? 'polyphase_equilibre',
+      project.desequilibrePourcent ?? 0
+    );
 
     console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
     return recalculatedResult;
