@@ -142,12 +142,32 @@ describe('Voltage Regulator Tests', () => {
         enabled: true
       };
 
-      const result = calculator.applyVoltageRegulators(
+      // Test application des régulateurs avec la nouvelle méthode unifiée
+      const mockProject = {
+        id: 'test',
+        name: 'test',
+        voltageSystem: 'TÉTRAPHASÉ_400V' as const,
+        cosPhi: 0.95,
+        foisonnementCharges: 100,
+        foisonnementProductions: 100,
+        defaultChargeKVA: 5,
+        defaultProductionKVA: 5,
+        nodes: mockNodes,
+        cables: mockCables,
+        cableTypes: mockCableTypes,
+        transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+        desequilibrePourcent: 0,
+        manualPhaseDistribution: undefined,
+        forcedModeConfig: undefined
+      };
+      
+      const result = calculator.applyAllVoltageRegulators(
         mockNodes,
         mockCables,
         [regulator],
         mockBaseResult,
-        mockCableTypes
+        mockCableTypes,
+        mockProject
       );
 
       // Check regulator node voltage is set to target
@@ -176,12 +196,32 @@ describe('Voltage Regulator Tests', () => {
         enabled: true
       };
 
-      const result = calculator.applyVoltageRegulators(
+      // Test application des régulateurs avec la nouvelle méthode unifiée  
+      const mockProject = {
+        id: 'test',
+        name: 'test',
+        voltageSystem: 'TÉTRAPHASÉ_400V' as const,
+        cosPhi: 0.95,
+        foisonnementCharges: 100,
+        foisonnementProductions: 100,
+        defaultChargeKVA: 5,
+        defaultProductionKVA: 5,
+        nodes: mockNodes,
+        cables: mockCables,
+        cableTypes: mockCableTypes,
+        transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+        desequilibrePourcent: 0,
+        manualPhaseDistribution: undefined,
+        forcedModeConfig: undefined
+      };
+      
+      const result = calculator.applyAllVoltageRegulators(
         mockNodes,
         mockCables,
         [regulator],
-        mockBaseResult,
-        mockCableTypes
+        mockBaseResult,  
+        mockCableTypes,
+        mockProject
       );
 
       // Check regulator node voltage is set to target
@@ -199,12 +239,32 @@ describe('Voltage Regulator Tests', () => {
 
   describe('No Regulator Behavior', () => {
     it('should maintain original behavior without regulators', () => {
-      const result = calculator.applyVoltageRegulators(
+      // Test sans régulateurs avec la nouvelle méthode unifiée
+      const mockProject = {
+        id: 'test',
+        name: 'test',
+        voltageSystem: 'TÉTRAPHASÉ_400V' as const,
+        cosPhi: 0.95,
+        foisonnementCharges: 100,
+        foisonnementProductions: 100,
+        defaultChargeKVA: 5,
+        defaultProductionKVA: 5,
+        nodes: mockNodes,
+        cables: mockCables,
+        cableTypes: mockCableTypes,
+        transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+        desequilibrePourcent: 0,
+        manualPhaseDistribution: undefined,
+        forcedModeConfig: undefined
+      };
+      
+      const result = calculator.applyAllVoltageRegulators(
         mockNodes,
         mockCables,
         [],
         mockBaseResult,
-        mockCableTypes
+        mockCableTypes,
+        mockProject
       );
 
       // Result should be unchanged
@@ -226,12 +286,32 @@ describe('Voltage Regulator Tests', () => {
         enabled: true
       };
 
-      const result = calculator.applyVoltageRegulators(
+      // Test avec limite de puissance avec la nouvelle méthode unifiée
+      const mockProject = {
+        id: 'test',
+        name: 'test',
+        voltageSystem: 'TÉTRAPHASÉ_400V' as const,
+        cosPhi: 0.95,
+        foisonnementCharges: 100,
+        foisonnementProductions: 100,
+        defaultChargeKVA: 5,
+        defaultProductionKVA: 5,
+        nodes: mockNodes,
+        cables: mockCables,
+        cableTypes: mockCableTypes,
+        transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+        desequilibrePourcent: 0,
+        manualPhaseDistribution: undefined,
+        forcedModeConfig: undefined
+      };
+      
+      const result = calculator.applyAllVoltageRegulators(
         mockNodes,
         mockCables,
         [regulator],
         mockBaseResult,
-        mockCableTypes
+        mockCableTypes,
+        mockProject
       );
 
       // Regulator should be limited due to insufficient capacity
@@ -255,12 +335,32 @@ describe('Voltage Regulator Tests', () => {
         enabled: true
       };
 
-      const result = calculator.applyVoltageRegulators(
+      // Test d'intégration avec la nouvelle méthode unifiée
+      const mockProject = {
+        id: 'test',
+        name: 'test',
+        voltageSystem: 'TÉTRAPHASÉ_400V' as const,
+        cosPhi: 0.95,
+        foisonnementCharges: 100,
+        foisonnementProductions: 100,
+        defaultChargeKVA: 5,
+        defaultProductionKVA: 5,
+        nodes: mockNodes,
+        cables: mockCables,
+        cableTypes: mockCableTypes,
+        transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+        desequilibrePourcent: 0,
+        manualPhaseDistribution: undefined,
+        forcedModeConfig: undefined
+      };
+      
+      const result = calculator.applyAllVoltageRegulators(
         mockNodes,
         mockCables,
         [regulator],
         mockBaseResult,
-        mockCableTypes
+        mockCableTypes,
+        mockProject
       );
 
       // Verify voltage progression is logical

@@ -889,38 +889,7 @@ export class ElectricalCalculator {
     return { adjustmentPerPhase, switchStates, canRegulate };
   }
 
-  /**
-   * Ancienne méthode conservée pour compatibilité avec les tests existants
-   * @deprecated Utiliser applyAllVoltageRegulators à la place
-   */
-  applyVoltageRegulators(
-    nodes: Node[],
-    cables: Cable[],
-    regulators: VoltageRegulator[],
-    baseResult: CalculationResult,
-    cableTypes: CableType[]
-  ): CalculationResult {
-    // Rediriger vers la nouvelle méthode unifiée avec paramètres par défaut
-    const mockProject: Project = {
-      id: 'temp',
-      name: 'temp',
-      voltageSystem: 'TÉTRAPHASÉ_400V',
-      cosPhi: 0.95,
-      foisonnementCharges: 100,
-      foisonnementProductions: 100,
-      defaultChargeKVA: 5,
-      defaultProductionKVA: 5,
-      nodes,
-      cables,
-      cableTypes,
-      transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
-      desequilibrePourcent: 0,
-      manualPhaseDistribution: undefined,
-      forcedModeConfig: undefined
-    };
-    
-    return this.applyAllVoltageRegulators(nodes, cables, regulators, baseResult, cableTypes, mockProject);
-  }
+  // Méthode supprimée - utiliser les méthodes unifiées dans SimulationCalculator
 
   /**
    * Calculate total downstream load from a given node

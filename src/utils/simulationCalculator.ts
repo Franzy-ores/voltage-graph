@@ -966,8 +966,34 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * NETTOYAGE: Méthode supprimée - utiliser celle de la classe parente ElectricalCalculator
+   * Modifie les nœuds pour appliquer les régulateurs SRG2
    */
+  private modifyNodesForSRG2(
+    nodes: Node[],
+    regulator: VoltageRegulator,
+    regulationResult: { 
+      adjustmentPerPhase: { A: number; B: number; C: number };
+      switchStates: { A: string; B: string; C: string };
+      canRegulate: boolean;
+    }
+  ): Node[] {
+    // Pour l'instant, retourner les nœuds tels quels
+    // La logique SRG2 sera appliquée via la modification directe des tensions dans le calcul
+    return nodes.map(node => {
+      if (node.id === regulator.nodeId) {
+        // Marquer le nœud comme ayant un régulateur actif
+        return {
+          ...node,
+          voltageRegulator: {
+            ...regulator,
+            isActive: true,
+            adjustmentPerPhase: regulationResult.adjustmentPerPhase
+          }
+        };
+      }
+      return node;
+    });
+  }
 
   /**
    * Applique les régulateurs de tension SRG2 avec logique réaliste
@@ -1015,7 +1041,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`  - Network type: ${networkDetection.type}`);
 
         // 2. Appliquer la logique SRG2 pour déterminer les ajustements
-        const regulationResult = (this as any).applySRG2RegulationLogic(
+        const regulationResult = this.applySRG2RegulationLogic(
           regulator,
           initialVoltages,
           networkDetection.type
@@ -1029,8 +1055,25 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
         console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
 
-        // CORRECTION: Les méthodes SRG2 ont été unifiées dans ElectricalCalculator
-        console.log(`✅ SRG2 regulation logic applied - using unified system for complete network recalculation`);
+        // 3. Appliquer les modifications de tension et recalculer le réseau
+        const modifiedNodes = this.modifyNodesForSRG2(nodes, regulator, regulationResult);
+        
+        // 4. Recalcul complet du réseau avec les nœuds modifiés
+        console.log(`🔄 Recalculating network after SRG2 regulator ${regulator.id}`);
+        result = this.calculateScenario(
+          modifiedNodes,
+          cables,
+          cableTypes,
+          scenario,
+          project.foisonnementCharges,
+          project.foisonnementProductions,
+          project.transformerConfig,
+          project.loadModel,
+          project.desequilibrePourcent,
+          project.manualPhaseDistribution
+        );
+        
+        console.log(`✅ SRG2 regulation applied with complete network recalculation`);
 
         // 4. Créer l'entrée de log pour ce régulateur
         const logEntry = {
