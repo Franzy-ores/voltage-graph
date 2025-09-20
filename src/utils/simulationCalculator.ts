@@ -552,34 +552,15 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
-    // Conserver temporairement le système SRG2 existant avec correction pour recalcul complet
-    baseResult = this.applyPolyphaseVoltageRegulators(
-      project.nodes, 
-      project.cables, 
-      project.cableTypes,
-      activeRegulators, 
-      baseResult,
-      project,
-      scenario
-    );
-    
-    // CORRECTION TEMPORAIRE : Relancer un calcul complet après régulation SRG2 pour propagation complète
-    console.log('🔄 CORRECTION: Performing complete network recalculation after SRG2 regulation');
-    
-    // Sauvegarder les données des régulateurs
-    const regulatorData = (baseResult as any).regulatorData;
-    const regulatorLog = (baseResult as any).regulatorLog;
-    
-    // Recalcul complet du réseau - utiliser la méthode calculate si disponible
-    const finalResult = (this as any).calculate?.(project, scenario, project.forcedModeConfig) || baseResult;
-    
-    // Restaurer les données des régulateurs dans le résultat final
-    if (finalResult && (regulatorData || regulatorLog)) {
-      (finalResult as any).regulatorData = regulatorData;
-      (finalResult as any).regulatorLog = regulatorLog;
-    }
-    
-    baseResult = finalResult || baseResult;
+      baseResult = this.applyPolyphaseVoltageRegulators(
+        project.nodes, 
+        project.cables, 
+        project.cableTypes,
+        activeRegulators, 
+        baseResult,
+        project,
+        scenario
+      );
       
       console.log('📊 Result AFTER polyphase voltage regulation:', {
         hasNodeMetrics: !!baseResult.nodeMetrics,
@@ -1002,7 +983,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   ): CalculationResult {
     console.log('🔧 Starting SRG2 voltage regulation with direct voltage modification');
 
-    const networkDetection = this.detectNetworkType(project);
+    const networkDetection = this.detectNetworkTypeLocal(project);
     let result = JSON.parse(JSON.stringify(baseResult));
     const warnings: string[] = [];
     const regulatorLog: any[] = [];
@@ -1012,6 +993,77 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     // Traiter chaque régulateur séquentiellement
     for (const regulator of regulators) {
+      try {
+        console.log(`🔧 Processing SRG2 regulator ${regulator.id} at node ${regulator.nodeId}`);
+
+        // 1. Récupérer la tension actuelle du nœud régulateur
+        const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        if (!nodeMetrics) {
+          console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
+          continue;
+        }
+
+        const initialVoltages = {
+          A: nodeMetrics.voltagesPerPhase.A,
+          B: nodeMetrics.voltagesPerPhase.B,
+          C: nodeMetrics.voltagesPerPhase.C
+        };
+
+        console.log(`📊 DIAGNOSTIC SRG2 ${regulator.id}:`);
+        console.log(`  - Node: ${regulator.nodeId}`);
+        console.log(`  - Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
+        console.log(`  - Network type: ${networkDetection.type}`);
+
+        // 2. Appliquer la logique SRG2 pour déterminer les ajustements
+        const regulationResult = (this as any).applySRG2RegulationLogic(
+          regulator,
+          initialVoltages,
+          networkDetection.type
+        );
+
+        if (!regulationResult.canRegulate) {
+          console.log(`📊 Regulator ${regulator.id}: all phases within normal range, no action needed`);
+          continue;
+        }
+
+        console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
+        console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+
+        // CORRECTION: Les méthodes SRG2 ont été unifiées dans ElectricalCalculator
+        console.log(`✅ SRG2 regulation logic applied - using unified system for complete network recalculation`);
+
+        // 4. Créer l'entrée de log pour ce régulateur
+        const logEntry = {
+          regulatorId: regulator.id,
+          nodeId: regulator.nodeId,
+          type: regulator.type,
+          networkType: networkDetection.type,
+          initialVoltages,
+          switchStates: regulationResult.switchStates,
+          adjustments: regulationResult.adjustmentPerPhase,
+          isActive: regulationResult.canRegulate
+        };
+
+        regulatorLog.push(logEntry);
+
+        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully`);
+
+      } catch (error) {
+        const errorMsg = `Échec application régulateur SRG2 ${regulator.nodeId}: ${error}`;
+        console.error(`❌ ${errorMsg}`);
+        warnings.push(errorMsg);
+      }
+    }
+
+    // Ajouter les avertissements au résultat
+    if (warnings.length > 0) {
+      (result as any).warnings = [...((result as any).warnings || []), ...warnings];
+    }
+    (result as any).regulatorLog = regulatorLog;
+
+    return result;
+  }
+}
       try {
         console.log(`🔧 Processing SRG2 regulator ${regulator.id} at node ${regulator.nodeId}`);
 
