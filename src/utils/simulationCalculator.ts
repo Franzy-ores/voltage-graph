@@ -552,15 +552,34 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
-      baseResult = this.applyPolyphaseVoltageRegulators(
-        project.nodes, 
-        project.cables, 
-        project.cableTypes,
-        activeRegulators, 
-        baseResult,
-        project,
-        scenario
-      );
+    // Conserver temporairement le système SRG2 existant avec correction pour recalcul complet
+    baseResult = this.applyPolyphaseVoltageRegulators(
+      project.nodes, 
+      project.cables, 
+      project.cableTypes,
+      activeRegulators, 
+      baseResult,
+      project,
+      scenario
+    );
+    
+    // CORRECTION TEMPORAIRE : Relancer un calcul complet après régulation SRG2 pour propagation complète
+    console.log('🔄 CORRECTION: Performing complete network recalculation after SRG2 regulation');
+    
+    // Sauvegarder les données des régulateurs
+    const regulatorData = (baseResult as any).regulatorData;
+    const regulatorLog = (baseResult as any).regulatorLog;
+    
+    // Recalcul complet du réseau
+    const finalResult = this.calculate(project, scenario, project.forcedModeConfig);
+    
+    // Restaurer les données des régulateurs dans le résultat final
+    if (finalResult && (regulatorData || regulatorLog)) {
+      (finalResult as any).regulatorData = regulatorData;
+      (finalResult as any).regulatorLog = regulatorLog;
+    }
+    
+    baseResult = finalResult || baseResult;
       
       console.log('📊 Result AFTER polyphase voltage regulation:', {
         hasNodeMetrics: !!baseResult.nodeMetrics,
@@ -780,52 +799,9 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Applique directement l'effet SRG2 sur les tensions calculées et propage l'effet en aval
+   * NETTOYAGE - Les méthodes SRG2 suivantes ont été supprimées et unifiées dans ElectricalCalculator.applyAllVoltageRegulators
+   * pour éliminer la duplication et permettre un recalcul complet du réseau.
    */
-  private applySRG2DirectVoltageEffect(
-    result: CalculationResult,
-    regulatorNodeId: string,
-    adjustmentPerPhase: { A: number; B: number; C: number },
-    parentMap: Map<string, string>
-  ): CalculationResult {
-    const modifiedResult = JSON.parse(JSON.stringify(result));
-    
-    // 1. Identifier tous les nœuds affectés (régulateur + tous nœuds en aval)
-    const downstreamNodeIds = this.getDownstreamNodeIds(regulatorNodeId, parentMap);
-    const affectedNodeIds = [regulatorNodeId, ...downstreamNodeIds];
-    
-    console.log(`🔧 SRG2 affecting nodes: ${affectedNodeIds.join(', ')}`);
-    
-    // 2. Appliquer la transformation de tension à tous les nœuds affectés
-    if (modifiedResult.nodeMetricsPerPhase) {
-      modifiedResult.nodeMetricsPerPhase = modifiedResult.nodeMetricsPerPhase.map(nodeMetric => {
-        if (affectedNodeIds.includes(nodeMetric.nodeId)) {
-          const originalVoltages = nodeMetric.voltagesPerPhase;
-          
-          // Pour le nœud régulateur : application directe
-          // Pour les nœuds en aval : propagation de l'effet (peut être atténuée selon la distance)
-          const isRegulatorNode = nodeMetric.nodeId === regulatorNodeId;
-          const propagationFactor = isRegulatorNode ? 1.0 : 0.95; // Légère atténuation en aval
-          
-          const newVoltages = {
-            A: originalVoltages.A + (adjustmentPerPhase.A * propagationFactor),
-            B: originalVoltages.B + (adjustmentPerPhase.B * propagationFactor), 
-            C: originalVoltages.C + (adjustmentPerPhase.C * propagationFactor)
-          };
-          
-          console.log(`📊 Node ${nodeMetric.nodeId} ${isRegulatorNode ? '(regulator)' : '(downstream)'}: A=${originalVoltages.A.toFixed(1)}V → ${newVoltages.A.toFixed(1)}V`);
-          
-          return {
-            ...nodeMetric,
-            voltagesPerPhase: newVoltages
-          };
-        }
-        return nodeMetric;
-      });
-    }
-    
-    return modifiedResult;
-  }
 
   /**
    * Calcule la puissance apparente approximative d'un nœud

@@ -616,21 +616,24 @@ export class ElectricalCalculator {
   }
 
   /**
-   * Applique les régulateurs de tension aux résultats de calcul
-   * Corrigé pour respecter la puissance limitée et propager correctement les tensions
+   * SYSTÈME UNIFIÉ : Applique tous les régulateurs de tension (SRG2 et classiques) avec recalcul complet du réseau
+   * Remplace l'ancienne approche de modification directe des tensions par un système de tension de référence
    * @param nodes Liste des nœuds du réseau
    * @param cables Liste des câbles du réseau
    * @param regulators Liste des régulateurs actifs
    * @param baseResult Résultats de base avant régulation
    * @param cableTypes Types de câbles disponibles
-   * @returns Résultats modifiés avec régulateurs appliqués
+   * @param project Configuration du projet (pour détection réseau)
+   * @returns Résultats avec régulateurs appliqués via recalcul complet
    */
-  applyVoltageRegulators(
+  applyAllVoltageRegulators(
     nodes: Node[],
     cables: Cable[],
     regulators: VoltageRegulator[],
     baseResult: CalculationResult,
-    cableTypes: CableType[]
+    cableTypes: CableType[],
+    project: Project,
+    scenario: CalculationScenario = 'MOYENNE'
   ): CalculationResult {
     if (!regulators || regulators.length === 0) {
       console.log('🔧 No voltage regulators provided, returning base result');
@@ -643,86 +646,274 @@ export class ElectricalCalculator {
       return baseResult;
     }
 
-    console.log(`🔧 Applying ${activeRegulators.length} voltage regulators`);
+    console.log(`🔧 UNIFIED SYSTEM: Processing ${activeRegulators.length} voltage regulators with complete network recalculation`);
+    
+    // Détecter le type de réseau
+    const networkDetection = this.detectNetworkType(project);
+    
+    // Créer une copie des nœuds pour modification
+    const modifiedNodes = JSON.parse(JSON.stringify(nodes)) as Node[];
+    let hasRegulatorChanges = false;
 
-    let result = JSON.parse(JSON.stringify(baseResult));
-
-    // Apply each regulator sequentially
+    // Traiter chaque régulateur séquentiellement
     for (const regulator of activeRegulators) {
-      const node = nodes.find(n => n.id === regulator.nodeId);
-      if (!node) {
+      const nodeIndex = modifiedNodes.findIndex(n => n.id === regulator.nodeId);
+      if (nodeIndex === -1) {
         console.warn(`⚠️ Node ${regulator.nodeId} not found for regulator ${regulator.id}`);
         continue;
       }
 
-      console.log(`🔧 Applying voltage regulator at node ${regulator.nodeId}: target ${regulator.targetVoltage_V}V`);
+      console.log(`🔧 Processing regulator ${regulator.id} at node ${regulator.nodeId}`);
 
-      // Find current voltage at the regulator node
-      const nodeMetricIndex = result.nodeMetricsPerPhase?.findIndex(nm => nm.nodeId === regulator.nodeId) ?? -1;
-      
-      if (nodeMetricIndex < 0 || !result.nodeMetricsPerPhase) {
+      // Récupérer la tension actuelle du nœud régulateur
+      const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+      if (!nodeMetrics) {
         console.warn(`⚠️ No voltage data found for regulator node ${regulator.nodeId}`);
         continue;
       }
 
-      const currentVoltages = result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase;
-      if (!currentVoltages) {
-        console.warn(`⚠️ No phase voltages found for regulator node ${regulator.nodeId}`);
-        continue;
-      }
-
-      // Check power limits for voltage regulators based on downstream load
-      const downstreamLoad_kVA = this.calculateDownstreamLoad(regulator.nodeId, nodes, cables, 100);
-      console.log(`⚡ Regulator at node ${regulator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${regulator.maxPower_kVA}kVA`);
-      
-      if (downstreamLoad_kVA > regulator.maxPower_kVA) {
-        console.warn(`⚠️ Régulateur ${regulator.id} surchargé! Charge aval=${downstreamLoad_kVA.toFixed(1)}kVA > Limite=${regulator.maxPower_kVA}kVA`);
-        (regulator as any).isLimited = true;
-        (regulator as any).limitReason = `Charge aval (${downstreamLoad_kVA.toFixed(1)}kVA) dépasse la limite (${regulator.maxPower_kVA}kVA)`;
-        continue;
-      }
-      
-      // Calculate average current voltage
-      const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
-      const targetVoltage = regulator.targetVoltage_V;
-      
-      console.log(`📊 Regulator ${regulator.id}: Current=${avgCurrentVoltage.toFixed(1)}V, Target=${targetVoltage}V`);
-
-      // Check if regulation is needed
-      const voltageTolerance = 1.0; // 1V tolerance
-      if (Math.abs(targetVoltage - avgCurrentVoltage) < voltageTolerance) {
-        console.log(`✅ Voltage already at target (within ${voltageTolerance}V), minimal regulation needed`);
-        (regulator as any).isActive = false;
-        (regulator as any).actualVoltage_V = avgCurrentVoltage;
-        (regulator as any).reactivePower_kVAr = 0;
-        continue;
-      }
-
-      // The regulator forces the voltage to the target value
-      const regulatedVoltages = {
-        A: targetVoltage,
-        B: targetVoltage,
-        C: targetVoltage
+      const currentVoltages = {
+        A: nodeMetrics.voltagesPerPhase.A,
+        B: nodeMetrics.voltagesPerPhase.B,
+        C: nodeMetrics.voltagesPerPhase.C
       };
 
-      console.log(`📊 Regulated voltages: A=${regulatedVoltages.A}V, B=${regulatedVoltages.B}V, C=${regulatedVoltages.C}V`);
+      console.log(`📊 DIAGNOSTIC ${regulator.id}:`);
+      console.log(`  - Node: ${regulator.nodeId}`);
+      console.log(`  - Initial voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
+      console.log(`  - Network type: ${networkDetection.type}`);
 
-      // Update regulator status
-      (regulator as any).isActive = true;
-      (regulator as any).isLimited = false;
-      (regulator as any).actualVoltage_V = targetVoltage;
-      (regulator as any).reactivePower_kVAr = Math.abs(targetVoltage - avgCurrentVoltage) * downstreamLoad_kVA / targetVoltage; // Approximate Q
+      // Détecter si c'est un régulateur SRG2 ou classique
+      const isSRG2 = regulator.type?.includes('SRG2') || 
+                     (regulator.type?.includes('230V') || regulator.type?.includes('400V'));
 
-      // Update the voltage at the regulator node
-      result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = regulatedVoltages;
+      if (isSRG2) {
+        // Appliquer la logique SRG2 avec recalcul complet
+        const regulationResult = this.applySRG2RegulationLogic(
+          regulator,
+          currentVoltages,
+          networkDetection.type
+        );
 
-      // Recalculate the entire network downstream from the regulated node
-      this.recalculateNetworkFromNode(regulator.nodeId, regulatedVoltages, nodes, cables, cableTypes, result);
+        if (!regulationResult.canRegulate) {
+          console.log(`📊 SRG2 Regulator ${regulator.id}: all phases within normal range, no action needed`);
+          continue;
+        }
 
-      console.log(`✅ Voltage regulator applied: Voltage set to ${targetVoltage}V, downstream network recalculated`);
+        console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
+        console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+
+        // NOUVELLE APPROCHE : Modifier la tension de référence du nœud au lieu de modifier directement les tensions
+        const newTargetVoltages = {
+          A: currentVoltages.A + regulationResult.adjustmentPerPhase.A,
+          B: currentVoltages.B + regulationResult.adjustmentPerPhase.B,
+          C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
+        };
+
+        // Appliquer la nouvelle tension de référence au nœud régulateur
+        modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+        modifiedNodes[nodeIndex].isVoltageRegulator = true;
+        modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
+        
+        console.log(`🔧 SRG2: Setting node ${regulator.nodeId} as controlled voltage source with average target: ${modifiedNodes[nodeIndex].tensionCible?.toFixed(1)}V`);
+        
+        hasRegulatorChanges = true;
+
+      } else {
+        // Régulateur classique - logique simplifiée
+        const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
+        const targetVoltage = regulator.targetVoltage_V;
+        
+        if (Math.abs(targetVoltage - avgCurrentVoltage) > 1.0) {
+          modifiedNodes[nodeIndex].tensionCible = targetVoltage;
+          modifiedNodes[nodeIndex].isVoltageRegulator = true;
+          
+          console.log(`🔧 Classical regulator: Setting node ${regulator.nodeId} target voltage to ${targetVoltage}V`);
+          
+          hasRegulatorChanges = true;
+        } else {
+          console.log(`✅ Classical regulator ${regulator.id}: voltage already at target`);
+        }
     }
 
-    return result;
+    // RECALCUL COMPLET DU RÉSEAU si des modifications ont été apportées
+    if (!hasRegulatorChanges) {
+      console.log('✅ No regulator changes needed, returning base result');
+      return baseResult;
+    }
+
+    console.log('🔄 UNIFIED SYSTEM: Performing complete network recalculation with modified regulator nodes');
+
+    // Créer un projet temporaire avec les nœuds modifiés
+    const tempProject = {
+      ...project,
+      nodes: modifiedNodes
+    };
+
+    // Relancer un calcul complet du réseau avec les nouvelles tensions de référence
+    const recalculatedResult = this.calculate(
+      tempProject,
+      scenario,
+      scenario === 'FORCÉ' ? project.forcedModeConfig : undefined
+    );
+
+    console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
+    return recalculatedResult;
+  }
+
+  /**
+   * Détection du type de réseau basé sur les tensions nominales des transformateurs
+   */
+  private detectNetworkType(project: Project): { type: '400V' | '230V', confidence: number } {
+    const transformer = project.transformers?.[0];
+    if (!transformer) {
+      console.log('📊 No transformer found, defaulting to 400V network');
+      return { type: '400V', confidence: 0.5 };
+    }
+
+    const nominalVoltage = transformer.nominalVoltage_V;
+    if (nominalVoltage >= 380 && nominalVoltage <= 420) {
+      console.log(`📊 Detected 400V network (transformer: ${nominalVoltage}V)`);
+      return { type: '400V', confidence: 1.0 };
+    } else if (nominalVoltage >= 220 && nominalVoltage <= 240) {
+      console.log(`📊 Detected 230V network (transformer: ${nominalVoltage}V)`);
+      return { type: '230V', confidence: 1.0 };
+    } else {
+      console.log(`📊 Unknown voltage ${nominalVoltage}V, defaulting to 400V network`);
+      return { type: '400V', confidence: 0.3 };
+    }
+  }
+
+  /**
+   * Logique de régulation SRG2 réaliste avec seuils de commutation
+   * Migré depuis SimulationCalculator pour unification
+   */
+  private applySRG2RegulationLogic(
+    regulator: VoltageRegulator,
+    voltagesPerPhase: { A: number; B: number; C: number },
+    networkType: '400V' | '230V'
+  ): { 
+    adjustmentPerPhase: { A: number; B: number; C: number };
+    switchStates: { A: string; B: string; C: string };
+    canRegulate: boolean;
+  } {
+    const V_nominal = 230; // Toujours 230V pour SRG2
+    
+    // Seuils SRG2 selon documentation
+    const thresholds = networkType === '400V' ? {
+      // SRG2-400 : ±16V (7%) phase-neutre
+      UL: 246,  // LO2 - abaissement complet
+      LO1: 238, // (230 + 246) / 2 
+      BO1: 222, // (230 + 214) / 2
+      UB: 214   // BO2 - augmentation complète
+    } : {
+      // SRG2-230 : ±14V (6%) ligne-ligne  
+      UL: 244,  // LO2
+      LO1: 237, // (230 + 244) / 2
+      BO1: 223, // (230 + 216) / 2  
+      UB: 216   // BO2
+    };
+    
+    const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
+    const adjustmentPerPhase = { A: 0, B: 0, C: 0 };
+    const switchStates = { A: 'BYP', B: 'BYP', C: 'BYP' };
+    
+    // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
+    ['A', 'B', 'C'].forEach(phase => {
+      const voltage = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
+      
+      if (voltage >= thresholds.UL) {
+        // Abaissement complet (-ΔU)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment;
+        switchStates[phase as keyof typeof switchStates] = 'LO2';
+      } else if (voltage >= thresholds.LO1) {
+        // Abaissement partiel (-ΔU/2)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment/2;
+        switchStates[phase as keyof typeof switchStates] = 'LO1';
+      } else if (voltage <= thresholds.UB) {
+        // Augmentation complète (+ΔU)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment;
+        switchStates[phase as keyof typeof switchStates] = 'BO2';
+      } else if (voltage <= thresholds.BO1) {
+        // Augmentation partielle (+ΔU/2)
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment/2;
+        switchStates[phase as keyof typeof switchStates] = 'BO1';
+      }
+      // Sinon reste en BYP (bypass)
+    });
+    
+    // Contraintes SRG2 révisées selon type de réseau
+    if (networkType === '230V') {
+      // SRG2-230 : contrainte plus souple - éviter seulement les écarts extrêmes
+      const hasIncrease = Object.values(adjustmentPerPhase).some(adj => adj > 0);
+      const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
+      
+      if (hasIncrease && hasDecrease) {
+        // Calculer l'écart moyen pour déterminer la tendance générale
+        const avgAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
+        
+        // Si l'écart moyen est faible (< 4V), permettre la régulation individuelle
+        if (Math.abs(avgAdjustment) < 4) {
+          console.log(`📊 SRG2-230: Régulation individuelle autorisée (écart moyen: ${avgAdjustment.toFixed(1)}V)`);
+          // Garder tous les ajustements
+        } else {
+          // Sinon, priorité à la phase avec écart maximum
+          const deviations = {
+            A: Math.abs(voltagesPerPhase.A - V_nominal),
+            B: Math.abs(voltagesPerPhase.B - V_nominal), 
+            C: Math.abs(voltagesPerPhase.C - V_nominal)
+          };
+          
+          const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
+          const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
+          
+          console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
+          
+          // Annuler les autres ajustements
+          ['A', 'B', 'C'].forEach(phase => {
+            if (phase !== priorityPhase) {
+              adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
+              switchStates[phase as keyof typeof switchStates] = 'BYP';
+            }
+          });
+        }
+      }
+    } else {
+      // SRG2-400 : régulation indépendante par phase (plus de flexibilité)
+      console.log(`📊 SRG2-400: Régulation indépendante par phase autorisée`);
+    }
+    
+    const canRegulate = Object.values(adjustmentPerPhase).some(adj => adj !== 0);
+    return { adjustmentPerPhase, switchStates, canRegulate };
+  }
+
+  /**
+   * Ancienne méthode conservée pour compatibilité avec les tests existants
+   * @deprecated Utiliser applyAllVoltageRegulators à la place
+   */
+  applyVoltageRegulators(
+    nodes: Node[],
+    cables: Cable[],
+    regulators: VoltageRegulator[],
+    baseResult: CalculationResult,
+    cableTypes: CableType[]
+  ): CalculationResult {
+    // Rediriger vers la nouvelle méthode unifiée avec paramètres par défaut
+    const mockProject: Project = {
+      id: 'temp',
+      name: 'temp',
+      nodes,
+      cables,
+      cableTypes,
+      transformers: [{ nominalVoltage_V: 400, power_kVA: 630, phases: 3 }],
+      foisonnementCharges: 100,
+      desequilibrePourcent: 0,
+      manualPhaseDistribution: undefined,
+      forcedModeConfig: undefined
+    };
+    
+    return this.applyAllVoltageRegulators(nodes, cables, regulators, baseResult, cableTypes, mockProject);
+  }
   }
 
   /**

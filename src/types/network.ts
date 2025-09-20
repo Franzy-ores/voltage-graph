@@ -83,6 +83,8 @@ export interface Node {
   productions: ProductionPV[];
   isSource?: boolean;
   tensionCible?: number; // tension cible en V (optionnel)
+  isVoltageRegulator?: boolean; // Marqueur pour les nœuds régulateurs
+  regulatorTargetVoltages?: { A: number; B: number; C: number }; // Tensions cibles par phase pour SRG2
 }
 
 export interface Cable {
