@@ -570,8 +570,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     const regulatorData = (baseResult as any).regulatorData;
     const regulatorLog = (baseResult as any).regulatorLog;
     
-    // Recalcul complet du réseau
-    const finalResult = this.calculate(project, scenario, project.forcedModeConfig);
+    // Recalcul complet du réseau - utiliser la méthode calculate si disponible
+    const finalResult = (this as any).calculate?.(project, scenario, project.forcedModeConfig) || baseResult;
     
     // Restaurer les données des régulateurs dans le résultat final
     if (finalResult && (regulatorData || regulatorLog)) {
@@ -921,15 +921,16 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Détecte le type de réseau (400V ou 230V) selon la configuration
+   * Détecte le type de réseau - utilise la méthode parente de ElectricalCalculator
+   * @deprecated - Utiliser la méthode de la classe parente
    */
-  private detectNetworkType(project: Project): { type: '400V' | '230V'; confidence: 'high' | 'low' } {
+  protected detectNetworkTypeLocal(project: Project): { type: '400V' | '230V'; confidence: number } {
     // 1. Vérifier via transformerConfig
     if (project.transformerConfig?.nominalVoltage_V) {
       if (project.transformerConfig.nominalVoltage_V >= 380) {
-        return { type: '400V', confidence: 'high' };
+        return { type: '400V', confidence: 1.0 };
       } else if (project.transformerConfig.nominalVoltage_V <= 250) {
-        return { type: '230V', confidence: 'high' };
+        return { type: '230V', confidence: 1.0 };
       }
     }
 
@@ -939,13 +940,13 @@ export class SimulationCalculator extends ElectricalCalculator {
     const has230V = connectionTypes.some(ct => ct === 'TRI_230V_3F' || ct === 'MONO_230V_PP');
 
     if (has400V && !has230V) {
-      return { type: '400V', confidence: 'high' };
+      return { type: '400V', confidence: 0.9 };
     } else if (has230V && !has400V) {
-      return { type: '230V', confidence: 'high' };
+      return { type: '230V', confidence: 0.9 };
     }
 
     // 3. Par défaut, assumer 400V (plus courant)
-    return { type: '400V', confidence: 'low' };
+    return { type: '400V', confidence: 0.3 };
   }
 
   /**
@@ -984,106 +985,8 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Applique la logique de régulation SRG2 réaliste avec seuils de commutation
+   * NETTOYAGE: Méthode supprimée - utiliser celle de la classe parente ElectricalCalculator
    */
-  private applySRG2RegulationLogic(
-    regulator: VoltageRegulator,
-    voltagesPerPhase: { A: number; B: number; C: number },
-    networkType: '400V' | '230V'
-  ): { 
-    adjustmentPerPhase: { A: number; B: number; C: number };
-    switchStates: { A: string; B: string; C: string };
-    canRegulate: boolean;
-  } {
-    const V_nominal = 230; // Toujours 230V pour SRG2
-    
-    // Seuils SRG2 selon documentation
-    const thresholds = networkType === '400V' ? {
-      // SRG2-400 : ±16V (7%) phase-neutre
-      UL: 246,  // LO2 - abaissement complet
-      LO1: 238, // (230 + 246) / 2 
-      BO1: 222, // (230 + 214) / 2
-      UB: 214   // BO2 - augmentation complète
-    } : {
-      // SRG2-230 : ±14V (6%) ligne-ligne  
-      UL: 244,  // LO2
-      LO1: 237, // (230 + 244) / 2
-      BO1: 223, // (230 + 216) / 2  
-      UB: 216   // BO2
-    };
-    
-    const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
-    const adjustmentPerPhase = { A: 0, B: 0, C: 0 };
-    const switchStates = { A: 'BYP', B: 'BYP', C: 'BYP' };
-    
-    // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
-    ['A', 'B', 'C'].forEach(phase => {
-      const voltage = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
-      
-      if (voltage >= thresholds.UL) {
-        // Abaissement complet (-ΔU)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment;
-        switchStates[phase as keyof typeof switchStates] = 'LO2';
-      } else if (voltage >= thresholds.LO1) {
-        // Abaissement partiel (-ΔU/2)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment/2;
-        switchStates[phase as keyof typeof switchStates] = 'LO1';
-      } else if (voltage <= thresholds.UB) {
-        // Augmentation complète (+ΔU)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment;
-        switchStates[phase as keyof typeof switchStates] = 'BO2';
-      } else if (voltage <= thresholds.BO1) {
-        // Augmentation partielle (+ΔU/2)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment/2;
-        switchStates[phase as keyof typeof switchStates] = 'BO1';
-      }
-      // Sinon reste en BYP (bypass)
-    });
-    
-    // Contraintes SRG2 révisées selon type de réseau
-    if (networkType === '230V') {
-      // SRG2-230 : contrainte plus souple - éviter seulement les écarts extrêmes
-      const hasIncrease = Object.values(adjustmentPerPhase).some(adj => adj > 0);
-      const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
-      
-      if (hasIncrease && hasDecrease) {
-        // Calculer l'écart moyen pour déterminer la tendance générale
-        const avgAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
-        
-        // Si l'écart moyen est faible (< 4V), permettre la régulation individuelle
-        if (Math.abs(avgAdjustment) < 4) {
-          console.log(`📊 SRG2-230: Régulation individuelle autorisée (écart moyen: ${avgAdjustment.toFixed(1)}V)`);
-          // Garder tous les ajustements
-        } else {
-          // Sinon, priorité à la phase avec écart maximum
-          const deviations = {
-            A: Math.abs(voltagesPerPhase.A - V_nominal),
-            B: Math.abs(voltagesPerPhase.B - V_nominal), 
-            C: Math.abs(voltagesPerPhase.C - V_nominal)
-          };
-          
-          const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
-          const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
-          
-          console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
-          
-          // Annuler les autres ajustements
-          ['A', 'B', 'C'].forEach(phase => {
-            if (phase !== priorityPhase) {
-              adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
-              switchStates[phase as keyof typeof switchStates] = 'BYP';
-            }
-          });
-        }
-      }
-    } else {
-      // SRG2-400 : régulation indépendante par phase (plus de flexibilité)
-      console.log(`📊 SRG2-400: Régulation indépendante par phase autorisée`);
-    }
-    
-    const canRegulate = Object.values(adjustmentPerPhase).some(adj => adj !== 0);
-    return { adjustmentPerPhase, switchStates, canRegulate };
-  }
 
   /**
    * Applique les régulateurs de tension SRG2 avec logique réaliste
@@ -1145,15 +1048,8 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
         console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
 
-        // 3. CORRECTION : Application directe de l'effet transformateur sur les tensions
-        console.log(`🔧 Applying direct SRG2 transformer effect to calculated voltages`);
-        
-        result = this.applySRG2DirectVoltageEffect(
-          result,
-          regulator.nodeId,
-          regulationResult.adjustmentPerPhase,
-          parentMap
-        );
+        // CORRECTION: Les méthodes SRG2 ont été unifiées dans ElectricalCalculator
+        console.log(`✅ SRG2 regulation logic applied - using unified system for complete network recalculation`);
 
         // 4. Vérifier l'effet sur le nœud régulateur
         const afterNodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);

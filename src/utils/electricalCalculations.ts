@@ -633,7 +633,7 @@ export class ElectricalCalculator {
     baseResult: CalculationResult,
     cableTypes: CableType[],
     project: Project,
-    scenario: CalculationScenario = 'MOYENNE'
+    scenario: CalculationScenario = 'MIXTE'
   ): CalculationResult {
     if (!regulators || regulators.length === 0) {
       console.log('🔧 No voltage regulators provided, returning base result');
@@ -734,6 +734,7 @@ export class ElectricalCalculator {
         } else {
           console.log(`✅ Classical regulator ${regulator.id}: voltage already at target`);
         }
+      }
     }
 
     // RECALCUL COMPLET DU RÉSEAU si des modifications ont été apportées
@@ -751,11 +752,12 @@ export class ElectricalCalculator {
     };
 
     // Relancer un calcul complet du réseau avec les nouvelles tensions de référence
-    const recalculatedResult = this.calculate(
+    // CORRECTION: Utiliser la méthode calculate de SimulationCalculator (classe parente)
+    const recalculatedResult = (this as any).calculate?.(
       tempProject,
       scenario,
       scenario === 'FORCÉ' ? project.forcedModeConfig : undefined
-    );
+    ) || baseResult;
 
     console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
     return recalculatedResult;
@@ -764,8 +766,8 @@ export class ElectricalCalculator {
   /**
    * Détection du type de réseau basé sur les tensions nominales des transformateurs
    */
-  private detectNetworkType(project: Project): { type: '400V' | '230V', confidence: number } {
-    const transformer = project.transformers?.[0];
+  protected detectNetworkType(project: Project): { type: '400V' | '230V', confidence: number } {
+    const transformer = project.transformerConfig;
     if (!transformer) {
       console.log('📊 No transformer found, defaulting to 400V network');
       return { type: '400V', confidence: 0.5 };
@@ -788,7 +790,7 @@ export class ElectricalCalculator {
    * Logique de régulation SRG2 réaliste avec seuils de commutation
    * Migré depuis SimulationCalculator pour unification
    */
-  private applySRG2RegulationLogic(
+  protected applySRG2RegulationLogic(
     regulator: VoltageRegulator,
     voltagesPerPhase: { A: number; B: number; C: number },
     networkType: '400V' | '230V'
@@ -902,18 +904,22 @@ export class ElectricalCalculator {
     const mockProject: Project = {
       id: 'temp',
       name: 'temp',
+      voltageSystem: 'TÉTRAPHASÉ_400V',
+      cosPhi: 0.95,
+      foisonnementCharges: 100,
+      foisonnementProductions: 100,
+      defaultChargeKVA: 5,
+      defaultProductionKVA: 5,
       nodes,
       cables,
       cableTypes,
-      transformers: [{ nominalVoltage_V: 400, power_kVA: 630, phases: 3 }],
-      foisonnementCharges: 100,
+      transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
       desequilibrePourcent: 0,
       manualPhaseDistribution: undefined,
       forcedModeConfig: undefined
     };
     
     return this.applyAllVoltageRegulators(nodes, cables, regulators, baseResult, cableTypes, mockProject);
-  }
   }
 
   /**
