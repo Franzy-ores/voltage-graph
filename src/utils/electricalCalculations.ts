@@ -1338,7 +1338,16 @@ export class ElectricalCalculator {
     const VcfgSrc = this.getVoltage(source.connectionType);
     let U_line_base = VcfgSrc.U_base;
     if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
-    if (source.tensionCible) U_line_base = source.tensionCible;
+    
+    // Priorité pour les régulateurs de tension: utiliser regulatorTargetVoltages si disponible
+    if (source.isVoltageRegulator && source.regulatorTargetVoltages) {
+      const avgTarget = (source.regulatorTargetVoltages.A + source.regulatorTargetVoltages.B + source.regulatorTargetVoltages.C) / 3;
+      U_line_base = avgTarget;
+      console.log(`🔧 Source is voltage regulator, using average target voltage: ${avgTarget.toFixed(1)}V`);
+    } else if (source.tensionCible) {
+      U_line_base = source.tensionCible;
+    }
+    
     const isSrcThree = VcfgSrc.isThreePhase;
 
     if (!isFinite(U_line_base) || U_line_base <= 0) {
@@ -1544,7 +1553,40 @@ export class ElectricalCalculator {
               const Z = cableZ_phase.get(cab.id) || C(0, 0);
               const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
-              const Vv = sub(Vu, mul(Z, Iuv));
+              let Vv = sub(Vu, mul(Z, Iuv));
+              
+              // NOUVEAU: Vérifier si le nœud v est un régulateur de tension
+              const nodeV = nodeById.get(v);
+              if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
+                // Pour les régulateurs SRG2 en mode per-phase, utiliser la tension cible de la phase spécifique
+                const { regulatorTargetVoltages } = nodeV;
+                
+                // Déterminer quelle tension cible utiliser selon la phase (angle)
+                let targetVoltage: number;
+                if (Math.abs(angleDeg - 0) < 1) {
+                  // Phase A (0°)
+                  targetVoltage = regulatorTargetVoltages.A;
+                } else if (Math.abs(angleDeg - 120) < 1 || Math.abs(angleDeg - (-240)) < 1) {
+                  // Phase B (120° or -240°)
+                  targetVoltage = regulatorTargetVoltages.B;
+                } else if (Math.abs(angleDeg - 240) < 1 || Math.abs(angleDeg - (-120)) < 1) {
+                  // Phase C (240° or -120°)
+                  targetVoltage = regulatorTargetVoltages.C;
+                } else {
+                  // Fallback: utiliser la moyenne
+                  targetVoltage = (regulatorTargetVoltages.A + regulatorTargetVoltages.B + regulatorTargetVoltages.C) / 3;
+                }
+                
+                // Convertir en tension de phase
+                const { isThreePhase } = this.getVoltage(nodeV.connectionType);
+                const Vv_target_phase = isThreePhase ? targetVoltage / Math.sqrt(3) : targetVoltage;
+                
+                // Forcer la tension du nœud régulateur avec l'angle de phase approprié
+                Vv = fromPolar(Vv_target_phase, this.deg2rad(angleDeg));
+                
+                console.log(`🔧 Forcing voltage at regulator node ${v} (phase ${angleDeg}°): ${Vv_target_phase.toFixed(1)}V phase`);
+              }
+              
               V_node_phase.set(v, Vv);
               stack2.push(v);
             }
@@ -1867,7 +1909,27 @@ export class ElectricalCalculator {
           const Z = cableZ_phase.get(cab.id) || C(0, 0);
           const Iuv = I_branch.get(cab.id) || C(0, 0);
           const Vu = V_node.get(u) || Vslack;
-          const Vv = sub(Vu, mul(Z, Iuv));
+          let Vv = sub(Vu, mul(Z, Iuv));
+          
+          // NOUVEAU: Vérifier si le nœud v est un régulateur de tension
+          const nodeV = nodeById.get(v);
+          if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
+            // Pour les régulateurs SRG2, utiliser la tension cible appropriée
+            const { regulatorTargetVoltages } = nodeV;
+            
+            // En mode équilibré, utiliser la moyenne des tensions cibles par phase
+            const avgTargetVoltage = (regulatorTargetVoltages.A + regulatorTargetVoltages.B + regulatorTargetVoltages.C) / 3;
+            
+            // Convertir en tension de phase pour le calcul
+            const { isThreePhase } = this.getVoltage(nodeV.connectionType);
+            const Vv_target_phase = isThreePhase ? avgTargetVoltage / Math.sqrt(3) : avgTargetVoltage;
+            
+            // Forcer la tension du nœud régulateur
+            Vv = C(Vv_target_phase, 0);
+            
+            console.log(`🔧 Forcing voltage at regulator node ${v}: ${Vv_target_phase.toFixed(1)}V phase (${avgTargetVoltage.toFixed(1)}V line)`);
+          }
+          
           V_node.set(v, Vv);
           stack2.push(v);
         }

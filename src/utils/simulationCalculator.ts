@@ -977,18 +977,34 @@ export class SimulationCalculator extends ElectricalCalculator {
       canRegulate: boolean;
     }
   ): Node[] {
-    // Pour l'instant, retourner les nœuds tels quels
-    // La logique SRG2 sera appliquée via la modification directe des tensions dans le calcul
+    console.log(`🔧 modifyNodesForSRG2: Applying SRG2 adjustments to node ${regulator.nodeId}`);
+    
     return nodes.map(node => {
       if (node.id === regulator.nodeId) {
-        // Marquer le nœud comme ayant un régulateur actif
+        // Calculer la nouvelle tension cible moyenne pour compatibilité avec tensionCible
+        const newTargetVoltage = (
+          regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.A +
+          regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.B +
+          regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.C
+        ) / 3;
+        
+        // Calculer les tensions cibles par phase
+        const regulatorTargetVoltages = {
+          A: regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.A,
+          B: regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.B,
+          C: regulator.targetVoltage_V + regulationResult.adjustmentPerPhase.C
+        };
+        
+        console.log(`🔧 Setting node ${regulator.nodeId} as voltage controlled:`);
+        console.log(`   - Average target: ${newTargetVoltage.toFixed(1)}V`);
+        console.log(`   - Per-phase targets: A=${regulatorTargetVoltages.A.toFixed(1)}V, B=${regulatorTargetVoltages.B.toFixed(1)}V, C=${regulatorTargetVoltages.C.toFixed(1)}V`);
+        
+        // Retourner le nœud modifié avec les propriétés de régulation
         return {
           ...node,
-          voltageRegulator: {
-            ...regulator,
-            isActive: true,
-            adjustmentPerPhase: regulationResult.adjustmentPerPhase
-          }
+          tensionCible: newTargetVoltage,
+          isVoltageRegulator: true,
+          regulatorTargetVoltages: regulatorTargetVoltages
         };
       }
       return node;
