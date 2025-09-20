@@ -1064,30 +1064,45 @@ export class SimulationCalculator extends ElectricalCalculator {
       // Sinon reste en BYP (bypass)
     });
     
-    // Contraintes SRG2-230 : pas d'actions opposées simultanées
+    // Contraintes SRG2 révisées selon type de réseau
     if (networkType === '230V') {
+      // SRG2-230 : contrainte plus souple - éviter seulement les écarts extrêmes
       const hasIncrease = Object.values(adjustmentPerPhase).some(adj => adj > 0);
       const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
       
       if (hasIncrease && hasDecrease) {
-        // Priorité à la phase avec écart maximum
-        const deviations = {
-          A: Math.abs(voltagesPerPhase.A - V_nominal),
-          B: Math.abs(voltagesPerPhase.B - V_nominal), 
-          C: Math.abs(voltagesPerPhase.C - V_nominal)
-        };
+        // Calculer l'écart moyen pour déterminer la tendance générale
+        const avgAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
         
-        const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
-        const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
-        
-        // Annuler les autres ajustements
-        ['A', 'B', 'C'].forEach(phase => {
-          if (phase !== priorityPhase) {
-            adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
-            switchStates[phase as keyof typeof switchStates] = 'BYP';
-          }
-        });
+        // Si l'écart moyen est faible (< 4V), permettre la régulation individuelle
+        if (Math.abs(avgAdjustment) < 4) {
+          console.log(`📊 SRG2-230: Régulation individuelle autorisée (écart moyen: ${avgAdjustment.toFixed(1)}V)`);
+          // Garder tous les ajustements
+        } else {
+          // Sinon, priorité à la phase avec écart maximum
+          const deviations = {
+            A: Math.abs(voltagesPerPhase.A - V_nominal),
+            B: Math.abs(voltagesPerPhase.B - V_nominal), 
+            C: Math.abs(voltagesPerPhase.C - V_nominal)
+          };
+          
+          const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
+          const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
+          
+          console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
+          
+          // Annuler les autres ajustements
+          ['A', 'B', 'C'].forEach(phase => {
+            if (phase !== priorityPhase) {
+              adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
+              switchStates[phase as keyof typeof switchStates] = 'BYP';
+            }
+          });
+        }
       }
+    } else {
+      // SRG2-400 : régulation indépendante par phase (plus de flexibilité)
+      console.log(`📊 SRG2-400: Régulation indépendante par phase autorisée`);
     }
     
     const canRegulate = Object.values(adjustmentPerPhase).some(adj => adj !== 0);
