@@ -125,9 +125,8 @@ export const ForcedModePanel = () => {
       // Lancer la simulation forcée avec algorithme de convergence
       const result = await calculator.runForcedModeConvergence(
         currentProject,
-        { U1, U2, U3 },
-        localConfig.measurementNodeId,
-        sourceVoltage
+        'FORCÉ',
+        { U1, U2, U3 }
       );
       
       if (result.result) {
