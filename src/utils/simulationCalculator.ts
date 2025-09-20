@@ -747,71 +747,49 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Simule l'effet transformateur du SRG2 en modifiant la tension nominale du nœud
+   * Modifie la tension de référence du nœud régulateur pour simuler l'effet transformateur SRG2
    */
-  private applySRG2TransformerEffect(
+  private applySRG2VoltageReference(
     nodes: Node[],
     regulatorNodeId: string,
-    adjustmentPerPhase: { A: number; B: number; C: number },
-    networkType: '400V' | '230V'
+    adjustmentPerPhase: { A: number; B: number; C: number }
   ): Node[] {
     const modifiedNodes = JSON.parse(JSON.stringify(nodes));
     const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regulatorNodeId);
     
     if (nodeIndex >= 0) {
-      // Nettoyer les anciens équipements SRG2
+      // Le SRG2 agit comme un transformateur à prises variables
+      // On simule cet effet en ajustant une source de tension équivalente
+      
+      // Nettoyer les anciennes références SRG2
       if (modifiedNodes[nodeIndex].productions) {
         modifiedNodes[nodeIndex].productions = modifiedNodes[nodeIndex].productions.filter(
-          (p: any) => !p.id || !p.id.includes('srg2_effect')
-        );
-      }
-      if (modifiedNodes[nodeIndex].clients) {
-        modifiedNodes[nodeIndex].clients = modifiedNodes[nodeIndex].clients.filter(
-          (c: any) => !c.id || !c.id.includes('srg2_effect')
+          (p: any) => !p.id || !p.id.includes('srg2_voltage_ref')
         );
       }
 
-      // Calculer l'ajustement moyen pour déterminer l'effet global
+      // Calculer l'ajustement moyen pour déterminer l'effet global du transformateur
       const averageAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
       
-      // Le SRG2 modifie effectivement la tension de sortie
-      // Simuler cet effet en créant une source/charge équivalente
       if (Math.abs(averageAdjustment) > 0.5) { // Seuil minimal d'action
         
-        // Estimer la puissance équivalente nécessaire pour l'ajustement
-        // Formule approximative : P = (ΔV / V_nominal) * S_apparent_node
-        const nodePower = this.calculateNodeApparentPower(modifiedNodes[nodeIndex]);
-        const adjustmentRatio = Math.abs(averageAdjustment) / 230;
-        const equivalentPower_kVA = nodePower * adjustmentRatio * 2; // Facteur 2 pour l'effet transformateur
-        
-        if (averageAdjustment > 0) {
-          // Augmentation de tension → effet équivalent à une production
-          if (!modifiedNodes[nodeIndex].productions) {
-            modifiedNodes[nodeIndex].productions = [];
-          }
-          
-          modifiedNodes[nodeIndex].productions.push({
-            id: `srg2_effect_${regulatorNodeId}`,
-            label: `Effet SRG2 +${averageAdjustment.toFixed(0)}V`,
-            S_kVA: equivalentPower_kVA
-          });
-          
-          console.log(`📊 SRG2 boost effect: +${averageAdjustment.toFixed(1)}V simulated as ${equivalentPower_kVA.toFixed(1)}kVA production`);
-          
-        } else {
-          // Diminution de tension → effet équivalent à une charge
-          if (!modifiedNodes[nodeIndex].clients) {
-            modifiedNodes[nodeIndex].clients = [];
-          }
-          
-          modifiedNodes[nodeIndex].clients.push({
-            id: `srg2_effect_${regulatorNodeId}`,
-            label: `Effet SRG2 ${averageAdjustment.toFixed(0)}V`,
-            S_kVA: equivalentPower_kVA
-          });
-          
-          console.log(`📊 SRG2 buck effect: ${averageAdjustment.toFixed(1)}V simulated as ${equivalentPower_kVA.toFixed(1)}kVA load`);
+        // Le SRG2 modifie la tension de référence du nœud
+        // Simuler par une source de tension idéale (production fictive à tension forcée)
+        if (!modifiedNodes[nodeIndex].productions) {
+          modifiedNodes[nodeIndex].productions = [];
         }
+        
+        // Ajouter une "source de tension" qui représente l'effet transformateur
+        // Cette source maintient la tension du nœud au niveau souhaité
+        modifiedNodes[nodeIndex].productions.push({
+          id: `srg2_voltage_ref_${regulatorNodeId}`,
+          label: `SRG2 Tension Ref ${averageAdjustment > 0 ? '+' : ''}${averageAdjustment.toFixed(0)}V`,
+          S_kVA: 0.01, // Puissance minimale pour activation
+          voltageReference_V: 230 + averageAdjustment, // Tension de référence modifiée
+          isVoltageSource: true // Flag spécial pour le calculateur
+        });
+        
+        console.log(`📊 SRG2 voltage reference: ${(230 + averageAdjustment).toFixed(1)}V (${averageAdjustment > 0 ? '+' : ''}${averageAdjustment.toFixed(1)}V)`);
       }
     }
     
@@ -1097,26 +1075,20 @@ export class SimulationCalculator extends ElectricalCalculator {
     project: Project,
     scenario: CalculationScenario
   ): CalculationResult {
-    console.log('🔧 Starting SRG2 voltage regulation with realistic switching logic');
+    console.log('🔧 Starting SRG2 voltage regulation with network recalculation');
 
     const networkDetection = this.detectNetworkType(project);
-    
-    console.log(`📋 Network type detected: ${networkDetection.type} (confidence: ${networkDetection.confidence})`);
-    
-    if (networkDetection.confidence === 'low') {
-      console.warn(`⚠️ Network type detection has low confidence, assuming ${networkDetection.type}`);
-    }
-
     let result = JSON.parse(JSON.stringify(baseResult));
+    let currentNodes = JSON.parse(JSON.stringify(nodes));
     const warnings: string[] = [];
     const regulatorLog: any[] = [];
 
-    // Appliquer chaque régulateur séquentiellement
+    // Traiter chaque régulateur séquentiellement
     for (const regulator of regulators) {
       try {
         console.log(`🔧 Processing SRG2 regulator ${regulator.id} at node ${regulator.nodeId}`);
 
-        // 1. Récupérer la tension initiale du nœud
+        // 1. Récupérer la tension actuelle du nœud régulateur
         const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
         if (!nodeMetrics) {
           console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
@@ -1129,9 +1101,11 @@ export class SimulationCalculator extends ElectricalCalculator {
           C: nodeMetrics.voltagesPerPhase.C
         };
 
-        console.log(`📊 Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
+        console.log(`📊 DIAGNOSTIC SRG2 ${regulator.id}:`);
+        console.log(`  - Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
+        console.log(`  - Network type: ${networkDetection.type}`);
 
-        // 2. Appliquer la logique SRG2 réaliste
+        // 2. Appliquer la logique SRG2 pour déterminer les ajustements
         const regulationResult = this.applySRG2RegulationLogic(
           regulator,
           initialVoltages,
@@ -1140,62 +1114,22 @@ export class SimulationCalculator extends ElectricalCalculator {
 
         if (!regulationResult.canRegulate) {
           console.log(`📊 Regulator ${regulator.id}: all phases within normal range, no action needed`);
-          
-          // Log pour cohérence même sans régulation
-          const logEntry = {
-            id: regulator.id,
-            nodeId: regulator.nodeId,
-            targetVoltage_V: 230,
-            appliedPower_kVA: 0,
-            requestedPower_kVA: 0,
-            saturated: false,
-            alpha: 1,
-            direction: 'bypass' as const,
-            beforeVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
-            afterVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
-            warnings: [],
-            switchStates: regulationResult.switchStates,
-            adjustments: regulationResult.adjustmentPerPhase,
-            networkType: networkDetection.type
-          };
-          
-          regulatorLog.push(logEntry);
-          
-          // Stocker métadonnées
-          (regulator as any).appliedPower_kVA = 0;
-          (regulator as any).saturated = false;
-          (regulator as any).requestedPower_kVA = 0;
-          (regulator as any).beforeVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
-          (regulator as any).afterVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
-          
           continue;
         }
 
-        // 3. Calculer les nouvelles tensions après régulation
-        const afterVoltages = {
-          A: initialVoltages.A + regulationResult.adjustmentPerPhase.A,
-          B: initialVoltages.B + regulationResult.adjustmentPerPhase.B, 
-          C: initialVoltages.C + regulationResult.adjustmentPerPhase.C
-        };
+        console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
+        console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
 
-        console.log(`📊 SRG2 switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
-        console.log(`📊 Voltage adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
-        console.log(`📊 After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
-
-        // 4. CORRECTION MAJEURE : Simuler l'effet SRG2 par modification de la tension source du nœud
-        // Le SRG2 agit comme un transformateur qui modifie la tension effective du nœud
-
-        // Au lieu de modifier seulement les métriques, modifier la topologie temporaire
-        const modifiedNodes = this.applySRG2TransformerEffect(
-          nodes, 
-          regulator.nodeId, 
-          regulationResult.adjustmentPerPhase,
-          networkDetection.type
+        // 3. CLEF : Modifier la tension de référence du nœud régulateur
+        const modifiedNodes = this.applySRG2VoltageReference(
+          currentNodes,
+          regulator.nodeId,
+          regulationResult.adjustmentPerPhase
         );
 
-        console.log(`🔧 Recalculating network with SRG2 transformer effect`);
-
-        // Recalculer entièrement le réseau avec la nouvelle topologie
+        // 4. RECALCUL COMPLET du réseau avec la nouvelle tension de référence
+        console.log(`🔄 Recalculating entire network with modified voltage reference`);
+        
         const newResult = this.calculateScenario(
           modifiedNodes,
           cables,
@@ -1209,51 +1143,40 @@ export class SimulationCalculator extends ElectricalCalculator {
           project.manualPhaseDistribution
         );
 
-        // Mettre à jour le résultat pour la prochaine itération
-        result = newResult;
+        // 5. Vérifier l'effet sur le nœud régulateur
+        const afterNodeMetrics = newResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        const afterVoltages = afterNodeMetrics ? {
+          A: afterNodeMetrics.voltagesPerPhase.A,
+          B: afterNodeMetrics.voltagesPerPhase.B,
+          C: afterNodeMetrics.voltagesPerPhase.C
+        } : initialVoltages;
 
-        // 5. Calculer la puissance équivalente pour logging (information seulement)
-        const totalAdjustment = Math.abs(regulationResult.adjustmentPerPhase.A) + 
-                               Math.abs(regulationResult.adjustmentPerPhase.B) + 
-                               Math.abs(regulationResult.adjustmentPerPhase.C);
-        const equivalentPower_kVA = totalAdjustment * 0.1; // Approximation pour le log
+        console.log(`  - After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
 
-        // 6. Journal de régulateur
+        // 6. Logger l'effet et mettre à jour pour le régulateur suivant
         const logEntry = {
           id: regulator.id,
           nodeId: regulator.nodeId,
           targetVoltage_V: 230,
-          appliedPower_kVA: 0, // SRG2 ne consomme pas de puissance (transformateur)
-          requestedPower_kVA: equivalentPower_kVA,
-          saturated: false, // SRG2 n'a pas de limitation de puissance dans ce sens
-          alpha: 1,
-          direction: 'transformer' as const, // Type spécial pour SRG2
           beforeVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
           afterVoltages: [afterVoltages.A, afterVoltages.B, afterVoltages.C] as [number, number, number],
-          warnings: warnings.filter(w => w.includes(regulator.id)),
           switchStates: regulationResult.switchStates,
           adjustments: regulationResult.adjustmentPerPhase,
           networkType: networkDetection.type
         };
 
         regulatorLog.push(logEntry);
+        
+        // Mettre à jour pour la prochaine itération
+        result = newResult;
+        currentNodes = modifiedNodes;
 
-        // 7. Stocker métadonnées dans l'objet régulateur pour compatibilité
-        (regulator as any).appliedPower_kVA = 0;
-        (regulator as any).saturated = false;
-        (regulator as any).requestedPower_kVA = equivalentPower_kVA;
-        (regulator as any).beforeVoltages = [initialVoltages.A, initialVoltages.B, initialVoltages.C];
-        (regulator as any).afterVoltages = [afterVoltages.A, afterVoltages.B, afterVoltages.C];
-        (regulator as any).switchStates = regulationResult.switchStates;
-        (regulator as any).adjustments = regulationResult.adjustmentPerPhase;
-
-        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully with transformer logic`);
+        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully - network recalculated`);
 
       } catch (error) {
         const errorMsg = `Échec application régulateur SRG2 ${regulator.nodeId}: ${error}`;
         console.error(`❌ ${errorMsg}`);
         warnings.push(errorMsg);
-        continue;
       }
     }
 
@@ -1261,11 +1184,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     if (warnings.length > 0) {
       (result as any).warnings = [...((result as any).warnings || []), ...warnings];
     }
-
-    // Ajouter le journal détaillé des régulateurs
     (result as any).regulatorLog = regulatorLog;
 
-    console.log('✅ SRG2 voltage regulation completed with realistic transformer logic');
     return result;
   }
 }
