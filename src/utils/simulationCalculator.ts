@@ -747,6 +747,98 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Simule l'effet transformateur du SRG2 en modifiant la tension nominale du nœud
+   */
+  private applySRG2TransformerEffect(
+    nodes: Node[],
+    regulatorNodeId: string,
+    adjustmentPerPhase: { A: number; B: number; C: number },
+    networkType: '400V' | '230V'
+  ): Node[] {
+    const modifiedNodes = JSON.parse(JSON.stringify(nodes));
+    const nodeIndex = modifiedNodes.findIndex((n: Node) => n.id === regulatorNodeId);
+    
+    if (nodeIndex >= 0) {
+      // Nettoyer les anciens équipements SRG2
+      if (modifiedNodes[nodeIndex].productions) {
+        modifiedNodes[nodeIndex].productions = modifiedNodes[nodeIndex].productions.filter(
+          (p: any) => !p.id || !p.id.includes('srg2_effect')
+        );
+      }
+      if (modifiedNodes[nodeIndex].clients) {
+        modifiedNodes[nodeIndex].clients = modifiedNodes[nodeIndex].clients.filter(
+          (c: any) => !c.id || !c.id.includes('srg2_effect')
+        );
+      }
+
+      // Calculer l'ajustement moyen pour déterminer l'effet global
+      const averageAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
+      
+      // Le SRG2 modifie effectivement la tension de sortie
+      // Simuler cet effet en créant une source/charge équivalente
+      if (Math.abs(averageAdjustment) > 0.5) { // Seuil minimal d'action
+        
+        // Estimer la puissance équivalente nécessaire pour l'ajustement
+        // Formule approximative : P = (ΔV / V_nominal) * S_apparent_node
+        const nodePower = this.calculateNodeApparentPower(modifiedNodes[nodeIndex]);
+        const adjustmentRatio = Math.abs(averageAdjustment) / 230;
+        const equivalentPower_kVA = nodePower * adjustmentRatio * 2; // Facteur 2 pour l'effet transformateur
+        
+        if (averageAdjustment > 0) {
+          // Augmentation de tension → effet équivalent à une production
+          if (!modifiedNodes[nodeIndex].productions) {
+            modifiedNodes[nodeIndex].productions = [];
+          }
+          
+          modifiedNodes[nodeIndex].productions.push({
+            id: `srg2_effect_${regulatorNodeId}`,
+            label: `Effet SRG2 +${averageAdjustment.toFixed(0)}V`,
+            S_kVA: equivalentPower_kVA
+          });
+          
+          console.log(`📊 SRG2 boost effect: +${averageAdjustment.toFixed(1)}V simulated as ${equivalentPower_kVA.toFixed(1)}kVA production`);
+          
+        } else {
+          // Diminution de tension → effet équivalent à une charge
+          if (!modifiedNodes[nodeIndex].clients) {
+            modifiedNodes[nodeIndex].clients = [];
+          }
+          
+          modifiedNodes[nodeIndex].clients.push({
+            id: `srg2_effect_${regulatorNodeId}`,
+            label: `Effet SRG2 ${averageAdjustment.toFixed(0)}V`,
+            S_kVA: equivalentPower_kVA
+          });
+          
+          console.log(`📊 SRG2 buck effect: ${averageAdjustment.toFixed(1)}V simulated as ${equivalentPower_kVA.toFixed(1)}kVA load`);
+        }
+      }
+    }
+    
+    return modifiedNodes;
+  }
+
+  /**
+   * Calcule la puissance apparente approximative d'un nœud
+   */
+  private calculateNodeApparentPower(node: Node): number {
+    let totalPower = 0;
+    
+    // Additionner les charges
+    if (node.clients) {
+      totalPower += node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
+    }
+    
+    // Additionner les productions  
+    if (node.productions) {
+      totalPower += node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
+    }
+    
+    // Minimum 10kVA pour éviter les divisions par zéro
+    return Math.max(totalPower, 10);
+  }
+
+  /**
    * Calcule l'injection requise pour un régulateur polyphasé
    */
   private computeRegulatorRequirement(
@@ -1090,24 +1182,35 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`📊 Voltage adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
         console.log(`📊 After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
 
-        // 4. Appliquer directement les corrections de tension aux métriques (SRG2 = transformateur à prises)
-        const updatedNodeMetrics = result.nodeMetricsPerPhase?.map(node => {
-          if (node.nodeId === regulator.nodeId) {
-            return {
-              ...node,
-              voltagesPerPhase: {
-                A: afterVoltages.A,
-                B: afterVoltages.B, 
-                C: afterVoltages.C
-              }
-            };
-          }
-          return node;
-        });
+        // 4. CORRECTION MAJEURE : Simuler l'effet SRG2 par modification de la tension source du nœud
+        // Le SRG2 agit comme un transformateur qui modifie la tension effective du nœud
 
-        if (updatedNodeMetrics) {
-          result.nodeMetricsPerPhase = updatedNodeMetrics;
-        }
+        // Au lieu de modifier seulement les métriques, modifier la topologie temporaire
+        const modifiedNodes = this.applySRG2TransformerEffect(
+          nodes, 
+          regulator.nodeId, 
+          regulationResult.adjustmentPerPhase,
+          networkDetection.type
+        );
+
+        console.log(`🔧 Recalculating network with SRG2 transformer effect`);
+
+        // Recalculer entièrement le réseau avec la nouvelle topologie
+        const newResult = this.calculateScenario(
+          modifiedNodes,
+          cables,
+          cableTypes,
+          scenario,
+          project.foisonnementCharges,
+          project.foisonnementProductions,
+          project.transformerConfig,
+          project.loadModel,
+          project.desequilibrePourcent,
+          project.manualPhaseDistribution
+        );
+
+        // Mettre à jour le résultat pour la prochaine itération
+        result = newResult;
 
         // 5. Calculer la puissance équivalente pour logging (information seulement)
         const totalAdjustment = Math.abs(regulationResult.adjustmentPerPhase.A) + 
