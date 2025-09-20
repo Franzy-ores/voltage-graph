@@ -552,13 +552,14 @@ export class SimulationCalculator extends ElectricalCalculator {
       });
       
       const resultBeforeRegulators = JSON.parse(JSON.stringify(baseResult));
-      baseResult = this.applyVoltageRegulators(
+      baseResult = this.applyPolyphaseVoltageRegulators(
         project.nodes, 
         project.cables, 
+        project.cableTypes,
         activeRegulators, 
         baseResult,
-        project.cableTypes,
-        project
+        project,
+        scenario
       );
       
       console.log('📊 Result AFTER polyphase voltage regulation:', {
@@ -944,9 +945,9 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Détecte le type de réseau (400V ou 230V) selon la configuration du projet
+   * Détecte le type de réseau (400V ou 230V) selon la configuration
    */
-  private detectProjectNetworkType(project: Project): { type: '400V' | '230V'; confidence: 'high' | 'low' } {
+  private detectNetworkType(project: Project): { type: '400V' | '230V'; confidence: 'high' | 'low' } {
     // 1. Vérifier via transformerConfig
     if (project.transformerConfig?.nominalVoltage_V) {
       if (project.transformerConfig.nominalVoltage_V >= 380) {
@@ -1108,10 +1109,115 @@ export class SimulationCalculator extends ElectricalCalculator {
     return { adjustmentPerPhase, switchStates, canRegulate };
   }
 
-  // ==================== REMOVED: Old SRG2-specific methods ====================
-  // The following methods have been unified into ElectricalCalculator.applyVoltageRegulators():
-  // - getDownstreamNodeIds, isDescendantOf, applySRG2DirectVoltageEffect
-  // - buildParentMap, applySRG2RegulationLogic, applyPolyphaseVoltageRegulators
-  //
-  // This ensures full network recalculation with proper upstream propagation.
+  /**
+   * Applique les régulateurs de tension SRG2 avec logique réaliste
+   */
+  private applyPolyphaseVoltageRegulators(
+    nodes: Node[],
+    cables: Cable[], 
+    cableTypes: CableType[],
+    regulators: VoltageRegulator[],
+    baseResult: CalculationResult,
+    project: Project,
+    scenario: CalculationScenario
+  ): CalculationResult {
+    console.log('🔧 Starting SRG2 voltage regulation with direct voltage modification');
+
+    const networkDetection = this.detectNetworkType(project);
+    let result = JSON.parse(JSON.stringify(baseResult));
+    const warnings: string[] = [];
+    const regulatorLog: any[] = [];
+    
+    // Construire la carte parent-enfant pour identifier les nœuds en aval
+    const parentMap = this.buildParentMap(nodes, cables);
+
+    // Traiter chaque régulateur séquentiellement
+    for (const regulator of regulators) {
+      try {
+        console.log(`🔧 Processing SRG2 regulator ${regulator.id} at node ${regulator.nodeId}`);
+
+        // 1. Récupérer la tension actuelle du nœud régulateur
+        const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        if (!nodeMetrics) {
+          console.warn(`⚠️ No metrics found for regulator node ${regulator.nodeId}`);
+          continue;
+        }
+
+        const initialVoltages = {
+          A: nodeMetrics.voltagesPerPhase.A,
+          B: nodeMetrics.voltagesPerPhase.B,
+          C: nodeMetrics.voltagesPerPhase.C
+        };
+
+        console.log(`📊 DIAGNOSTIC SRG2 ${regulator.id}:`);
+        console.log(`  - Node: ${regulator.nodeId}`);
+        console.log(`  - Initial voltages: A=${initialVoltages.A.toFixed(1)}V, B=${initialVoltages.B.toFixed(1)}V, C=${initialVoltages.C.toFixed(1)}V`);
+        console.log(`  - Network type: ${networkDetection.type}`);
+
+        // 2. Appliquer la logique SRG2 pour déterminer les ajustements
+        const regulationResult = this.applySRG2RegulationLogic(
+          regulator,
+          initialVoltages,
+          networkDetection.type
+        );
+
+        if (!regulationResult.canRegulate) {
+          console.log(`📊 Regulator ${regulator.id}: all phases within normal range, no action needed`);
+          continue;
+        }
+
+        console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
+        console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+
+        // 3. CORRECTION : Application directe de l'effet transformateur sur les tensions
+        console.log(`🔧 Applying direct SRG2 transformer effect to calculated voltages`);
+        
+        result = this.applySRG2DirectVoltageEffect(
+          result,
+          regulator.nodeId,
+          regulationResult.adjustmentPerPhase,
+          parentMap
+        );
+
+        // 4. Vérifier l'effet sur le nœud régulateur
+        const afterNodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
+        const afterVoltages = afterNodeMetrics ? {
+          A: afterNodeMetrics.voltagesPerPhase.A,
+          B: afterNodeMetrics.voltagesPerPhase.B,
+          C: afterNodeMetrics.voltagesPerPhase.C
+        } : initialVoltages;
+
+        console.log(`  - After voltages: A=${afterVoltages.A.toFixed(1)}V, B=${afterVoltages.B.toFixed(1)}V, C=${afterVoltages.C.toFixed(1)}V`);
+
+        // 5. Logger l'effet
+        const logEntry = {
+          id: regulator.id,
+          nodeId: regulator.nodeId,
+          targetVoltage_V: 230,
+          beforeVoltages: [initialVoltages.A, initialVoltages.B, initialVoltages.C] as [number, number, number],
+          afterVoltages: [afterVoltages.A, afterVoltages.B, afterVoltages.C] as [number, number, number],
+          switchStates: regulationResult.switchStates,
+          adjustments: regulationResult.adjustmentPerPhase,
+          networkType: networkDetection.type
+        };
+
+        regulatorLog.push(logEntry);
+
+        console.log(`✅ SRG2 Regulator ${regulator.id} applied successfully - direct voltage modification`);
+
+      } catch (error) {
+        const errorMsg = `Échec application régulateur SRG2 ${regulator.nodeId}: ${error}`;
+        console.error(`❌ ${errorMsg}`);
+        warnings.push(errorMsg);
+      }
+    }
+
+    // Ajouter warnings et log au résultat
+    if (warnings.length > 0) {
+      (result as any).warnings = [...((result as any).warnings || []), ...warnings];
+    }
+    (result as any).regulatorLog = regulatorLog;
+
+    return result;
+  }
 }
