@@ -63,8 +63,15 @@ export class ElectricalCalculator {
       return transformerConfig.nominalVoltage_V;
     }
     
-    // Calcul du rapport de transformation
+    // Calcul du rapport de transformation avec validation
     const transformationRatio = btNominalVoltage / htNominalVoltage;
+    
+    // Validation et cohérence du rapport
+    if (transformationRatio < 0.01 || transformationRatio > 1) {
+      console.warn(`⚠️ Rapport transformation incohérent: ${transformationRatio}`);
+      return transformerConfig.nominalVoltage_V;
+    }
+    
     const realSourceVoltage = htMeasuredVoltage * transformationRatio;
     
     console.log(`📊 Calcul tension source réaliste:`);
@@ -869,22 +876,41 @@ export class ElectricalCalculator {
     adjustmentPerPhase: { A: number; B: number; C: number };
     switchStates: { A: string; B: string; C: string };
     canRegulate: boolean;
+    reason?: string;
   } {
     const V_nominal = 230; // Toujours 230V pour SRG2
     
-    // Seuils SRG2 selon documentation
+    // Validation conditions préalables SRG2
+    const maxVoltage = Math.max(voltagesPerPhase.A, voltagesPerPhase.B, voltagesPerPhase.C);
+    const minVoltage = Math.min(voltagesPerPhase.A, voltagesPerPhase.B, voltagesPerPhase.C);
+
+    // Condition critique : si max > 246V, SRG2 ne peut pas résoudre
+    if (maxVoltage > 246) {
+      console.warn(`⚠️ SRG2 limitation: tension max ${maxVoltage.toFixed(1)}V > 246V`);
+      return { 
+        adjustmentPerPhase: { A: 0, B: 0, C: 0 },
+        switchStates: { A: 'BYP', B: 'BYP', C: 'BYP' },
+        canRegulate: false, 
+        reason: 'voltage_too_high' 
+      };
+    }
+
+    // Condition réseau : vérifier position appropriée
+    if (minVoltage < 214) {
+      console.log(`🔧 SRG2: Boost requis, min voltage ${minVoltage.toFixed(1)}V`);
+    }
+    
+    // Seuils SRG2 selon documentation - unifiés pour tous types
     const thresholds = networkType === '400V' ? {
-      // SRG2-400 : ±16V (7%) phase-neutre
-      UL: 246,  // LO2 - abaissement complet
-      LO1: 238, // (230 + 246) / 2 
+      UL: 246,  // LO2 : abaissement complet 
+      LO1: 238, // (230 + 246) / 2
       BO1: 222, // (230 + 214) / 2
-      UB: 214   // BO2 - augmentation complète
+      UB: 214   // BO2 : augmentation complète
     } : {
-      // SRG2-230 : ±14V (6%) ligne-ligne  
-      UL: 244,  // LO2
-      LO1: 237, // (230 + 244) / 2
-      BO1: 223, // (230 + 216) / 2  
-      UB: 216   // BO2
+      UL: 246,  // LO2 : même valeur que 400V selon doc
+      LO1: 238, // (230 + 246) / 2  
+      BO1: 222, // (230 + 214) / 2
+      UB: 214   // BO2 : même valeur que 400V
     };
     
     const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
@@ -922,13 +948,19 @@ export class ElectricalCalculator {
       const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
       
       if (hasIncrease && hasDecrease) {
-        // Calculer l'écart moyen pour déterminer la tendance générale
-        const avgAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
+        const maxDeviation = Math.max(
+          Math.abs(voltagesPerPhase.A - 230),
+          Math.abs(voltagesPerPhase.B - 230), 
+          Math.abs(voltagesPerPhase.C - 230)
+        );
         
-        // Si l'écart moyen est faible (< 4V), permettre la régulation individuelle
-        if (Math.abs(avgAdjustment) < 4) {
-          console.log(`📊 SRG2-230: Régulation individuelle autorisée (écart moyen: ${avgAdjustment.toFixed(1)}V)`);
-          // Garder tous les ajustements
+        // Si écart > 8V, permettre régulation mixte limitée
+        if (maxDeviation > 8) {
+          console.log(`🔧 SRG2-230: Régulation mixte autorisée (écart max: ${maxDeviation.toFixed(1)}V)`);
+          // Garder ajustements mais limiter à ±50%
+          Object.keys(adjustmentPerPhase).forEach(phase => {
+            adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] *= 0.5;
+          });
         } else {
           // Sinon, priorité à la phase avec écart maximum
           const deviations = {
