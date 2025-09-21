@@ -2187,10 +2187,11 @@ export class ElectricalCalculator {
     
     for (const regNode of srg2RegulatorNodes) {
       if (!this.srg2States.has(regNode.id)) {
-        const initialVoltage = this.getInitialNodeVoltage(regNode.id);
-        const initialState = this.initializeSRG2State(regNode.id, initialVoltage);
+        const networkType = (transformerConfig?.nominalVoltage_V || 230) >= 400 ? '400V' : '230V';
+        const initialVoltage = this.getInitialNodeVoltage(regNode.id, networkType);
+        const initialState = this.initializeSRG2State(regNode.id, initialVoltage, networkType);
         this.srg2States.set(regNode.id, { A: initialState, B: initialState, C: initialState });
-        console.log(`🔧 SRG2 ${regNode.id} initialized to state: ${initialState} (voltage: ${initialVoltage}V)`);
+        console.log(`🔧 SRG2 ${regNode.id} initialized to state: ${initialState} (voltage: ${initialVoltage}V, network: ${networkType})`);
       }
     }
 
@@ -2445,12 +2446,18 @@ export class ElectricalCalculator {
     networkType: '400V' | '230V'
   ): { outputVoltage: Complex; switchState: string } {
     
-    // 1. SEUILS SRG2 selon documentation
-    const thresholds = {
-      UL: 246,   // LO2 - identique pour 400V et 230V
-      LO1: 238,  // (230 + 246) / 2
-      BO1: 222,  // (230 + 214) / 2  
-      UB: 214    // BO2 - identique pour 400V et 230V
+    // 1. SEUILS SRG2 selon documentation - adaptés au réseau
+    const baseVoltage = networkType === '400V' ? 400 : 230;
+    const thresholds = networkType === '400V' ? {
+      UL: 416,   // +4% de 400V  
+      LO1: 408,  // +2% de 400V
+      BO1: 392,  // -2% de 400V
+      UB: 384    // -4% de 400V
+    } : {
+      UL: 246,   // +7% de 230V
+      LO1: 238,  // +3.5% de 230V
+      BO1: 222,  // -3.5% de 230V  
+      UB: 214    // -7% de 230V
     };
     
     // 2. HYSTÉRÉSIS 2V selon documentation
@@ -2481,15 +2488,19 @@ export class ElectricalCalculator {
         break;
     }
     
-    // 4. CALCUL TENSION SECONDAIRE selon échelon
-    const maxAdjustment = networkType === '400V' ? 16 : 14;
+    // 4. CALCUL TENSION SECONDAIRE selon échelon - LOGIQUE CORRECTE
+    // Le SRG2 ajuste vers la tension cible (230V ou 400V), pas depuis
+    const targetVoltage = baseVoltage;
+    const currentDeviation = upstreamVoltage - targetVoltage;
     let voltageAdjustment = 0;
     
+    // Ajustement progressif vers la cible - CORRECTION PHYSIQUE
     switch (newState) {
-      case 'LO2': voltageAdjustment = -maxAdjustment; break;
-      case 'LO1': voltageAdjustment = -maxAdjustment/2; break;  
-      case 'BO1': voltageAdjustment = maxAdjustment/2; break;
-      case 'BO2': voltageAdjustment = maxAdjustment; break;
+      case 'LO2': voltageAdjustment = -currentDeviation * 0.8; break; // Corriger 80% de l'écart
+      case 'LO1': voltageAdjustment = -currentDeviation * 0.5; break; // Corriger 50% de l'écart
+      case 'BO1': voltageAdjustment = -currentDeviation * 0.5; break; // Corriger 50% de l'écart
+      case 'BO2': voltageAdjustment = -currentDeviation * 0.8; break; // Corriger 80% de l'écart
+      case 'BYP': voltageAdjustment = 0; break; // Pas d'ajustement
     }
     
     // 5. MODÉLISATION AUTOTRANSFORMATEUR
@@ -2515,21 +2526,28 @@ export class ElectricalCalculator {
   /**
    * Initialise l'état SRG2 basé sur la tension d'alimentation réelle
    */
-  private initializeSRG2State(nodeId: string, upstreamVoltage: number): string {
+  private initializeSRG2State(nodeId: string, upstreamVoltage: number, networkType: '400V' | '230V' = '230V'): string {
+    // Seuils adaptés au type de réseau
+    const thresholds = networkType === '400V' ? {
+      UL: 416, LO1: 408, BO1: 392, UB: 384
+    } : {
+      UL: 246, LO1: 238, BO1: 222, UB: 214
+    };
+    
     // Déterminer l'état initial basé sur la tension d'alimentation
-    if (upstreamVoltage >= 246) return 'LO2';
-    if (upstreamVoltage >= 238) return 'LO1';  
-    if (upstreamVoltage <= 214) return 'BO2';
-    if (upstreamVoltage <= 222) return 'BO1';
+    if (upstreamVoltage >= thresholds.UL) return 'LO2';
+    if (upstreamVoltage >= thresholds.LO1) return 'LO1';  
+    if (upstreamVoltage <= thresholds.UB) return 'BO2';
+    if (upstreamVoltage <= thresholds.BO1) return 'BO1';
     return 'BYP';
   }
 
   /**
    * Obtient la tension initiale d'un nœud pour l'initialisation SRG2
    */
-  private getInitialNodeVoltage(nodeId: string): number {
-    // Retourne une estimation basique - sera affinée par le calcul
-    return 230; // Valeur par défaut
+  private getInitialNodeVoltage(nodeId: string, networkType: '400V' | '230V' = '230V'): number {
+    // Retourne une estimation basée sur le type de réseau
+    return networkType === '400V' ? 400 : 230;
   }
 
   // Méthodes utilitaires pour validation et gestion d'erreurs
