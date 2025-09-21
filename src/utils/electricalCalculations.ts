@@ -616,6 +616,72 @@ export class ElectricalCalculator {
   }
 
   /**
+   * Calcule la charge totale en aval d'un nœud pour validation SRG2
+   */
+  private calculateDownstreamLoad(nodeId: string, nodes: Node[], cables: Cable[], foisonnement: number): number {
+    const visited = new Set<string>();
+    const queue = [nodeId];
+    let totalLoad = 0;
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+      
+      const node = nodes.find(n => n.id === currentId);
+      if (node) {
+        const nodeLoad = (node.clients || []).reduce((sum, client) => sum + client.S_kVA, 0);
+        totalLoad += nodeLoad * (foisonnement / 100);
+      }
+      
+      const downstreamCables = cables.filter(cable =>
+        (cable.nodeAId === currentId || cable.nodeBId === currentId) && 
+        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
+      );
+      
+      downstreamCables.forEach(cable => {
+        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
+        if (!visited.has(nextNodeId)) queue.push(nextNodeId);
+      });
+    }
+    
+    return totalLoad;
+  }
+
+  /**
+   * Calcule la production totale en aval d'un nœud pour validation SRG2
+   */
+  private calculateDownstreamProduction(nodeId: string, nodes: Node[], cables: Cable[], foisonnement: number): number {
+    const visited = new Set<string>();
+    const queue = [nodeId];
+    let totalProduction = 0;
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+      
+      const node = nodes.find(n => n.id === currentId);
+      if (node) {
+        const nodeProduction = (node.productions || []).reduce((sum, prod) => sum + prod.S_kVA, 0);
+        totalProduction += nodeProduction * (foisonnement / 100);
+      }
+      
+      const downstreamCables = cables.filter(cable =>
+        (cable.nodeAId === currentId || cable.nodeBId === currentId) && 
+        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
+      );
+      
+      downstreamCables.forEach(cable => {
+        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
+        if (!visited.has(nextNodeId)) queue.push(nextNodeId);
+      });
+    }
+    
+    return totalProduction;
+  }
+
+  /**
    * SYSTÈME UNIFIÉ : Applique tous les régulateurs de tension (SRG2 et classiques) avec recalcul complet du réseau
    * Remplace l'ancienne approche de modification directe des tensions par un système de tension de référence
    * @param nodes Liste des nœuds du réseau
@@ -897,48 +963,6 @@ export class ElectricalCalculator {
   // Méthode supprimée - utiliser les méthodes unifiées dans SimulationCalculator
 
   /**
-   * Calculate total downstream load from a given node
-   * @param nodeId Starting node ID
-   * @param nodes List of network nodes
-   * @param cables List of network cables
-   * @param foisonnementCharges Load diversity factor
-   * @returns Total downstream load in kVA
-   */
-  private calculateDownstreamLoad(nodeId: string, nodes: Node[], cables: Cable[], foisonnementCharges: number = 100): number {
-    const visited = new Set<string>();
-    const stack = [nodeId];
-    let totalLoad = 0;
-
-    while (stack.length > 0) {
-      const currentNodeId = stack.pop()!;
-      if (visited.has(currentNodeId)) continue;
-      visited.add(currentNodeId);
-
-      const currentNode = nodes.find(n => n.id === currentNodeId);
-      if (currentNode) {
-        // Add loads from this node
-        const nodeLoad = currentNode.clients.reduce((sum, client) => sum + client.S_kVA, 0);
-        totalLoad += nodeLoad;
-      }
-
-      // Find downstream nodes
-      const downstreamCables = cables.filter(cable => 
-        (cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId) && 
-        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
-      );
-
-      downstreamCables.forEach(cable => {
-        const nextNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
-        if (!visited.has(nextNodeId)) {
-          stack.push(nextNodeId);
-        }
-      });
-    }
-
-    return totalLoad * (foisonnementCharges / 100);
-  }
-
-  /**
    * Fonction de calcul EQUI8 selon les formules exactes du constructeur
    * @param Uinit Tensions initiales [ph1, ph2, ph3] en V
    * @param Zph Impédance de phase en Ω
@@ -1208,7 +1232,8 @@ export class ElectricalCalculator {
     transformerConfig?: TransformerConfig,
     loadModel: LoadModel = 'polyphase_equilibre',
     desequilibrePourcent: number = 0,
-    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} },
+    skipSRG2Integration: boolean = false
   ): CalculationResult {
     // Validation robuste des entrées
     this.validateInputs(nodes, cables, cableTypes, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
@@ -2193,6 +2218,118 @@ export class ElectricalCalculator {
       cablePowerFlows,
       virtualBusbar
     };
+
+    // ---- INTÉGRATION SRG2 AVEC VALIDATION TECHNIQUE COMPLÈTE ----
+    if (!skipSRG2Integration) {
+      const srg2RegulatorNodes = nodes.filter(n => n.isVoltageRegulator);
+
+      if (srg2RegulatorNodes.length > 0) {
+        console.log(`🔧 Found ${srg2RegulatorNodes.length} nodes with SRG2 regulators`);
+        
+        let hasValidRegulators = false;
+        const modifiedNodes = JSON.parse(JSON.stringify(nodes)) as Node[];
+        
+        for (const regNode of srg2RegulatorNodes) {
+          const nodeIndex = modifiedNodes.findIndex(n => n.id === regNode.id);
+          if (nodeIndex === -1) continue;
+          
+          // VALIDATION STRICTE CONDITIONS SRG2
+          const downstreamLoad = this.calculateDownstreamLoad(regNode.id, nodes, cables, foisonnementCharges);
+          const downstreamProduction = this.calculateDownstreamProduction(regNode.id, nodes, cables, foisonnementProductions);
+          
+          if (downstreamLoad > 100) {
+            console.warn(`⚠️ SRG2 blocked at node ${regNode.id}: load ${downstreamLoad.toFixed(1)}kVA > 100kVA limit`);
+            continue;
+          }
+          
+          if (downstreamProduction > 85) {
+            console.warn(`⚠️ SRG2 blocked at node ${regNode.id}: production ${downstreamProduction.toFixed(1)}kVA > 85kVA limit`);
+            continue;
+          }
+          
+          // Récupérer tensions selon mode de calcul
+          let currentVoltages: { A: number; B: number; C: number };
+          
+          if ((loadModel as string) === 'monophase_reparti' && result.nodeMetricsPerPhase) {
+            const nodeMetrics = result.nodeMetricsPerPhase.find(n => n.nodeId === regNode.id);
+            if (!nodeMetrics) continue;
+            currentVoltages = nodeMetrics.voltagesPerPhase;
+          } else {
+            const nodeMetrics = result.nodeMetrics?.find(n => n.nodeId === regNode.id);
+            if (!nodeMetrics) continue;
+            
+            const scaleLine = this.getDisplayLineScale(regNode.connectionType);
+            const lineVoltage = nodeMetrics.V_phase_V * scaleLine;
+            currentVoltages = { A: lineVoltage, B: lineVoltage, C: lineVoltage };
+          }
+          
+          // Type SRG2 selon réseau
+          const networkVoltage = transformerConfig?.nominalVoltage_V || 400;
+          const networkType = networkVoltage >= 380 ? '400V' : '230V';
+          
+          console.log(`🔍 SRG2-${networkType} at node ${regNode.id}: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
+          
+          // Condition préalable : max tension < 246V
+          const maxVoltage = Math.max(currentVoltages.A, currentVoltages.B, currentVoltages.C);
+          if (maxVoltage > 246) {
+            console.warn(`⚠️ SRG2 blocked: max voltage ${maxVoltage.toFixed(1)}V > 246V - cannot resolve issue`);
+            continue;
+          }
+          
+          // Appliquer logique SRG2 technique
+          const virtualRegulator = {
+            id: `srg2_${regNode.id}`,
+            nodeId: regNode.id,
+            type: (networkType === '400V' ? '400V_44kVA' : '230V_77kVA') as any,
+            targetVoltage_V: 230,
+            maxPower_kVA: 77,
+            enabled: true
+          };
+          
+          const regulationResult = this.applySRG2RegulationLogic(
+            virtualRegulator,
+            currentVoltages,
+            networkType
+          );
+          
+          if (regulationResult.canRegulate) {
+            const newTargetVoltages = {
+              A: currentVoltages.A + regulationResult.adjustmentPerPhase.A,
+              B: currentVoltages.B + regulationResult.adjustmentPerPhase.B,
+              C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
+            };
+            
+            // Modifier nœud pour recalcul amont/aval
+            modifiedNodes[nodeIndex].isVoltageRegulator = true;
+            modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
+            modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+            
+            hasValidRegulators = true;
+            
+            console.log(`✅ SRG2-${networkType} activated: ${regulationResult.switchStates.A}/${regulationResult.switchStates.B}/${regulationResult.switchStates.C}`);
+            console.log(`   Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+          } else {
+            console.log(`✓ SRG2-${networkType}: voltages within normal range`);
+          }
+        }
+        
+        // RECALCUL COMPLET SANS RÉCURSION
+        if (hasValidRegulators) {
+          console.log(`🔄 Recalculating network with SRG2 regulations (${loadModel} mode)`);
+          
+          const srg2Result = this.calculateScenario(
+            modifiedNodes, cables, cableTypes, scenario,
+            foisonnementCharges, foisonnementProductions,
+            transformerConfig, loadModel, desequilibrePourcent,
+            manualPhaseDistribution,
+            true // skipSRG2Integration = true (évite récursion)
+          );
+          
+          console.log('✅ SRG2 voltage regulation completed with network propagation');
+          return srg2Result;
+        }
+      }
+    }
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
     return result;
