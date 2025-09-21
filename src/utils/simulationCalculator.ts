@@ -42,13 +42,11 @@ export class SimulationCalculator extends ElectricalCalculator {
     );
 
     return {
+      ...simulationResult,
+      isSimulation: true,
       baselineResult: baseResult,
-      simulationResult: simulationResult,
-      simulationEquipment,
-      improvements: {
-        globalLossesReduction_kW: Math.max(0, baseResult.globalLosses_kW - simulationResult.globalLosses_kW),
-        maxVoltageDropImprovement_percent: Math.max(0, baseResult.maxVoltageDropPercent - simulationResult.maxVoltageDropPercent)
-      }
+      equipment: simulationEquipment,
+      convergenceStatus: 'converged' as const
     };
   }
 
@@ -145,13 +143,24 @@ export class SimulationCalculator extends ElectricalCalculator {
           const improvementPercent = ((currentType.R12_ohm_per_km - recommendedType.R12_ohm_per_km) / currentType.R12_ohm_per_km) * 100;
 
           upgrades.push({
-            cableId: cable.id,
-            currentTypeId: cable.typeId,
-            recommendedTypeId: recommendedType.id,
-            currentVoltageDropPercent,
-            projectedVoltageDropPercent: currentVoltageDropPercent * (recommendedType.R12_ohm_per_km / currentType.R12_ohm_per_km),
-            improvementPercent,
-            reason: "voltage_drop" as const
+            originalCableId: cable.id,
+            newCableTypeId: recommendedType.id,
+            reason: "voltage_drop" as const,
+            before: {
+              voltageDropPercent: currentVoltageDropPercent,
+              current_A: 0, // À calculer si nécessaire
+              losses_kW: 0
+            },
+            after: {
+              voltageDropPercent: currentVoltageDropPercent * (recommendedType.R12_ohm_per_km / currentType.R12_ohm_per_km),
+              current_A: 0,
+              losses_kW: 0
+            },
+            improvement: {
+              voltageDropReduction: improvementPercent,
+              lossReduction_kW: 0,
+              lossReductionPercent: improvementPercent
+            }
           });
         }
       }
