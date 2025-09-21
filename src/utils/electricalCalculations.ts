@@ -13,6 +13,12 @@ export class ElectricalCalculator {
   private static readonly MIN_VOLTAGE_SAFETY = 1e-6;
   private static readonly SMALL_IMPEDANCE_SAFETY = 1e-12;
 
+  // Propriétés SRG2 pour gestion d'état et convergence
+  private static readonly SRG2_MAX_ITERATIONS = 3;
+  private srg2IterationCount = 0;
+  private previousVoltages = new Map<string, number>();
+  private srg2States = new Map<string, { A: string; B: string; C: string }>();
+
   constructor(cosPhi: number = 0.95) {
     this.validateCosPhi(cosPhi);
     this.cosPhi = cosPhi;
@@ -1585,36 +1591,29 @@ export class ElectricalCalculator {
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // NOUVEAU: Vérifier si le nœud v est un régulateur de tension
+              // NOUVELLE LOGIQUE DE RÉGULATION PROGRESSIVE SRG2
               const nodeV = nodeById.get(v);
               if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-                // Pour les régulateurs SRG2 en mode per-phase, utiliser la tension cible de la phase spécifique
                 const { regulatorTargetVoltages } = nodeV;
                 
-                // Déterminer quelle tension cible utiliser selon la phase (angle)
-                let targetVoltage: number;
-                if (Math.abs(angleDeg - 0) < 1) {
-                  // Phase A (0°)
-                  targetVoltage = regulatorTargetVoltages.A;
-                } else if (Math.abs(angleDeg - 120) < 1 || Math.abs(angleDeg - (-240)) < 1) {
-                  // Phase B (120° or -240°)
-                  targetVoltage = regulatorTargetVoltages.B;
-                } else if (Math.abs(angleDeg - 240) < 1 || Math.abs(angleDeg - (-120)) < 1) {
-                  // Phase C (240° or -120°)
-                  targetVoltage = regulatorTargetVoltages.C;
-                } else {
-                  // Fallback: utiliser la moyenne
-                  targetVoltage = (regulatorTargetVoltages.A + regulatorTargetVoltages.B + regulatorTargetVoltages.C) / 3;
-                }
+                // Identifier la phase actuelle
+                const currentPhase = this.getPhaseFromAngle(angleDeg);
+                const targetVoltage = regulatorTargetVoltages[currentPhase];
+                const currentVoltage = abs(Vv);
                 
-                // Convertir en tension de phase
-                const { isThreePhase } = this.getVoltage(nodeV.connectionType);
-                const Vv_target_phase = isThreePhase ? targetVoltage / Math.sqrt(3) : targetVoltage;
+                // Limites SRG2 par itération
+                const networkType = this.detectNetworkType({ 
+                  transformerConfig: transformerConfig || { nominalVoltage_V: 400, nominalPower_kVA: 100, shortCircuitVoltage_percent: 4 }
+                } as Project);
+                const maxAdjustment = networkType.type === '400V' ? 16 : 14;
                 
-                // Forcer la tension du nœud régulateur avec l'angle de phase approprié
-                Vv = fromPolar(Vv_target_phase, this.deg2rad(angleDeg));
+                const voltageError = targetVoltage - currentVoltage;
+                const adjustment = Math.max(-maxAdjustment, Math.min(maxAdjustment, voltageError * 0.5)); // 50% par itération
                 
-                console.log(`🔧 Forcing voltage at regulator node ${v} (phase ${angleDeg}°): ${Vv_target_phase.toFixed(1)}V phase`);
+                const regulatedVoltage = Math.max(180, Math.min(250, currentVoltage + adjustment)); // Bornes sécurité
+                Vv = fromPolar(regulatedVoltage, this.deg2rad(angleDeg));
+                
+                console.log(`🔧 SRG2 gradual regulation: ${currentVoltage.toFixed(1)}V -> ${regulatedVoltage.toFixed(1)}V (adj: ${adjustment.toFixed(1)}V, phase: ${currentPhase})`);
               }
               
               V_node_phase.set(v, Vv);
@@ -1941,23 +1940,32 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // NOUVEAU: Vérifier si le nœud v est un régulateur de tension
+          // NOUVELLE LOGIQUE DE RÉGULATION PROGRESSIVE SRG2
           const nodeV = nodeById.get(v);
           if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-            // Pour les régulateurs SRG2, utiliser la tension cible appropriée
             const { regulatorTargetVoltages } = nodeV;
             
             // En mode équilibré, utiliser la moyenne des tensions cibles par phase
             const avgTargetVoltage = (regulatorTargetVoltages.A + regulatorTargetVoltages.B + regulatorTargetVoltages.C) / 3;
+            const currentVoltage = abs(Vv);
+            
+            // Limites SRG2 par itération
+            const networkType = this.detectNetworkType({ 
+              transformerConfig: transformerConfig || { nominalVoltage_V: 400, nominalPower_kVA: 100, shortCircuitVoltage_percent: 4 }
+            } as Project);
+            const maxAdjustment = networkType.type === '400V' ? 16 : 14;
+            
+            const voltageError = avgTargetVoltage - currentVoltage;
+            const adjustment = Math.max(-maxAdjustment, Math.min(maxAdjustment, voltageError * 0.5)); // 50% par itération
             
             // Convertir en tension de phase pour le calcul
             const { isThreePhase } = this.getVoltage(nodeV.connectionType);
-            const Vv_target_phase = isThreePhase ? avgTargetVoltage / Math.sqrt(3) : avgTargetVoltage;
+            const regulatedVoltage = Math.max(180, Math.min(250, currentVoltage + adjustment)); // Bornes sécurité
+            const Vv_regulated_phase = isThreePhase ? regulatedVoltage / Math.sqrt(3) : regulatedVoltage;
             
-            // Forcer la tension du nœud régulateur
-            Vv = C(Vv_target_phase, 0);
+            Vv = C(Vv_regulated_phase, 0);
             
-            console.log(`🔧 Forcing voltage at regulator node ${v}: ${Vv_target_phase.toFixed(1)}V phase (${avgTargetVoltage.toFixed(1)}V line)`);
+            console.log(`🔧 SRG2 gradual regulation: ${currentVoltage.toFixed(1)}V -> ${regulatedVoltage.toFixed(1)}V (adj: ${adjustment.toFixed(1)}V, target: ${avgTargetVoltage.toFixed(1)}V)`);
           }
           
           V_node.set(v, Vv);
@@ -2202,6 +2210,11 @@ export class ElectricalCalculator {
       }
     }
 
+    // RÉINITIALISATION des états SRG2 au début de chaque calcul
+    this.srg2IterationCount = 0;
+    this.previousVoltages.clear();
+    this.srg2States.clear();
+
     console.log('🔄 Creating result object...');
     const result: CalculationResult = {
       scenario,
@@ -2238,53 +2251,40 @@ export class ElectricalCalculator {
           const downstreamProduction = this.calculateDownstreamProduction(regNode.id, nodes, cables, foisonnementProductions);
           
           if (downstreamLoad > 100) {
-            console.warn(`⚠️ SRG2 blocked at node ${regNode.id}: load ${downstreamLoad.toFixed(1)}kVA > 100kVA limit`);
+            console.warn(`⚠️ SRG2 ${regNode.id}: Load ${downstreamLoad.toFixed(1)}kVA > 100kVA limit - SKIPPED`);
             continue;
           }
           
           if (downstreamProduction > 85) {
-            console.warn(`⚠️ SRG2 blocked at node ${regNode.id}: production ${downstreamProduction.toFixed(1)}kVA > 85kVA limit`);
+            console.warn(`⚠️ SRG2 ${regNode.id}: Production ${downstreamProduction.toFixed(1)}kVA > 85kVA limit - SKIPPED`);
             continue;
           }
           
-          // Récupérer tensions selon mode de calcul
-          let currentVoltages: { A: number; B: number; C: number };
-          
-          if ((loadModel as string) === 'monophase_reparti' && result.nodeMetricsPerPhase) {
-            const nodeMetrics = result.nodeMetricsPerPhase.find(n => n.nodeId === regNode.id);
-            if (!nodeMetrics) continue;
-            currentVoltages = nodeMetrics.voltagesPerPhase;
-          } else {
-            const nodeMetrics = result.nodeMetrics?.find(n => n.nodeId === regNode.id);
-            if (!nodeMetrics) continue;
-            
-            const scaleLine = this.getDisplayLineScale(regNode.connectionType);
-            const lineVoltage = nodeMetrics.V_phase_V * scaleLine;
-            currentVoltages = { A: lineVoltage, B: lineVoltage, C: lineVoltage };
-          }
-          
-          // Type SRG2 selon réseau
-          const networkVoltage = transformerConfig?.nominalVoltage_V || 400;
-          const networkType = networkVoltage >= 380 ? '400V' : '230V';
-          
-          console.log(`🔍 SRG2-${networkType} at node ${regNode.id}: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
-          
-          // Condition préalable : max tension < 246V
-          const maxVoltage = Math.max(currentVoltages.A, currentVoltages.B, currentVoltages.C);
-          if (maxVoltage > 246) {
-            console.warn(`⚠️ SRG2 blocked: max voltage ${maxVoltage.toFixed(1)}V > 246V - cannot resolve issue`);
-            continue;
-          }
-          
-          // Appliquer logique SRG2 technique
+          // Validation tension maximale AVANT régulation
           const virtualRegulator = {
             id: `srg2_${regNode.id}`,
             nodeId: regNode.id,
-            type: (networkType === '400V' ? '400V_44kVA' : '230V_77kVA') as any,
+            type: 'SRG2' as any,
             targetVoltage_V: 230,
             maxPower_kVA: 77,
             enabled: true
           };
+          
+          const voltageData = this.getCurrentNodeVoltages(virtualRegulator, result);
+          const maxVoltage = Math.max(voltageData.A, voltageData.B, voltageData.C);
+          if (maxVoltage > 246) {
+            console.warn(`⚠️ SRG2 ${regNode.id}: Max voltage ${maxVoltage.toFixed(1)}V > 246V - Cannot regulate, SKIPPED`);
+            continue;
+          }
+          
+          // Récupérer tensions selon mode de calcul
+          const currentVoltages = this.getCurrentNodeVoltages(virtualRegulator, result);
+          
+          console.log(`🔧 SRG2 assessment for node ${regNode.id}:`);
+          console.log(`  - Current voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
+          
+          // Détection réseau local
+          const networkType = this.detectNetworkType({ transformerConfig } as Project).type;
           
           const regulationResult = this.applySRG2RegulationLogic(
             virtualRegulator,
@@ -2313,9 +2313,29 @@ export class ElectricalCalculator {
           }
         }
         
-        // RECALCUL COMPLET SANS RÉCURSION
-        if (hasValidRegulators) {
-          console.log(`🔄 Recalculating network with SRG2 regulations (${loadModel} mode)`);
+        // RECALCUL AVEC PROTECTION RÉCURSION ET CONVERGENCE
+        if (hasValidRegulators && this.srg2IterationCount < ElectricalCalculator.SRG2_MAX_ITERATIONS) {
+          this.srg2IterationCount++;
+          
+          // Vérifier convergence avant recalcul
+          const activeRegulatorsList = srg2RegulatorNodes
+            .filter(n => n.isVoltageRegulator)
+            .map(n => ({
+              id: `srg2_${n.id}`,
+              nodeId: n.id,
+              type: 'SRG2' as any,
+              targetVoltage_V: 230,
+              maxPower_kVA: 77,
+              enabled: true
+            }));
+          const hasConverged = this.checkSRG2Convergence(activeRegulatorsList, result);
+          if (hasConverged) {
+            console.log(`✅ SRG2 converged after ${this.srg2IterationCount} iterations`);
+            this.srg2IterationCount = 0;
+            return result;
+          }
+          
+          console.log(`🔄 Recalculating network with SRG2 regulations (iteration ${this.srg2IterationCount}/${ElectricalCalculator.SRG2_MAX_ITERATIONS})`);
           
           const srg2Result = this.calculateScenario(
             modifiedNodes, cables, cableTypes, scenario,
@@ -2325,6 +2345,7 @@ export class ElectricalCalculator {
             true // skipSRG2Integration = true (évite récursion)
           );
           
+          this.srg2IterationCount = 0;
           console.log('✅ SRG2 voltage regulation completed with network propagation');
           return srg2Result;
         }
@@ -2333,6 +2354,52 @@ export class ElectricalCalculator {
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
     return result;
+  }
+
+  /**
+   * Méthodes SRG2 pour gestion d'état et convergence
+   */
+  private getCurrentNodeVoltages(regulator: VoltageRegulator, result: CalculationResult): { A: number; B: number; C: number } {
+    if (result.nodeMetricsPerPhase) {
+      const nodeMetric = result.nodeMetricsPerPhase.find(n => n.nodeId === regulator.nodeId);
+      if (nodeMetric?.voltagesPerPhase) {
+        return nodeMetric.voltagesPerPhase;
+      }
+    }
+    
+    // Fallback mode équilibré
+    if (result.nodeMetrics) {
+      const nodeMetric = result.nodeMetrics.find(n => n.nodeId === regulator.nodeId);
+      if (nodeMetric) {
+        const scaleLine = this.getDisplayLineScale('TÉTRA_3P+N_230_400V'); // Fallback connectionType
+        const lineVoltage = nodeMetric.V_phase_V * scaleLine;
+        return { A: lineVoltage, B: lineVoltage, C: lineVoltage };
+      }
+    }
+    
+    return { A: 230, B: 230, C: 230 };
+  }
+
+  private checkSRG2Convergence(regulators: VoltageRegulator[], result: CalculationResult): boolean {
+    for (const regulator of regulators) {
+      const currentVoltages = this.getCurrentNodeVoltages(regulator, result);
+      const avgVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
+      const prevVoltage = this.previousVoltages.get(regulator.id) || avgVoltage;
+      
+      if (Math.abs(avgVoltage - prevVoltage) > 2.0) {
+        this.previousVoltages.set(regulator.id, avgVoltage);
+        return false;
+      }
+      this.previousVoltages.set(regulator.id, avgVoltage);
+    }
+    return true;
+  }
+
+  private getPhaseFromAngle(angleDeg: number): 'A' | 'B' | 'C' {
+    const normalizedAngle = ((angleDeg % 360) + 360) % 360;
+    if (normalizedAngle < 60 || normalizedAngle >= 300) return 'A';
+    if (normalizedAngle >= 60 && normalizedAngle < 180) return 'B';
+    return 'C';
   }
 
   // Méthodes utilitaires pour validation et gestion d'erreurs
