@@ -121,7 +121,8 @@ describe('SRG2 Single Calculation Test', () => {
     expect(srg2ApplySpy).toHaveBeenCalledWith(
       equipment.srg2,
       expect.objectContaining({ id: 'node-srg2' }),
-      project
+      project,
+      expect.any(Object) // actualVoltages object
     );
 
     // Verify SRG2 result exists

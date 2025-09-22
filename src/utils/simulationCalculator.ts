@@ -21,12 +21,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Réinitialiser les états SRG2 entre les simulations
     this.resetAllSrg2();
     
-    // S'assurer que chaque nœud possède une tension de référence
+    // S'assurer que chaque nœud possède une tension de référence (préservation SRG2)
     project.nodes.forEach(node => {
       if (node.tensionCible == null) {
         // Valeur par défaut : tension nominale du transformateur ou 230 V
         node.tensionCible = project.transformerConfig?.nominalVoltage_V ?? 230;
       }
+      // Préserver les informations SRG2 existantes si disponibles
+      // Ne pas réinitialiser les tensions déjà ajustées par SRG2
     });
     
     console.log('🔄 Starting simulation calculation...');
@@ -108,11 +110,20 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    console.log('🔧 Applying SRG2 voltage regulator...');
+    // Extract actual calculated voltages from base result
+    const nodeMetrics = baseResult.nodeMetricsPerPhase?.[targetNode.id];
+    const actualVoltages = nodeMetrics ? {
+      A: Math.abs(nodeMetrics.A.voltage),
+      B: Math.abs(nodeMetrics.B.voltage), 
+      C: Math.abs(nodeMetrics.C.voltage)
+    } : undefined;
+    
+    console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
     const srg2Result = this.srg2Regulator.apply(
       simulationEquipment.srg2,
       targetNode,
-      project
+      project,
+      actualVoltages
     );
 
     if (!srg2Result.isActive) {

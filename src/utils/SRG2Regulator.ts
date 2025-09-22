@@ -141,6 +141,7 @@ export class SRG2Regulator {
     config: SRG2Config,
     node: Node,
     project: Project,
+    actualVoltages?: { A: number; B: number; C: number },
     now: number = Date.now()
   ): SRG2Result {
     console.log(`🔧 SRG2: Evaluating node ${node.id}`);
@@ -168,15 +169,19 @@ export class SRG2Regulator {
       };
     }
 
-    const feedVoltage = node.tensionCible ?? project.transformerConfig?.nominalVoltage_V ?? 230;
+    // Use actual calculated voltage if provided, otherwise fall back to tensionCible
+    const feedVoltage = actualVoltages 
+      ? (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3  // Average of phases
+      : node.tensionCible ?? project.transformerConfig?.nominalVoltage_V ?? 230;
+    
     const currentState = this.currentStates.get(node.id);
     const lastSwitch = this.lastSwitchTimes.get(node.id) ?? 0;
 
-    // Compute new state
+    // Compute new state based on actual voltage
     const { state, ratio } = this.computeState(feedVoltage, networkType, currentState);
     
     // Trace détaillée des valeurs critiques
-    console.log(`[SRG2] Node ${node.id} → feed=${feedVoltage}V | state=${state} | ratio=${ratio}`);
+    console.log(`[SRG2] Node ${node.id} → actualV=${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'N/A'} | avgV=${feedVoltage.toFixed(1)}V | state=${state} | ratio=${ratio}`);
 
     // Check timing constraint
     if (currentState && currentState.state !== state && (now - lastSwitch) < this.switchDelay) {
@@ -317,17 +322,18 @@ export class SRG2Regulator {
           if (!neighbour) continue;
 
           // -------------------------------------------------------------
-          // Application du même ratio (ou ratio atténué)
+          // Application du ratio en préservant la cohérence des tensions
           // -------------------------------------------------------------
           const baseVoltage = neighbour.tensionCible ?? result.originalVoltage;
-          neighbour.tensionCible = baseVoltage * result.ratio;
+          const newVoltage = baseVoltage * result.ratio;
+          neighbour.tensionCible = newVoltage;
 
           // On conserve les informations de trace (facultatif)
           neighbour.srg2Applied = true;
           neighbour.srg2State = result.state;
           neighbour.srg2Ratio = result.ratio;
 
-          console.log(`[SRG2-prop] Updating ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${neighbour.tensionCible.toFixed(1)}V (from ${curId})`);
+          console.log(`[SRG2-prop] Updating ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)} from ${curId})`);
         }
       }
     };
