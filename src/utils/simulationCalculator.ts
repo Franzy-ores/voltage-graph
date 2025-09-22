@@ -206,40 +206,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     }
 
-    // Application des régulateurs de tension classiques (après SRG2)
-    if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0) {
-      // Phase 2 - FILTRE renforcé: Exclure les nœuds SRG2 du système classique
-      const classicRegulators = simulationEquipment.regulators.filter(r => {
-        const isEnabled = r.enabled;
-        const isNotSRG2Type = !r.type?.includes('SRG2') && !(r.type?.includes('230V') || r.type?.includes('400V'));
-        const isNotSRG2Node = !(simulationEquipment.srg2?.enabled && r.nodeId === simulationEquipment.srg2.nodeId);
-        
-        if (isEnabled && !isNotSRG2Type) {
-          console.log(`⏭️ [FILTER] Excluding SRG2-type regulator ${r.id} (type: ${r.type})`);
-        }
-        if (isEnabled && !isNotSRG2Node) {
-          console.log(`⏭️ [FILTER] Excluding regulator ${r.id} on SRG2 node ${r.nodeId}`);
-        }
-        
-        return isEnabled && isNotSRG2Type && isNotSRG2Node;
-      });
-      
-      if (classicRegulators.length > 0) {
-        console.log(`🔧 [ORDER-TRACE] Applying ${classicRegulators.length} classic voltage regulators (filtered from ${simulationEquipment.regulators.length} total)...`);
-        
-        // Utiliser le système unifié pour appliquer SEULEMENT les régulateurs classiques
-        result = this.applyAllVoltageRegulators(
-          modifiedNodes, // Utiliser les nœuds modifiés par SRG2
-          project.cables,
-          classicRegulators, // SEULEMENT les régulateurs non-SRG2
-          result,
-          cableTypes,
-          project,
-          scenario
-        );
-      } else if (simulationEquipment.regulators.filter(r => r.enabled).length > 0) {
-        console.log('ℹ️ All enabled regulators are SRG2 - handled by SRG2Regulator system');
-      }
+    // Application SRG2 seulement (plus de régulateurs classiques)
+    if (simulationEquipment.srg2?.enabled) {
+      console.log(`🔧 [SRG2] Applying SRG2 regulator...`);
     }
 
     // SRG2 result déjà stocké dans le bloc précédent
@@ -261,6 +230,21 @@ export class SimulationCalculator extends ElectricalCalculator {
       targetVoltage_V: 230,
       maxPower_kVA: maxPower,
       enabled: false
+    };
+  }
+
+  /**
+   * Crée une configuration SRG2 par défaut pour un nœud
+   */
+  createDefaultSRG2Config(nodeId: string, voltageSystem: string): SRG2Config {
+    const networkType = voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V';
+    
+    return {
+      nodeId,
+      enabled: false,
+      networkType: networkType as '230V' | '400V',
+      maxPowerInjection_kVA: 85,
+      maxPowerConsumption_kVA: 100
     };
   }
 

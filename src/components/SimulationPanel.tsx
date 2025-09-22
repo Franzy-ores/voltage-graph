@@ -7,8 +7,9 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNetworkStore } from "@/store/networkStore";
-import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
+import { SRG2Config, NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { ForcedModePanel } from "@/components/ForcedModePanel";
@@ -35,9 +36,9 @@ export const SimulationPanel = () => {
     simulationResults,
     selectedScenario,
     toggleSimulationMode,
-    addVoltageRegulator,
-    removeVoltageRegulator,
-    updateVoltageRegulator,
+    addSRG2Regulator,
+    removeSRG2Regulator,
+    updateSRG2Config,
     addNeutralCompensator,
     removeNeutralCompensator,
     updateNeutralCompensator,
@@ -54,13 +55,9 @@ export const SimulationPanel = () => {
   const currentResult = simulationResults[selectedScenario];
   const baseline = currentResult?.baselineResult;
 
-  // Fonction pour déterminer le type de régulateur selon la tension de source
-  const getRegulatorTypeForSource = (sourceVoltage: number) => {
-    return sourceVoltage > 300 ? 'Armoire 400V - 44kVA' : 'Armoire 230V - 77kVA';
-  };
-
-  const RegulatorCard = ({ regulator }: { regulator: VoltageRegulator }) => {
-    const node = currentProject.nodes.find(n => n.id === regulator.nodeId);
+  const SRG2Card = ({ srg2Config }: { srg2Config: SRG2Config }) => {
+    const node = currentProject.nodes.find(n => n.id === srg2Config.nodeId);
+    const srg2Result = currentResult?.srg2Result;
     
     return (
       <Card className="mb-4">
@@ -69,70 +66,133 @@ export const SimulationPanel = () => {
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-blue-500" />
               <CardTitle className="text-sm">
-                Armoire {regulator.type.replace('_', ' - ')}
+                Régulateur SRG2
               </CardTitle>
             </div>
             <div className="flex items-center gap-2">
               <Switch
-                checked={regulator.enabled}
-                onCheckedChange={(enabled) => 
-                  updateVoltageRegulator(regulator.id, { enabled })
-                }
+                checked={srg2Config.enabled}
+                onCheckedChange={(enabled) => {
+                  updateSRG2Config({ enabled });
+                }}
               />
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => removeVoltageRegulator(regulator.id)}
+                onClick={() => removeSRG2Regulator()}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <CardDescription>
-            Nœud: {node?.name || regulator.nodeId}
+            Nœud: {node?.name || srg2Config.nodeId}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Tension cible (V)</Label>
-              <Input
-                type="number"
-                value={regulator.targetVoltage_V}
-                onChange={(e) => updateVoltageRegulator(regulator.id, {
-                  targetVoltage_V: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Puissance max (kVA)</Label>
-              <Input
-                type="number"
-                value={regulator.maxPower_kVA}
-                onChange={(e) => updateVoltageRegulator(regulator.id, {
-                  maxPower_kVA: Number(e.target.value)
-                })}
-                className="h-8"
-                disabled
-              />
-            </div>
-          </div>
-          
-          {regulator.currentQ_kVAr !== undefined && (
-            <div className="bg-muted/50 p-2 rounded">
-              <div className="text-xs font-medium mb-1">Résultats simulation:</div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>Q injecté: {regulator.currentQ_kVAr.toFixed(1)} kVAr</div>
-                <div>Tension: {regulator.currentVoltage_V?.toFixed(1)} V</div>
+        <CardContent className="pt-0">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="networkType" className="text-xs text-muted-foreground">
+                  Type de réseau
+                </Label>
+                <Select
+                  value={srg2Config.networkType}
+                  onValueChange={(value: '230V' | '400V') => {
+                    updateSRG2Config({ networkType: value });
+                  }}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="230V">230V</SelectItem>
+                    <SelectItem value="400V">400V</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              {regulator.isLimited && (
-                <Badge variant="destructive" className="mt-1 text-xs">
-                  Puissance limitée
-                </Badge>
-              )}
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  État
+                </Label>
+                <div className="flex gap-1 mt-1">
+                  {srg2Result && (
+                    <Badge 
+                      variant={srg2Result.isActive ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {srg2Result.state || 'OFF'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="maxInjection" className="text-xs text-muted-foreground">
+                  Puissance max injection (kVA)
+                </Label>
+                <Input
+                  id="maxInjection"
+                  type="number"
+                  value={srg2Config.maxPowerInjection_kVA}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value);
+                    if (!isNaN(value) && value >= 0) {
+                      updateSRG2Config({ maxPowerInjection_kVA: value });
+                    }
+                  }}
+                  className="h-8"
+                  min="0"
+                  step="1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="maxConsumption" className="text-xs text-muted-foreground">
+                  Puissance max consommation (kVA)
+                </Label>
+                <Input
+                  id="maxConsumption"
+                  type="number"
+                  value={srg2Config.maxPowerConsumption_kVA}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value);
+                    if (!isNaN(value) && value >= 0) {
+                      updateSRG2Config({ maxPowerConsumption_kVA: value });
+                    }
+                  }}
+                  className="h-8"
+                  min="0"
+                  step="1"
+                />
+              </div>
+            </div>
+
+            {srg2Result && srg2Config.enabled && (
+              <div className="mt-3 p-3 bg-muted/50 rounded-md">
+                <div className="text-xs font-medium mb-2">Résultats SRG2:</div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {srg2Result.ratio && (
+                    <div>
+                      <span className="text-muted-foreground">Ratio:</span>
+                      <span className="ml-1 font-mono">{srg2Result.ratio.toFixed(3)}</span>
+                    </div>
+                  )}
+                  {(srg2Result.u1_V || srg2Result.u2_V || srg2Result.u3_V) && (
+                      <div>
+                        <span className="text-muted-foreground">Tensions:</span>
+                        <div className="ml-1 font-mono text-xs">
+                          U1: {srg2Result.u1_V?.toFixed(1)}V<br/>
+                          U2: {srg2Result.u2_V?.toFixed(1)}V<br/>
+                          U3: {srg2Result.u3_V?.toFixed(1)}V
+                        </div>
+                      </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -407,34 +467,33 @@ export const SimulationPanel = () => {
             <TabsContent value="regulators" className="mt-4">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Armoires de régulation</h3>
-                  <NodeSelector
-                    nodes={currentProject.nodes}
-                    onNodeSelected={(nodeId) => addVoltageRegulator(nodeId)}
-                    title="Ajouter une armoire de régulation"
-                    description="L'armoire sera automatiquement adaptée à la tension du réseau"
-                    getRegulatorTypeForSource={getRegulatorTypeForSource}
-                    trigger={
-                      <Button size="sm" variant="outline" disabled={!nodes.length}>
-                        <Plus className="h-3 w-3 mr-1" />
-                        Ajouter
-                      </Button>
-                    }
-                  />
+                  <h3 className="text-sm font-medium">Régulateur SRG2</h3>
+                  {!simulationEquipment.srg2 && (
+                    <NodeSelector
+                      nodes={nodes}
+                      onNodeSelected={(nodeId) => addSRG2Regulator(nodeId)}
+                      title="Ajouter un régulateur SRG2"
+                      description="Sélectionnez le nœud où installer le régulateur SRG2"
+                      trigger={
+                        <Button size="sm" variant="outline" disabled={!nodes.length}>
+                          <Plus className="h-3 w-3 mr-1" />
+                          Ajouter
+                        </Button>
+                      }
+                    />
+                  )}
                 </div>
 
-                {simulationEquipment.regulators.length === 0 ? (
+                {!simulationEquipment.srg2 ? (
                   <Card className="p-4 text-center text-muted-foreground">
                     <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucune armoire de régulation</p>
+                    <p className="text-sm">Aucun régulateur SRG2</p>
                     <p className="text-xs">
-                      Ajoutez des armoires pour maintenir la tension
+                      Ajoutez un régulateur SRG2 pour la régulation automatique
                     </p>
                   </Card>
                 ) : (
-                  simulationEquipment.regulators.map(regulator => (
-                    <RegulatorCard key={regulator.id} regulator={regulator} />
-                  ))
+                  <SRG2Card srg2Config={simulationEquipment.srg2} />
                 )}
               </div>
             </TabsContent>

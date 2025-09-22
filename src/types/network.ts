@@ -252,10 +252,9 @@ export interface SRG2Result {
 }
 
 export interface SimulationEquipment {
-  regulators: VoltageRegulator[];
+  srg2: SRG2Config | null; // Single SRG2 configuration
   neutralCompensators: NeutralCompensator[];
   cableUpgrades: CableUpgrade[];
-  srg2?: SRG2Config; // Optional SRG2 configuration
 }
 
 export interface SimulationResult extends CalculationResult {

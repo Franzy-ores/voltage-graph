@@ -15,7 +15,8 @@ import {
   NeutralCompensator,
   CableUpgrade,
   RegulatorType,
-  SimulationEquipment
+  SimulationEquipment,
+  SRG2Config
 } from '@/types/network';
 import { NodeWithConnectionType, getNodeConnectionType, addConnectionTypeToNodes } from '@/utils/nodeConnectionType';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
@@ -107,9 +108,9 @@ interface NetworkActions {
   toggleSimulationMode: () => void;
   updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
   clearSimulationPreview: () => void;
-  addVoltageRegulator: (nodeId: string) => void;
-  removeVoltageRegulator: (regulatorId: string) => void;
-  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => void;
+  addSRG2Regulator: (nodeId: string) => void;
+  removeSRG2Regulator: () => void;
+  updateSRG2Config: (updates: Partial<SRG2Config>) => void;
   addNeutralCompensator: (nodeId: string) => void;
   removeNeutralCompensator: (compensatorId: string) => void;
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => void;
@@ -281,11 +282,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   editTarget: null,
   showVoltages: false,
   simulationMode: false,
-  simulationEquipment: {
-    regulators: [],
-    neutralCompensators: [],
-    cableUpgrades: []
-  },
+      simulationEquipment: {
+        srg2: null,
+        neutralCompensators: [],
+        cableUpgrades: []
+      },
 
   // Actions
   createNewProject: (name, voltageSystem) => {
@@ -312,7 +313,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        regulators: [],
+        srg2: null,
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -373,7 +374,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        regulators: [],
+        srg2: null,
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -860,7 +861,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
             const simResult = simCalculator.calculateWithSimulation(
               currentProject,
               'FORCÉ',
-              { regulators: [], neutralCompensators: [], cableUpgrades: [] }
+              { srg2: null, neutralCompensators: [], cableUpgrades: [] }
             );
             return simResult.baselineResult || simResult;
           } catch (error) {
@@ -1067,61 +1068,59 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       },
       // Désactiver tous les équipements de simulation quand on quitte le mode simulation
       simulationEquipment: newSimulationMode ? simulationEquipment : {
-        regulators: simulationEquipment.regulators.map(r => ({ ...r, enabled: false })),
+        srg2: simulationEquipment.srg2 ? { ...simulationEquipment.srg2, enabled: false } : null,
         neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
         cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
   },
 
-  addVoltageRegulator: (nodeId: string) => {
+  addSRG2Regulator: (nodeId: string) => {
     const { simulationEquipment, currentProject } = get();
     if (!currentProject) return;
     
-    // Vérifier qu'il n'y a pas déjà un régulateur sur ce nœud
-    const existingRegulator = simulationEquipment.regulators.find(r => r.nodeId === nodeId);
-    if (existingRegulator) {
-      toast.error('Un régulateur de tension existe déjà sur ce nœud');
+    // Vérifier qu'il n'y a pas déjà un régulateur SRG2
+    if (simulationEquipment.srg2) {
+      toast.error('Un régulateur SRG2 existe déjà dans le projet');
       return;
     }
 
-    // Utiliser le calculateur pour créer le régulateur avec la tension du transformateur
+    // Utiliser le calculateur pour créer la configuration SRG2
     const calculator = new SimulationCalculator();
-    const sourceVoltage = currentProject.transformerConfig.nominalVoltage_V;
-    const newRegulator = calculator.createDefaultRegulator(nodeId, sourceVoltage);
+    const newSRG2Config = calculator.createDefaultSRG2Config(nodeId, currentProject.voltageSystem);
 
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        regulators: [...simulationEquipment.regulators, newRegulator]
+        srg2: newSRG2Config
       }
     });
     
-    toast.success(`Armoire de régulation ${newRegulator.type} ajoutée`);
+    toast.success('Régulateur SRG2 ajouté');
     
     // Recalculer automatiquement la simulation
     get().runSimulation();
   },
 
-  removeVoltageRegulator: (regulatorId: string) => {
+  removeSRG2Regulator: () => {
     const { simulationEquipment } = get();
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        regulators: simulationEquipment.regulators.filter(r => r.id !== regulatorId)
+        srg2: null
       }
     });
-    toast.success('Régulateur de tension supprimé');
+    toast.success('Régulateur SRG2 supprimé');
   },
 
-  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => {
+  updateSRG2Config: (updates: Partial<SRG2Config>) => {
     const { simulationEquipment, simulationMode } = get();
+    if (!simulationEquipment.srg2) return;
+
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        regulators: simulationEquipment.regulators.map(r => 
-          r.id === regulatorId ? { ...r, ...updates } : r
-        )
+        srg2: { ...simulationEquipment.srg2, ...updates }
       }
     });
 
@@ -1132,7 +1131,6 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
       get().runSimulation();
     } else if (simulationMode) {
-      // Si on est déjà en mode simulation, recalculer sur tout autre paramètre (tension cible, puissance max, etc.)
       get().runSimulation();
     }
   },
@@ -1272,7 +1270,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       // Mettre à jour l'état avec les résultats de simulation
       set({ simulationResults: newSimulationResults });
       
-      const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+      const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
                                   simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
       
       toast.success(`Simulation recalculée avec ${activeEquipmentCount} équipement(s) actif(s)`);
@@ -1304,12 +1302,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   // Reactive getters
   getActiveEquipmentCount: () => {
     const state = get();
-    const count = state.simulationEquipment.regulators.filter(r => r.enabled).length + 
+    const count = (state.simulationEquipment.srg2?.enabled ? 1 : 0) + 
                  state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
     console.log('📊 Active equipment count calculated:', count, {
-      enabledRegulators: state.simulationEquipment.regulators.filter(r => r.enabled).length,
+      enabledSRG2: state.simulationEquipment.srg2?.enabled || false,
       enabledCompensators: state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length,
-      totalRegulators: state.simulationEquipment.regulators.length,
       totalCompensators: state.simulationEquipment.neutralCompensators.length
     });
     return count;
