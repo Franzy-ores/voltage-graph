@@ -962,6 +962,7 @@ export class ElectricalCalculator {
     targetVoltages: { A: number; B: number; C: number };
     switchStates: { A: string; B: string; C: string };
     canRegulate: boolean;
+    transformationRatios: { A: number; B: number; C: number }; // SRG2 FIX: Ajouter ratios de transformation
   } {
     // SRG2 FIX: Ajouter hystérésis ±2V et temporisation 7s
     const hysteresis = 2; // Volts
@@ -1032,11 +1033,13 @@ export class ElectricalCalculator {
       
       switchStates[phase as keyof typeof switchStates] = finalState;
       
-      // SRG2 FIX: Retourner le rapport de transformation selon l'échelon
+      // SRG2 FIX: Stocker le rapport de transformation séparément
       const transformationRatio = this.getSRG2TransformationRatio(finalState);
-      targetVoltages[phase as keyof typeof targetVoltages] = transformationRatio;
       
-      console.log(`🔧 SRG2 phase ${phase}: V=${voltage.toFixed(1)}V → State=${finalState} → Ratio=${transformationRatio.toFixed(3)} → Target=${(voltage * transformationRatio).toFixed(1)}V`);
+      // SRG2 FIX: Tension cible = toujours 230V (objectif de régulation)
+      targetVoltages[phase as keyof typeof targetVoltages] = 230;
+      
+      console.log(`🔧 SRG2 phase ${phase}: V=${voltage.toFixed(1)}V → State=${finalState} → Ratio=${transformationRatio.toFixed(3)} → TargetVoltage=230V → TransformedV=${(voltage * transformationRatio).toFixed(1)}V`);
     });
     
     // Sauvegarder les nouveaux états
@@ -1078,7 +1081,21 @@ export class ElectricalCalculator {
     }
     
     const canRegulate = Object.values(switchStates).some(state => state !== 'BYP');
-    return { targetVoltages, switchStates, canRegulate };
+    
+    // SRG2 FIX: Ajouter les rapports de transformation dans le résultat
+    const transformationRatios = { A: 1.0, B: 1.0, C: 1.0 };
+    const phases = ['A', 'B', 'C'] as const;
+    phases.forEach((phase) => {
+      const finalState = switchStates[phase as keyof typeof switchStates];
+      transformationRatios[phase as keyof typeof transformationRatios] = this.getSRG2TransformationRatio(finalState);
+    });
+    
+    return { 
+      targetVoltages, 
+      switchStates, 
+      canRegulate, 
+      transformationRatios // SRG2 FIX: Nouveau champ pour les ratios physiques
+    };
   }
 
   // Méthode supprimée - utiliser les méthodes unifiées dans SimulationCalculator
@@ -2411,25 +2428,25 @@ export class ElectricalCalculator {
           );
           
           if (regulationResult.canRegulate) {
-            // SRG2 FIX: Use absolute target voltages directly
+            // SRG2 FIX: Les targetVoltages sont maintenant correctement fixées à 230V
             const newTargetVoltages = {
-              A: regulationResult.targetVoltages.A,
-              B: regulationResult.targetVoltages.B,
-              C: regulationResult.targetVoltages.C
+              A: regulationResult.targetVoltages.A, // = 230V
+              B: regulationResult.targetVoltages.B, // = 230V
+              C: regulationResult.targetVoltages.C  // = 230V
             };
             
-            console.log(`🚨 PROBLÈME IDENTIFIÉ - Les targetVoltages contiennent des RAPPORTS, pas des tensions:`);
-            console.log(`   A: ${regulationResult.targetVoltages.A.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
-            console.log(`   B: ${regulationResult.targetVoltages.B.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
-            console.log(`   C: ${regulationResult.targetVoltages.C.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
-            console.log(`   Pour corriger: multiplier par les tensions actuelles: A=${(currentVoltages.A * regulationResult.targetVoltages.A).toFixed(1)}V`);
+            console.log(`✅ SRG2 CORRECTION - Les targetVoltages sont maintenant des tensions absolues:`);
+            console.log(`   A: ${regulationResult.targetVoltages.A.toFixed(1)}V (tension cible absolue)`);
+            console.log(`   B: ${regulationResult.targetVoltages.B.toFixed(1)}V (tension cible absolue)`);
+            console.log(`   C: ${regulationResult.targetVoltages.C.toFixed(1)}V (tension cible absolue)`);
+            console.log(`   Transformation ratios: A=${regulationResult.transformationRatios.A.toFixed(3)}, B=${regulationResult.transformationRatios.B.toFixed(3)}, C=${regulationResult.transformationRatios.C.toFixed(3)}`);
             
-            // SRG2 FIX: Stocker les rapports de transformation par phase
+            // SRG2 FIX: Stocker correctement les tensions cibles (230V)
             modifiedNodes[nodeIndex].isVoltageRegulator = true;
             modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
-            // Calculer tension moyenne pour affichage (approximative)
-            const avgRatio = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
-            modifiedNodes[nodeIndex].tensionCible = 230 * avgRatio; // Approximation pour affichage
+            // Calculer tension moyenne pour affichage
+            const avgTargetVoltage = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+            modifiedNodes[nodeIndex].tensionCible = avgTargetVoltage;
             
             hasValidRegulators = true;
             
@@ -2449,18 +2466,18 @@ export class ElectricalCalculator {
           for (const regNode of srg2RegulatorNodes.filter(n => n.isVoltageRegulator)) {
             const nodeMetric = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === regNode.id);
             if (nodeMetric && regNode.regulatorTargetVoltages) {
+              // SRG2 FIX: Convergence basée sur les tensions cibles (230V), plus les ratios
+              const targetV = regNode.regulatorTargetVoltages.A || 230;
               const currentV = nodeMetric.voltagesPerPhase?.A || 0;
-              const transformationRatio = regNode.regulatorTargetVoltages.A || 1.0;
-              const expectedV = currentV * transformationRatio;
               
-              console.log(`🔧 SRG2 convergence check for ${regNode.id}: currentV=${currentV.toFixed(1)}V, ratio=${transformationRatio.toFixed(3)}, expectedV=${expectedV.toFixed(1)}V`);
-              console.log(`🚨 ERREUR DE LOGIQUE - transformationRatio=${transformationRatio.toFixed(3)} est un RAPPORT, utilisation correcte ici mais les données sont fausses !`);
+              console.log(`✅ SRG2 CORRECTION - Convergence basée sur tension cible absolue:`);
+              console.log(`   currentV=${currentV.toFixed(1)}V, targetV=${targetV.toFixed(1)}V`);
               
               // Check if the voltage is close to desired regulation target (230V)
-              const deviation = Math.abs(expectedV - 230);
+              const deviation = Math.abs(currentV - targetV);
               if (deviation > 2) { // Allow ±2V tolerance
                 allConverged = false;
-                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${expectedV.toFixed(1)}V (dev: ${deviation.toFixed(1)}V from 230V)`);
+                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V → target ${targetV.toFixed(1)}V (deviation: ${deviation.toFixed(1)}V)`);
                 break;
               }
             }
