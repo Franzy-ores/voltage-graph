@@ -18,6 +18,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     simulationEquipment: SimulationEquipment,
     forcedModeConfig?: any
   ): SimulationResult {
+    
+    console.log('🚀 [SRG2-DEBUG] calculateWithSimulation CALLED');
+    console.log('🔍 [SRG2-DEBUG] simulationEquipment:', simulationEquipment);
+    console.log('🔍 [SRG2-DEBUG] simulationEquipment.srg2:', simulationEquipment.srg2);
+    console.log('🔍 [SRG2-DEBUG] simulationEquipment.srg2?.enabled:', simulationEquipment.srg2?.enabled);
+    
     // Réinitialiser les états SRG2 entre les simulations
     this.resetAllSrg2();
     
@@ -116,23 +122,30 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario,
     baseResult: CalculationResult
   ): { nodes: Node[]; result: CalculationResult; srg2Result?: SRG2Result } {
+    
+    console.log(`🔍 [SRG2-DEBUG] Starting applySrg2IfNeeded with simulationEquipment:`, simulationEquipment);
+    console.log(`🔍 [SRG2-DEBUG] SRG2 config:`, simulationEquipment.srg2);
+    console.log(`🔍 [SRG2-DEBUG] SRG2 enabled:`, simulationEquipment.srg2?.enabled);
+    
     if (!simulationEquipment.srg2?.enabled) {
+      console.log(`⏭️ [SRG2-DEBUG] SRG2 not enabled, skipping`);
       return { nodes, result: baseResult };
     }
 
-    // Check if it's an SRG2 node
-    if (!simulationEquipment.srg2?.enabled) {
-      return { nodes, result: baseResult };
-    }
-
+    console.log(`✅ [SRG2-DEBUG] SRG2 is enabled, looking for target node: ${simulationEquipment.srg2.nodeId}`);
+    
     const targetNode = nodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
     if (!targetNode) {
       console.warn(`⚠️ SRG2: Node ${simulationEquipment.srg2.nodeId} not found`);
       return { nodes, result: baseResult };
     }
+    
+    console.log(`✅ [SRG2-DEBUG] Target node found: ${targetNode.id}`);
 
     // NOUVELLE LOGIQUE: Utiliser la tension cible du nœud source pour déterminer les vraies tensions réseau
     // Cela évite le problème d'ordre d'exécution où le calcul de base n'a pas encore les bonnes tensions
+    
+    console.log(`🔍 [SRG2-DEBUG] Looking for source node in project.nodes:`, project.nodes.map(n => `${n.id}(isSource=${n.isSource})`));
     
     // Trouver le nœud source (nœud avec isSource = true)
     const sourceNode = project.nodes.find(n => n.isSource);
@@ -141,8 +154,16 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
     
+    console.log(`✅ [SRG2-DEBUG] Source node found: ${sourceNode.id}`);
+    
     const sourceTension = sourceNode.tensionCible;
     console.log(`🎯 [SRG2-VOLTAGE] Source node ${sourceNode.id} has tensionCible: ${sourceTension}V`);
+    console.log(`🔍 [SRG2-DEBUG] Project voltage system: ${project.voltageSystem}`);
+    
+    if (!sourceTension) {
+      console.error(`❌ [SRG2-VOLTAGE] CRITICAL: Source node has no tensionCible!`);
+      return { nodes, result: baseResult };
+    }
     
     let actualVoltages: { A: number; B: number; C: number } | undefined;
     
