@@ -19,6 +19,8 @@ export class ElectricalCalculator {
   private previousVoltages = new Map<string, number>();
   private srg2States = new Map<string, { A: string; B: string; C: string }>();
   private previousSRG2States = new Map<string, { A: string; B: string; C: string }>();
+  // SRG2 FIX: Ajouter temporisation pour éviter commutations trop fréquentes
+  private srg2LastSwitchTime = new Map<string, number>();
 
   constructor(cosPhi: number = 0.95) {
     this.validateCosPhi(cosPhi);
@@ -892,6 +894,12 @@ export class ElectricalCalculator {
     switchStates: { A: string; B: string; C: string };
     canRegulate: boolean;
   } {
+    // SRG2 FIX: Ajouter hystérésis ±2V et temporisation 7s
+    const hysteresis = 2; // Volts
+    const timeDelayMs = 7000; // 7 secondes
+    const currentTime = Date.now();
+    const currentStates = this.srg2States.get(regulator.nodeId) || { A: 'BYP', B: 'BYP', C: 'BYP' };
+    const lastSwitchTime = this.srg2LastSwitchTime?.get(regulator.nodeId) || 0;
     const V_nominal = 230; // Toujours 230V pour SRG2
     
     // Seuils SRG2 selon documentation
@@ -916,26 +924,70 @@ export class ElectricalCalculator {
     // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
     ['A', 'B', 'C'].forEach(phase => {
       const voltage = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
+      const currentState = currentStates[phase as keyof typeof currentStates];
       
-      if (voltage >= thresholds.UL) {
-        // Abaissement complet (-ΔU)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment;
-        switchStates[phase as keyof typeof switchStates] = 'LO2';
-      } else if (voltage >= thresholds.LO1) {
-        // Abaissement partiel (-ΔU/2)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = -maxAdjustment/2;
-        switchStates[phase as keyof typeof switchStates] = 'LO1';
-      } else if (voltage <= thresholds.UB) {
-        // Augmentation complète (+ΔU)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment;
-        switchStates[phase as keyof typeof switchStates] = 'BO2';
-      } else if (voltage <= thresholds.BO1) {
-        // Augmentation partielle (+ΔU/2)
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = maxAdjustment/2;
-        switchStates[phase as keyof typeof switchStates] = 'BO1';
+      // SRG2 FIX: Ajouter temporisation - empêcher changement d'état trop fréquent
+      let shouldAllowStateChange = true;
+      if (currentTime - lastSwitchTime < timeDelayMs) {
+        shouldAllowStateChange = false;
+        console.log(`🕘 SRG2 ${regulator.id} phase ${phase}: Waiting for time delay (${Math.round((timeDelayMs - (currentTime - lastSwitchTime)) / 1000)}s remaining)`);
       }
-      // Sinon reste en BYP (bypass)
+      
+      // Déterminer nouvel état avec hystérésis
+      let proposedState = currentState;
+      
+      // SRG2 FIX: Déterminer état avec hystérésis selon état actuel
+      if (currentState === 'BYP') {
+        if (voltage >= thresholds.UL + hysteresis) proposedState = 'LO2';
+        else if (voltage >= thresholds.LO1 + hysteresis) proposedState = 'LO1';
+        else if (voltage <= thresholds.UB - hysteresis) proposedState = 'BO2';
+        else if (voltage <= thresholds.BO1 - hysteresis) proposedState = 'BO1';
+      } else if (currentState === 'LO2') {
+        if (voltage < thresholds.UL - hysteresis) proposedState = 'LO1';
+      } else if (currentState === 'LO1') {
+        if (voltage < thresholds.LO1 - hysteresis) proposedState = 'BYP';
+        else if (voltage >= thresholds.UL + hysteresis) proposedState = 'LO2';
+      } else if (currentState === 'BO1') {
+        if (voltage > thresholds.BO1 + hysteresis) proposedState = 'BYP';
+        else if (voltage <= thresholds.UB - hysteresis) proposedState = 'BO2';
+      } else if (currentState === 'BO2') {
+        if (voltage > thresholds.UB + hysteresis) proposedState = 'BO1';
+      }
+      
+      // Appliquer le changement d'état seulement si autorisé par temporisation
+      const finalState = shouldAllowStateChange ? proposedState : currentState;
+      if (finalState !== currentState && shouldAllowStateChange) {
+        this.srg2LastSwitchTime.set(regulator.nodeId, currentTime);
+        console.log(`🔄 SRG2 ${regulator.id} phase ${phase}: ${currentState} → ${finalState} (V=${voltage.toFixed(1)}V)`);
+      }
+      
+      switchStates[phase as keyof typeof switchStates] = finalState;
+      
+      // SRG2 FIX: Corriger l'ordre des conditions - vérifier d'abord les seuils les plus extrêmes
+      if (finalState === 'LO2') {
+        // Abaissement complet
+        const targetVoltage = 230; // SRG2 régule toujours vers 230V
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = targetVoltage - voltage;
+      } else if (finalState === 'LO1') {
+        // Abaissement partiel
+        const targetVoltage = 230;
+        const fullCorrection = targetVoltage - voltage;
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = fullCorrection * 0.6; // Correction partielle
+      } else if (finalState === 'BO2') {
+        // Augmentation complète
+        const targetVoltage = 230;
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = targetVoltage - voltage;
+      } else if (finalState === 'BO1') {
+        // Augmentation partielle
+        const targetVoltage = 230;
+        const fullCorrection = targetVoltage - voltage;
+        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = fullCorrection * 0.6; // Correction partielle
+      }
+      // Sinon reste en BYP (pas d'ajustement)
     });
+    
+    // Sauvegarder les nouveaux états
+    this.srg2States.set(regulator.nodeId, switchStates);
     
     // Contraintes SRG2 révisées selon type de réseau
     if (networkType === '230V') {
@@ -2526,12 +2578,12 @@ export class ElectricalCalculator {
     const currentDeviation = upstreamVoltage - targetVoltage;
     let voltageAdjustment = 0;
     
-    // Ajustement progressif vers la cible - CORRECTION PHYSIQUE
+    // SRG2 FIX: Corriger la logique d'ajustement - convergence directe vers cible
     switch (newState) {
-      case 'LO2': voltageAdjustment = -currentDeviation * 0.8; break; // Corriger 80% de l'écart
-      case 'LO1': voltageAdjustment = -currentDeviation * 0.5; break; // Corriger 50% de l'écart
-      case 'BO1': voltageAdjustment = -currentDeviation * 0.5; break; // Corriger 50% de l'écart
-      case 'BO2': voltageAdjustment = -currentDeviation * 0.8; break; // Corriger 80% de l'écart
+      case 'LO2': voltageAdjustment = targetVoltage - upstreamVoltage; break; // Correction complète vers 230V/400V
+      case 'LO1': voltageAdjustment = (targetVoltage - upstreamVoltage) * 0.6; break; // Correction partielle 60%
+      case 'BO1': voltageAdjustment = (targetVoltage - upstreamVoltage) * 0.6; break; // Correction partielle 60%
+      case 'BO2': voltageAdjustment = targetVoltage - upstreamVoltage; break; // Correction complète vers 230V/400V
       case 'BYP': voltageAdjustment = 0; break; // Pas d'ajustement
     }
     
