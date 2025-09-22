@@ -76,7 +76,7 @@ export class SRG2Regulator {
     return { state: 'BYP', ratio: 1.0 };
   }
 
-  /** Calculate downstream power with diversity factors */
+  /** Calculate downstream power with diversity factors - Phase 1: Calcul complet du sous-arbre */
   private calculateDownstreamPower(
     node: Node,
     project: Project
@@ -86,28 +86,22 @@ export class SRG2Regulator {
     diversifiedProduction_kVA: number;
     netPower_kVA: number;
   } {
-    let directLoad = 0;
-    let directProduction = 0;
-
-    // Add direct loads  
-    if (node.clients) {
-      directLoad = node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
-    }
-
-    // Add direct productions
-    if (node.productions) {
-      directProduction = node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
-    }
-
-    // Apply diversity factors
-    const diversifiedLoad = directLoad * (project.foisonnementCharges / 100);
-    const diversifiedProduction = directProduction * (project.foisonnementProductions / 100);
+    // Phase 1: Implémentation du calcul récursif du sous-arbre downstream
+    const { totalLoad, totalProduction } = this.calculateDownstreamSubtree(node, project.nodes, project.cables, new Set());
     
-    // Net power (load - production)
-    const netPower = diversifiedLoad - diversifiedProduction;
+    console.log(`📊 [SRG2-POWER] Node ${node.id} downstream subtree:`, {
+      totalLoad: totalLoad.toFixed(2),
+      totalProduction: totalProduction.toFixed(2),
+      foisonnementCharges: project.foisonnementCharges,
+      foisonnementProductions: project.foisonnementProductions
+    });
 
-    // TODO: Add downstream nodes calculation via cable connections
-    // This would require traversing the network graph
+    // Apply diversity factors to the total subtree power
+    const diversifiedLoad = totalLoad * (project.foisonnementCharges / 100);
+    const diversifiedProduction = totalProduction * (project.foisonnementProductions / 100);
+    
+    // Net power (load - production) - negative means production exceeds consumption
+    const netPower = diversifiedLoad - diversifiedProduction;
 
     return {
       totalPower_kVA: Math.abs(netPower),
@@ -117,18 +111,92 @@ export class SRG2Regulator {
     };
   }
 
+  /** 
+   * Phase 1: Calcule récursivement toutes les charges et productions du sous-arbre downstream 
+   */
+  private calculateDownstreamSubtree(
+    node: Node,
+    allNodes: Node[],
+    allCables: Cable[],
+    visited: Set<string>
+  ): { totalLoad: number; totalProduction: number } {
+    if (visited.has(node.id)) {
+      return { totalLoad: 0, totalProduction: 0 };
+    }
+    visited.add(node.id);
+
+    // Calculate direct power from this node
+    let totalLoad = 0;
+    let totalProduction = 0;
+
+    // Add direct loads from this node
+    if (node.clients) {
+      totalLoad = node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
+    }
+
+    // Add direct productions from this node
+    if (node.productions) {
+      totalProduction = node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
+    }
+
+    console.log(`🔍 [SRG2-SUBTREE] Node ${node.id} direct: load=${totalLoad.toFixed(2)}, production=${totalProduction.toFixed(2)}`);
+
+    // Find all cables where this node is the source (nodeA)
+    const downstreamCables = allCables.filter(cable => cable.nodeAId === node.id);
+    
+    // Recursively calculate power from downstream nodes
+    for (const cable of downstreamCables) {
+      const downstreamNode = allNodes.find(n => n.id === cable.nodeBId);
+      if (downstreamNode) {
+        const subtreeResult = this.calculateDownstreamSubtree(
+          downstreamNode,
+          allNodes,
+          allCables,
+          visited
+        );
+        totalLoad += subtreeResult.totalLoad;
+        totalProduction += subtreeResult.totalProduction;
+        
+        console.log(`📈 [SRG2-SUBTREE] Adding downstream ${downstreamNode.id}: +${subtreeResult.totalLoad.toFixed(2)} load, +${subtreeResult.totalProduction.toFixed(2)} production`);
+      }
+    }
+
+    return { totalLoad, totalProduction };
+  }
+
   /** Check if SRG2 can be applied based on fixed power limits */
   private canApplySRG2(
     node: Node,
     project: Project
   ): { canApply: boolean; reason?: string; powerCalc: ReturnType<typeof this.calculateDownstreamPower> } {
+    // Phase 1: Utilise le nouveau calcul de sous-arbre complet
     const powerCalc = this.calculateDownstreamPower(node, project);
     const maxConsumption = 100; // Fixed limit: 100 kVA
+    const maxInjection = 85; // Fixed limit: 85 kVA injection
     
-    if (powerCalc.totalPower_kVA > maxConsumption) {
+    console.log(`🔍 [SRG2-LIMITS] Node ${node.id} power check:`, {
+      totalPower: powerCalc.totalPower_kVA.toFixed(2),
+      netPower: powerCalc.netPower_kVA.toFixed(2),
+      diversifiedLoad: powerCalc.diversifiedLoad_kVA.toFixed(2),
+      diversifiedProduction: powerCalc.diversifiedProduction_kVA.toFixed(2),
+      maxConsumption,
+      maxInjection
+    });
+    
+    // Check consumption limit (positive net power = consumption)
+    if (powerCalc.netPower_kVA > 0 && powerCalc.totalPower_kVA > maxConsumption) {
       return {
         canApply: false,
-        reason: `Downstream power (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxConsumption} kVA)`,
+        reason: `Downstream consumption (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxConsumption} kVA)`,
+        powerCalc
+      };
+    }
+    
+    // Check injection limit (negative net power = injection/production)
+    if (powerCalc.netPower_kVA < 0 && powerCalc.totalPower_kVA > maxInjection) {
+      return {
+        canApply: false,
+        reason: `Downstream injection (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxInjection} kVA)`,
         powerCalc
       };
     }
@@ -169,10 +237,19 @@ export class SRG2Regulator {
       };
     }
 
-    // Use actual calculated voltage if provided, otherwise fall back to tensionCible
-    const feedVoltage = actualVoltages 
-      ? (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3  // Average of phases
-      : node.tensionCible ?? project.transformerConfig?.nominalVoltage_V ?? 230;
+    // Phase 2: Amélioration de l'extraction des tensions réelles
+    let feedVoltage: number;
+    
+    if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
+      // Utiliser la moyenne des tensions réelles si elles sont disponibles et valides
+      feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
+      console.log(`✅ [SRG2-VOLTAGE] Using actual calculated voltages for node ${node.id}: A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V, avg=${feedVoltage.toFixed(1)}V`);
+    } else {
+      // Fallback sur tensionCible ou tension nominale si les tensions réelles ne sont pas disponibles
+      feedVoltage = node.tensionCible ?? project.transformerConfig?.nominalVoltage_V ?? 230;
+      console.log(`⚠️ [SRG2-VOLTAGE] Using fallback voltage for node ${node.id}: ${feedVoltage.toFixed(1)}V (actualVoltages not available or invalid)`);
+      console.log(`   actualVoltages:`, actualVoltages);
+    }
     
     const currentState = this.currentStates.get(node.id);
     const lastSwitch = this.lastSwitchTimes.get(node.id) ?? 0;
@@ -180,13 +257,17 @@ export class SRG2Regulator {
     // Compute new state based on actual voltage
     const { state, ratio } = this.computeState(feedVoltage, networkType, currentState);
     
-    // Trace détaillée des valeurs critiques
-    console.log(`[SRG2-VOLTAGES] Node ${node.id}:`, {
+    // Phase 3: Trace détaillée des valeurs critiques avec seuils
+    const thresholds = this.getThresholds(networkType);
+    console.log(`🔧 [SRG2-REGULATION] Node ${node.id} regulation analysis:`, {
+      networkType,
       actualVoltages,
       feedVoltage: feedVoltage.toFixed(1),
-      state,
-      ratio,
-      tensionCible: node.tensionCible
+      thresholds,
+      computedState: state,
+      computedRatio: ratio,
+      tensionCible: node.tensionCible,
+      powerLimits: `Load: ${powerCheck.powerCalc.diversifiedLoad_kVA.toFixed(1)}kVA, Prod: ${powerCheck.powerCalc.diversifiedProduction_kVA.toFixed(1)}kVA, Net: ${powerCheck.powerCalc.netPower_kVA.toFixed(1)}kVA`
     });
 
     // Check timing constraint
