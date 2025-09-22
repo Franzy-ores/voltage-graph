@@ -846,38 +846,9 @@ export class ElectricalCalculator {
                      (regulator.type?.includes('230V') || regulator.type?.includes('400V'));
 
       if (isSRG2) {
-        // Appliquer la logique SRG2 avec recalcul complet
-        const regulationResult = this.applySRG2RegulationLogic(
-          regulator,
-          currentVoltages,
-          networkDetection.type
-        );
-
-        if (!regulationResult.canRegulate) {
-          console.log(`📊 SRG2 Regulator ${regulator.id}: all phases within normal range, no action needed`);
-          continue;
-        }
-
-        console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
-        console.log(`  - Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
-
-        // NOUVELLE APPROCHE : Utiliser les tensions cibles absolues du SRG2
-        const newTargetVoltages = {
-          A: regulationResult.targetVoltages.A,
-          B: regulationResult.targetVoltages.B,
-          C: regulationResult.targetVoltages.C
-        };
-
-        // SRG2 FIX: Appliquer les nouvelles tensions cibles au nœud régulateur
-        // CORRECTION: Ne plus moyenner les phases pour SRG2 - chaque phase régule indépendamment
-        modifiedNodes[nodeIndex].isVoltageRegulator = true;
-        modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
-        // Garder une tensionCible moyenne uniquement pour compatibilité avec l'affichage
-        modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
-        
-        console.log(`🔧 SRG2: Setting node ${regulator.nodeId} as controlled voltage source with average target: ${modifiedNodes[nodeIndex].tensionCible?.toFixed(1)}V`);
-        
-        hasRegulatorChanges = true;
+        // SRG2 FIX: DÉSACTIVER L'ANCIEN SYSTÈME - Utiliser seulement applyAllVoltageRegulators
+        console.log(`🚫 ANCIEN SYSTÈME SRG2 DÉSACTIVÉ pour ${regulator.id} - Utilisation de applyAllVoltageRegulators uniquement`);
+        continue; // Skip l'ancien traitement SRG2
 
       } else {
         // Régulateur classique - logique simplifiée
@@ -1761,6 +1732,7 @@ export class ElectricalCalculator {
             converged2 = true; 
             
             // SRG2 FIX: Apply transformation to downstream nodes after convergence
+            console.log(`🔧 CONVERGENCE PHASE: Applying SRG2 transformations to downstream nodes`);
             this.applySRG2TransformationToDownstreamNodes(cables, nodes, new Map(), V_node_phase);
             
             break; 
@@ -2095,6 +2067,7 @@ export class ElectricalCalculator {
         converged = true;
         
         // SRG2 FIX: Apply transformation to downstream nodes after convergence
+        console.log(`🔧 CONVERGENCE ÉQUILIBRÉ: Applying SRG2 transformations to downstream nodes`);
         this.applySRG2TransformationToDownstreamNodes(cables, nodes, V_node, new Map());
         
         break; 
@@ -2474,6 +2447,8 @@ export class ElectricalCalculator {
         // SRG2 FIX: Improved convergence with target voltage validation
         if (hasValidRegulators && this.srg2IterationCount < ElectricalCalculator.SRG2_MAX_ITERATIONS) {
           this.srg2IterationCount++;
+          
+          console.log(`🔄 SRG2 NOUVEAU SYSTÈME: Iteration ${this.srg2IterationCount} avec ratios stockés`);
           
           // Check convergence with transformation ratios instead of absolute voltages
           let allConverged = true;
