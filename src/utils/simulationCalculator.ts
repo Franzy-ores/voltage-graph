@@ -21,14 +21,16 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Réinitialiser les états SRG2 entre les simulations
     this.resetAllSrg2();
     
-    // S'assurer que chaque nœud possède une tension de référence (préservation SRG2)
+    // Phase 1: Ne pas forcer l'initialisation des tensions - laisser le calcul électrique les déterminer naturellement
+    // Préserver uniquement les tensions déjà ajustées par SRG2 si disponibles
     project.nodes.forEach(node => {
-      if (node.tensionCible == null) {
-        // Valeur par défaut : tension nominale du transformateur ou 230 V
-        node.tensionCible = project.transformerConfig?.nominalVoltage_V ?? 230;
+      // Seulement préserver les tensions si elles ont été explicitement définies par SRG2
+      if (node.srg2Applied && node.tensionCible != null) {
+        console.log(`📌 [VOLTAGE-PRESERVE] Preserving SRG2-adjusted voltage for node ${node.id}: ${node.tensionCible}V`);
+      } else {
+        // Laisser tensionCible undefined pour permettre au calcul électrique de déterminer les tensions naturellement
+        node.tensionCible = undefined;
       }
-      // Préserver les informations SRG2 existantes si disponibles
-      // Ne pas réinitialiser les tensions déjà ajustées par SRG2
     });
     
     console.log('🔄 Starting simulation calculation...');
@@ -77,6 +79,27 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Phase 4: Détermine la tension de référence correcte pour l'initialisation des nœuds
+   */
+  private getInitialNodeVoltage(node: Node, project: Project): number {
+    // Pour les nœuds source, utiliser la tension du transformateur
+    if (node.isSource || node.id === '0') {
+      return project.transformerConfig?.nominalVoltage_V ?? 230;
+    }
+    
+    // Pour les autres nœuds, déterminer selon le système électrique
+    const voltageSystem = project.voltageSystem || 'TRIPHASÉ_230V';
+    
+    switch (voltageSystem) {
+      case 'TÉTRAPHASÉ_400V':
+        return 400;
+      case 'TRIPHASÉ_230V':
+      default:
+        return 230;
+    }
+  }
+
+  /**
    * Phase 1 - Fonction utilitaire pour identifier les nœuds SRG2
    */
   private isSRG2Node(nodeId: string, simulationEquipment?: SimulationEquipment): boolean {
@@ -110,19 +133,38 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    // Extract actual calculated voltages from base result
-    const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
-    const actualVoltages = nodeMetrics?.voltagesPerPhase ? {
-      A: nodeMetrics.voltagesPerPhase.A,
-      B: nodeMetrics.voltagesPerPhase.B, 
-      C: nodeMetrics.voltagesPerPhase.C
-    } : undefined;
+    // Phase 2: Amélioration de l'extraction des tensions réelles avec vérifications de sécurité
+    console.log(`🔍 [SRG2-DEBUG] Base result structure:`, {
+      hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
+      nodeMetricsCount: baseResult.nodeMetricsPerPhase?.length || 0,
+      nodeIds: baseResult.nodeMetricsPerPhase?.map(n => n.nodeId) || []
+    });
     
-    console.log(`🔍 [SRG2-DEBUG] Extracting voltages for node ${targetNode.id}:`, {
+    const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
+    
+    // Vérifications de sécurité pour l'extraction des tensions
+    let actualVoltages = undefined;
+    if (nodeMetrics?.voltagesPerPhase) {
+      const voltages = nodeMetrics.voltagesPerPhase;
+      // Vérifier que les tensions sont valides (non nulles et réalistes)
+      if (voltages.A > 0 && voltages.B > 0 && voltages.C > 0 && 
+          voltages.A < 500 && voltages.B < 500 && voltages.C < 500) {
+        actualVoltages = {
+          A: voltages.A,
+          B: voltages.B,
+          C: voltages.C
+        };
+      } else {
+        console.warn(`⚠️ [SRG2-VOLTAGE] Invalid voltages detected for node ${targetNode.id}:`, voltages);
+      }
+    }
+    
+    console.log(`🔍 [SRG2-DEBUG] Voltage extraction for node ${targetNode.id}:`, {
       nodeMetricsFound: !!nodeMetrics,
       voltagesPerPhase: nodeMetrics?.voltagesPerPhase,
       extractedActualVoltages: actualVoltages,
-      tensionCible: targetNode.tensionCible
+      tensionCible: targetNode.tensionCible,
+      isValidVoltages: !!actualVoltages
     });
     
     console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
