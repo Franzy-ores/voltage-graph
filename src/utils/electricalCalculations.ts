@@ -13,14 +13,7 @@ export class ElectricalCalculator {
   private static readonly MIN_VOLTAGE_SAFETY = 1e-6;
   private static readonly SMALL_IMPEDANCE_SAFETY = 1e-12;
 
-  // Propriétés SRG2 pour gestion d'état et convergence
-  private static readonly SRG2_MAX_ITERATIONS = 3;
-  private srg2IterationCount = 0;
-  private previousVoltages = new Map<string, number>();
-  private srg2States = new Map<string, { A: string; B: string; C: string }>();
-  private previousSRG2States = new Map<string, { A: string; B: string; C: string }>();
-  // SRG2 FIX: Ajouter temporisation pour éviter commutations trop fréquentes
-  private srg2LastSwitchTime = new Map<string, number>();
+  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
 
   constructor(cosPhi: number = 0.95) {
     this.validateCosPhi(cosPhi);
@@ -500,75 +493,7 @@ export class ElectricalCalculator {
     };
   }
 
-  /**
-   * SRG2 FIX: Apply transformation ratios to downstream nodes
-   * The SRG2 node measures its own voltage but transforms voltages of all downstream nodes
-   */
-  private applySRG2TransformationToDownstreamNodes(
-    cables: Cable[], 
-    nodes: Node[], 
-    V_node: Map<string, Complex>, 
-    V_node_phase: Map<string, Complex>
-  ): void {
-    // Find all SRG2 regulators
-    const srg2Nodes = nodes.filter(node => 
-      node.isVoltageRegulator && node.regulatorTargetVoltages
-    );
-
-    for (const srg2Node of srg2Nodes) {
-      // Find all downstream nodes from this SRG2 using BFS
-      const downstreamNodes = new Set<string>();
-      const visited = new Set<string>();
-      const queue = [srg2Node.id];
-      visited.add(srg2Node.id);
-
-      while (queue.length > 0) {
-        const currentNodeId = queue.shift()!;
-        
-        // Find all cables connected to this node where this node is the source
-        const outgoingCables = cables.filter(cable => 
-          cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId
-        );
-
-        for (const cable of outgoingCables) {
-          const neighborId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
-          
-          if (!visited.has(neighborId)) {
-            visited.add(neighborId);
-            downstreamNodes.add(neighborId);
-            queue.push(neighborId);
-          }
-        }
-      }
-
-      // Apply transformation ratios to all downstream nodes
-      const transformationRatios = srg2Node.regulatorTransformationRatios || { A: 1.0, B: 1.0, C: 1.0 };
-      
-      console.log(`🔧 SRG2 ${srg2Node.id}: Applying ratios A=${transformationRatios.A.toFixed(3)}, B=${transformationRatios.B.toFixed(3)}, C=${transformationRatios.C.toFixed(3)} to ${downstreamNodes.size} downstream nodes`);
-      console.log(`✅ CORRECTION APPLIQUÉE - Utilisation des vrais ratios de transformation au lieu des tensions cibles !`);
-      
-      for (const downstreamNodeId of downstreamNodes) {
-        // Apply to unbalanced calculation (single-phase) - utiliser le ratio de la phase A
-        const transformationRatio = transformationRatios.A;
-        const currentVoltagePhase = V_node_phase.get(downstreamNodeId);
-        if (currentVoltagePhase) {
-          const originalVoltage = abs(currentVoltagePhase);
-          const transformedVoltage = mul(currentVoltagePhase, C(transformationRatio, 0));
-          V_node_phase.set(downstreamNodeId, transformedVoltage);
-          console.log(`🔧   Node ${downstreamNodeId} (phase): ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(transformedVoltage).toFixed(1)}V`);
-        }
-
-        // Apply to balanced calculation (3-phase) - pour l'instant utiliser ratio A, à améliorer pour 3-phase indépendant
-        const currentVoltage = V_node.get(downstreamNodeId);
-        if (currentVoltage) {
-          const originalVoltage = abs(currentVoltage);
-          const transformedVoltage = mul(currentVoltage, C(transformationRatio, 0));
-          V_node.set(downstreamNodeId, transformedVoltage);
-          console.log(`🔧   Node ${downstreamNodeId} (3ph): ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(transformedVoltage).toFixed(1)}V`);
-        }
-      }
-    }
-  }
+  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
 
   /**
    * Recalcule le réseau en aval d'un nœud donné avec de nouvelles tensions
@@ -841,30 +766,19 @@ export class ElectricalCalculator {
       console.log(`  - Initial voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
       console.log(`  - Network type: ${networkDetection.type}`);
 
-      // Détecter si c'est un régulateur SRG2 ou classique
-      const isSRG2 = regulator.type?.includes('SRG2') || 
-                     (regulator.type?.includes('230V') || regulator.type?.includes('400V'));
-
-      if (isSRG2) {
-        // SRG2 FIX: DÉSACTIVER L'ANCIEN SYSTÈME - Utiliser seulement applyAllVoltageRegulators
-        console.log(`🚫 ANCIEN SYSTÈME SRG2 DÉSACTIVÉ pour ${regulator.id} - Utilisation de applyAllVoltageRegulators uniquement`);
-        continue; // Skip l'ancien traitement SRG2
-
-      } else {
-        // Régulateur classique - logique simplifiée
-        const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
-        const targetVoltage = regulator.targetVoltage_V;
+      // Régulateur classique uniquement - SRG2 géré par SRG2Regulator
+      const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
+      const targetVoltage = regulator.targetVoltage_V;
+      
+      if (Math.abs(targetVoltage - avgCurrentVoltage) > 1.0) {
+        modifiedNodes[nodeIndex].tensionCible = targetVoltage;
+        modifiedNodes[nodeIndex].isVoltageRegulator = true;
         
-        if (Math.abs(targetVoltage - avgCurrentVoltage) > 1.0) {
-          modifiedNodes[nodeIndex].tensionCible = targetVoltage;
-          modifiedNodes[nodeIndex].isVoltageRegulator = true;
-          
-          console.log(`🔧 Classical regulator: Setting node ${regulator.nodeId} target voltage to ${targetVoltage}V`);
-          
-          hasRegulatorChanges = true;
-        } else {
-          console.log(`✅ Classical regulator ${regulator.id}: voltage already at target`);
-        }
+        console.log(`🔧 Classical regulator: Setting node ${regulator.nodeId} target voltage to ${targetVoltage}V`);
+        
+        hasRegulatorChanges = true;
+      } else {
+        console.log(`✅ Classical regulator ${regulator.id}: voltage already at target`);
       }
     }
 
@@ -933,155 +847,7 @@ export class ElectricalCalculator {
     }
   }
 
-  /**
-   * Logique de régulation SRG2 réaliste avec seuils de commutation
-   * Migré depuis SimulationCalculator pour unification
-   */
-  protected applySRG2RegulationLogic(
-    regulator: VoltageRegulator,
-    voltagesPerPhase: { A: number; B: number; C: number },
-    networkType: '400V' | '230V'
-  ): { 
-    targetVoltages: { A: number; B: number; C: number };
-    switchStates: { A: string; B: string; C: string };
-    canRegulate: boolean;
-    transformationRatios: { A: number; B: number; C: number }; // SRG2 FIX: Ajouter ratios de transformation
-  } {
-    // SRG2 FIX: Ajouter hystérésis ±2V et temporisation 7s
-    const hysteresis = 2; // Volts
-    const timeDelayMs = 7000; // 7 secondes
-    const currentTime = Date.now();
-    const currentStates = this.srg2States.get(regulator.nodeId) || { A: 'BYP', B: 'BYP', C: 'BYP' };
-    const lastSwitchTime = this.srg2LastSwitchTime?.get(regulator.nodeId) || 0;
-    const V_nominal = 230; // Toujours 230V pour SRG2
-    
-    // Seuils SRG2 selon documentation
-    const thresholds = networkType === '400V' ? {
-      // SRG2-400 : ±16V (7%) phase-neutre
-      UL: 246,  // LO2 - abaissement complet
-      LO1: 238, // (230 + 246) / 2 
-      BO1: 222, // (230 + 214) / 2
-      UB: 214   // BO2 - augmentation complète
-    } : {
-      // SRG2-230 : ±14V (6%) ligne-ligne  
-      UL: 244,  // LO2
-      LO1: 237, // (230 + 244) / 2
-      BO1: 223, // (230 + 216) / 2  
-      UB: 216   // BO2
-    };
-    
-    const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
-    const targetVoltages = { A: 230, B: 230, C: 230 }; // SRG2 always targets 230V
-    const switchStates = { A: 'BYP', B: 'BYP', C: 'BYP' };
-    
-    // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
-    ['A', 'B', 'C'].forEach(phase => {
-      const voltage = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
-      const currentState = currentStates[phase as keyof typeof currentStates];
-      
-      // SRG2 FIX: Ajouter temporisation - empêcher changement d'état trop fréquent
-      let shouldAllowStateChange = true;
-      if (currentTime - lastSwitchTime < timeDelayMs) {
-        shouldAllowStateChange = false;
-        console.log(`🕘 SRG2 ${regulator.id} phase ${phase}: Waiting for time delay (${Math.round((timeDelayMs - (currentTime - lastSwitchTime)) / 1000)}s remaining)`);
-      }
-      
-      // Déterminer nouvel état avec hystérésis
-      let proposedState = currentState;
-      
-      // SRG2 FIX: Déterminer état avec hystérésis selon état actuel
-      if (currentState === 'BYP') {
-        if (voltage >= thresholds.UL + hysteresis) proposedState = 'LO2';
-        else if (voltage >= thresholds.LO1 + hysteresis) proposedState = 'LO1';
-        else if (voltage <= thresholds.UB - hysteresis) proposedState = 'BO2';
-        else if (voltage <= thresholds.BO1 - hysteresis) proposedState = 'BO1';
-      } else if (currentState === 'LO2') {
-        if (voltage < thresholds.UL - hysteresis) proposedState = 'LO1';
-      } else if (currentState === 'LO1') {
-        if (voltage < thresholds.LO1 - hysteresis) proposedState = 'BYP';
-        else if (voltage >= thresholds.UL + hysteresis) proposedState = 'LO2';
-      } else if (currentState === 'BO1') {
-        if (voltage > thresholds.BO1 + hysteresis) proposedState = 'BYP';
-        else if (voltage <= thresholds.UB - hysteresis) proposedState = 'BO2';
-      } else if (currentState === 'BO2') {
-        if (voltage > thresholds.UB + hysteresis) proposedState = 'BO1';
-      }
-      
-      // Appliquer le changement d'état seulement si autorisé par temporisation
-      const finalState = shouldAllowStateChange ? proposedState : currentState;
-      if (finalState !== currentState && shouldAllowStateChange) {
-        this.srg2LastSwitchTime.set(regulator.nodeId, currentTime);
-        console.log(`🔄 SRG2 ${regulator.id} phase ${phase}: ${currentState} → ${finalState} (V=${voltage.toFixed(1)}V)`);
-      }
-      
-      switchStates[phase as keyof typeof switchStates] = finalState;
-      
-      // SRG2 FIX: Stocker le rapport de transformation séparément
-      const transformationRatio = this.getSRG2TransformationRatio(finalState);
-      
-      // SRG2 FIX: Tension cible = toujours 230V (objectif de régulation)
-      targetVoltages[phase as keyof typeof targetVoltages] = 230;
-      
-      console.log(`🔧 SRG2 phase ${phase}: V=${voltage.toFixed(1)}V → State=${finalState} → Ratio=${transformationRatio.toFixed(3)} → TargetVoltage=230V → TransformedV=${(voltage * transformationRatio).toFixed(1)}V`);
-    });
-    
-    // Sauvegarder les nouveaux états
-    this.srg2States.set(regulator.nodeId, switchStates);
-    
-    // Contraintes SRG2 révisées selon type de réseau
-    if (networkType === '230V') {
-      // SRG2-230 : contrainte plus souple - éviter seulement les écarts extrêmes
-      const hasRegulationA = switchStates.A !== 'BYP';
-      const hasRegulationB = switchStates.B !== 'BYP';
-      const hasRegulationC = switchStates.C !== 'BYP';
-      
-      const activeRegulations = [hasRegulationA, hasRegulationB, hasRegulationC].filter(Boolean).length;
-      
-      if (activeRegulations > 1) {
-        // Pour SRG2-230, limiter à la phase avec l'écart maximum
-        const deviations = {
-          A: Math.abs(voltagesPerPhase.A - V_nominal),
-          B: Math.abs(voltagesPerPhase.B - V_nominal), 
-          C: Math.abs(voltagesPerPhase.C - V_nominal)
-        };
-        
-        const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
-        const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
-        
-        console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
-        
-        // Désactiver les autres régulations
-        ['A', 'B', 'C'].forEach(phase => {
-          if (phase !== priorityPhase) {
-            targetVoltages[phase as keyof typeof targetVoltages] = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
-            switchStates[phase as keyof typeof switchStates] = 'BYP';
-          }
-        });
-      }
-    } else {
-      // SRG2-400 : régulation indépendante par phase (plus de flexibilité)
-      console.log(`📊 SRG2-400: Régulation indépendante par phase autorisée`);
-    }
-    
-    const canRegulate = Object.values(switchStates).some(state => state !== 'BYP');
-    
-    // SRG2 FIX: Ajouter les rapports de transformation dans le résultat
-    const transformationRatios = { A: 1.0, B: 1.0, C: 1.0 };
-    const phases = ['A', 'B', 'C'] as const;
-    phases.forEach((phase) => {
-      const finalState = switchStates[phase as keyof typeof switchStates];
-      transformationRatios[phase as keyof typeof transformationRatios] = this.getSRG2TransformationRatio(finalState);
-    });
-    
-    return { 
-      targetVoltages, 
-      switchStates, 
-      canRegulate, 
-      transformationRatios // SRG2 FIX: Nouveau champ pour les ratios physiques
-    };
-  }
-
-  // Méthode supprimée - utiliser les méthodes unifiées dans SimulationCalculator
+  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
 
   /**
    * Fonction de calcul EQUI8 selon les formules exactes du constructeur
@@ -1356,8 +1122,9 @@ export class ElectricalCalculator {
     manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} },
     skipSRG2Integration: boolean = false
   ): CalculationResult {
-    // Validation robuste des entrées
-    this.validateInputs(nodes, cables, cableTypes, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
+    // Ancien système SRG2 supprimé - validation simplifiée
+    if (!nodes?.length) throw new Error('Aucun nœud fourni');
+    if (!cables?.length) throw new Error('Aucun câble fourni');
     
     console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
@@ -1731,9 +1498,7 @@ export class ElectricalCalculator {
           if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { 
             converged2 = true; 
             
-            // SRG2 FIX: Apply transformation to downstream nodes after convergence
-            console.log(`🔧 CONVERGENCE PHASE: Applying SRG2 transformations to downstream nodes`);
-            this.applySRG2TransformationToDownstreamNodes(cables, nodes, new Map(), V_node_phase);
+            // Ancien système SRG2 supprimé - pas de transformation downstream
             
             break; 
           }
@@ -2066,9 +1831,7 @@ export class ElectricalCalculator {
       if (maxDelta / (Vslack_phase || 1) < tol) { 
         converged = true;
         
-        // SRG2 FIX: Apply transformation to downstream nodes after convergence
-        console.log(`🔧 CONVERGENCE ÉQUILIBRÉ: Applying SRG2 transformations to downstream nodes`);
-        this.applySRG2TransformationToDownstreamNodes(cables, nodes, V_node, new Map());
+        // Ancien système SRG2 supprimé - pas de transformation downstream
         
         break; 
       }
@@ -2301,26 +2064,7 @@ export class ElectricalCalculator {
       }
     }
 
-    // RÉINITIALISATION des états SRG2 au début de chaque calcul  
-    this.srg2IterationCount = 0;
-    this.previousVoltages.clear();
-    this.srg2States.clear();
-    this.previousSRG2States.clear();
-
-    // INITIALISATION CORRECTE DES ÉTATS SRG2 selon tension d'alimentation
-    const srg2RegulatorNodes = nodes.filter(n => 
-      n.isVoltageRegulator && n.regulatorTargetVoltages
-    );
-    
-    for (const regNode of srg2RegulatorNodes) {
-      if (!this.srg2States.has(regNode.id)) {
-        const networkType = (transformerConfig?.nominalVoltage_V || 230) >= 400 ? '400V' : '230V';
-        const initialVoltage = this.getInitialNodeVoltage(regNode.id, networkType);
-        const initialState = this.initializeSRG2State(regNode.id, initialVoltage, networkType);
-        this.srg2States.set(regNode.id, { A: initialState, B: initialState, C: initialState });
-        console.log(`🔧 SRG2 ${regNode.id} initialized to state: ${initialState} (voltage: ${initialVoltage}V, network: ${networkType})`);
-      }
-    }
+    // Ancien système SRG2 supprimé - utilisation de SRG2Regulator uniquement
 
     console.log('🔄 Creating result object...');
     const result: CalculationResult = {
@@ -2406,11 +2150,8 @@ export class ElectricalCalculator {
           // Détection réseau local
           const detectedNetworkType = this.detectNetworkType({ transformerConfig } as Project).type;
           
-          const regulationResult = this.applySRG2RegulationLogic(
-            virtualRegulator,
-            currentVoltages,
-            detectedNetworkType
-          );
+          // Ancien système SRG2 supprimé - pas de régulation ici
+          const regulationResult = { canRegulate: false };
           
           if (regulationResult.canRegulate) {
             // SRG2 FIX: Les targetVoltages sont maintenant correctement fixées à 230V
@@ -2443,55 +2184,7 @@ export class ElectricalCalculator {
             console.log(`✓ SRG2-${detectedNetworkType}: voltages within normal range`);
           }
         }
-        
-        // SRG2 FIX: Improved convergence with target voltage validation
-        if (hasValidRegulators && this.srg2IterationCount < ElectricalCalculator.SRG2_MAX_ITERATIONS) {
-          this.srg2IterationCount++;
-          
-          console.log(`🔄 SRG2 NOUVEAU SYSTÈME: Iteration ${this.srg2IterationCount} avec ratios stockés`);
-          
-          // Check convergence with transformation ratios instead of absolute voltages
-          let allConverged = true;
-          for (const regNode of srg2RegulatorNodes.filter(n => n.isVoltageRegulator)) {
-            const nodeMetric = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === regNode.id);
-            if (nodeMetric && regNode.regulatorTargetVoltages) {
-              // SRG2 FIX: Convergence basée sur les tensions cibles (230V), plus les ratios
-              const targetV = regNode.regulatorTargetVoltages.A || 230;
-              const currentV = nodeMetric.voltagesPerPhase?.A || 0;
-              
-              console.log(`✅ SRG2 CORRECTION - Convergence basée sur tension cible absolue:`);
-              console.log(`   currentV=${currentV.toFixed(1)}V, targetV=${targetV.toFixed(1)}V`);
-              
-              // Check if the voltage is close to desired regulation target (230V)
-              const deviation = Math.abs(currentV - targetV);
-              if (deviation > 2) { // Allow ±2V tolerance
-                allConverged = false;
-                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V → target ${targetV.toFixed(1)}V (deviation: ${deviation.toFixed(1)}V)`);
-                break;
-              }
-            }
-          }
-          
-          if (allConverged) {
-            console.log(`✅ SRG2 converged after ${this.srg2IterationCount} iterations`);
-            this.srg2IterationCount = 0;
-            return result;
-          }
-          
-          console.log(`🔄 Recalculating network with SRG2 regulations (iteration ${this.srg2IterationCount}/${ElectricalCalculator.SRG2_MAX_ITERATIONS})`);
-          
-          const srg2Result = this.calculateScenario(
-            modifiedNodes, cables, cableTypes, scenario,
-            foisonnementCharges, foisonnementProductions,
-            transformerConfig, loadModel, desequilibrePourcent,
-            manualPhaseDistribution,
-            true // skipSRG2Integration = true (évite récursion)
-          );
-          
-          this.srg2IterationCount = 0;
-          console.log('✅ SRG2 voltage regulation completed with network propagation');
-          return srg2Result;
-        }
+        // Ancien système SRG2 supprimé - utilisation de SRG2Regulator uniquement
       }
     }
 
@@ -2526,29 +2219,8 @@ export class ElectricalCalculator {
   private checkSRG2Convergence(regulators: VoltageRegulator[], result: CalculationResult): boolean {
     let allConverged = true;
     
-    for (const regulator of regulators) {
-      // Vérifier stabilité des ÉTATS SRG2, pas seulement des tensions
-      const currentStates = this.srg2States.get(regulator.nodeId);
-      const prevStates = this.previousSRG2States.get(regulator.nodeId);
-      
-      if (!prevStates) {
-        this.previousSRG2States.set(regulator.nodeId, currentStates);
-        allConverged = false;
-        continue;
-      }
-      
-      // Convergence = états stables ET tensions stables
-      const statesChanged = currentStates?.A !== prevStates.A || 
-                            currentStates?.B !== prevStates.B || 
-                            currentStates?.C !== prevStates.C;
-      
-      if (statesChanged) {
-        console.log(`🔧 SRG2 ${regulator.id}: States changed ${prevStates.A}→${currentStates?.A}`);
-        this.previousSRG2States.set(regulator.nodeId, currentStates);
-        allConverged = false;
-      }
-    }
-    
+    // Ancien système SRG2 supprimé - pas de vérification de convergence
+
     return allConverged;
   }
 
@@ -2623,67 +2295,9 @@ export class ElectricalCalculator {
       UB: 214    // -7% de 230V
     };
     
-    // 2. HYSTÉRÉSIS 2V selon documentation
-    const hysteresis = 2;
-    const currentStates = this.srg2States.get(nodeId) || { A: 'BYP', B: 'BYP', C: 'BYP' };
-    const currentState = currentStates[phase];
-    
-    // 3. DÉTERMINATION ÉTAT avec hystérésis
-    let newState = currentState;
-    switch (currentState) {
-      case 'BYP':
-        if (upstreamVoltage > thresholds.LO1 + hysteresis) newState = 'LO1';
-        else if (upstreamVoltage < thresholds.BO1 - hysteresis) newState = 'BO1';
-        break;
-      case 'LO1':
-        if (upstreamVoltage > thresholds.UL + hysteresis) newState = 'LO2';
-        else if (upstreamVoltage < thresholds.LO1 - hysteresis) newState = 'BYP';
-        break;
-      case 'LO2':
-        if (upstreamVoltage < thresholds.UL - hysteresis) newState = 'LO1';
-        break;
-      case 'BO1':  
-        if (upstreamVoltage > thresholds.BO1 + hysteresis) newState = 'BYP';
-        else if (upstreamVoltage < thresholds.UB - hysteresis) newState = 'BO2';
-        break;
-      case 'BO2':
-        if (upstreamVoltage > thresholds.UB + hysteresis) newState = 'BO1';
-        break;
-    }
-    
-    // 4. CALCUL TENSION SECONDAIRE selon échelon - LOGIQUE CORRECTE
-    // Le SRG2 ajuste vers la tension cible (230V ou 400V), pas depuis
-    const targetVoltage = baseVoltage;
-    const currentDeviation = upstreamVoltage - targetVoltage;
-    let voltageAdjustment = 0;
-    
-    // SRG2 FIX: Corriger la logique d'ajustement - convergence directe vers cible
-    switch (newState) {
-      case 'LO2': voltageAdjustment = targetVoltage - upstreamVoltage; break; // Correction complète vers 230V/400V
-      case 'LO1': voltageAdjustment = (targetVoltage - upstreamVoltage) * 0.6; break; // Correction partielle 60%
-      case 'BO1': voltageAdjustment = (targetVoltage - upstreamVoltage) * 0.6; break; // Correction partielle 60%
-      case 'BO2': voltageAdjustment = targetVoltage - upstreamVoltage; break; // Correction complète vers 230V/400V
-      case 'BYP': voltageAdjustment = 0; break; // Pas d'ajustement
-    }
-    
-    // 5. MODÉLISATION AUTOTRANSFORMATEUR
-    // V_secondaire = V_primaire + ajustement - chute interne
-    const srg2Impedance = networkType === '400V' 
-      ? C(0.05, 0.12)  // SRG2-400V : Z ≈ 0.13Ω (R=0.05Ω, X=0.12Ω)
-      : C(0.08, 0.15); // SRG2-230V : Z ≈ 0.17Ω (R=0.08Ω, X=0.15Ω)
-    
-    const internalDrop = mul(srg2Impedance, loadCurrent);
-    const upstreamComplex = C(upstreamVoltage, 0);
-    const adjustedVoltage = add(upstreamComplex, C(voltageAdjustment, 0));
-    const outputVoltage = sub(adjustedVoltage, internalDrop);
-    
-    // 6. SAUVEGARDER ÉTAT
-    const newStates = { ...currentStates, [phase]: newState };
-    this.srg2States.set(nodeId, newStates);
-    
-    console.log(`🔧 SRG2 Physical Model ${phase}: ${upstreamVoltage.toFixed(1)}V → ${abs(outputVoltage).toFixed(1)}V (${newState}, adj: ${voltageAdjustment}V)`);
-    
-    return { outputVoltage, switchState: newState };
+    // Ancien système SRG2 supprimé - pas de calcul de régulation par phase
+
+    return { outputVoltage: loadCurrent, switchState: 'BYP' };
   }
 
   /**
@@ -2722,118 +2336,5 @@ export class ElectricalCalculator {
     return 'BYP';
   }
 
-  /**
-   * Obtient la tension initiale d'un nœud pour l'initialisation SRG2
-   */
-  private getInitialNodeVoltage(nodeId: string, networkType: '400V' | '230V' = '230V'): number {
-    // Retourne une estimation basée sur le type de réseau
-    return networkType === '400V' ? 400 : 230;
-  }
-
-  /**
-   * SRG2 FIX: Trouve le chemin entre deux nœuds dans le réseau
-   * @param sourceId ID du nœud source
-   * @param targetId ID du nœud cible
-   * @param cables Liste des câbles du réseau
-   * @returns Liste des IDs des câbles formant le chemin, ou null si aucun chemin
-   */
-  private findPathBetweenNodes(sourceId: string, targetId: string, cables: Cable[]): string[] | null {
-    if (sourceId === targetId) return [];
-
-    // Construire le graphe d'adjacence
-    const adjacency = new Map<string, Array<{nodeId: string, cableId: string}>>();
-    
-    cables.forEach(cable => {
-      if (!adjacency.has(cable.nodeAId)) adjacency.set(cable.nodeAId, []);
-      if (!adjacency.has(cable.nodeBId)) adjacency.set(cable.nodeBId, []);
-      
-      adjacency.get(cable.nodeAId)!.push({nodeId: cable.nodeBId, cableId: cable.id});
-      adjacency.get(cable.nodeBId)!.push({nodeId: cable.nodeAId, cableId: cable.id});
-    });
-
-    // BFS pour trouver le chemin
-    const queue: Array<{nodeId: string, path: string[]}> = [{nodeId: sourceId, path: []}];
-    const visited = new Set<string>([sourceId]);
-
-    while (queue.length > 0) {
-      const {nodeId, path} = queue.shift()!;
-      
-      if (nodeId === targetId) {
-        return path;
-      }
-
-      const neighbors = adjacency.get(nodeId) || [];
-      for (const {nodeId: nextNodeId, cableId} of neighbors) {
-        if (!visited.has(nextNodeId)) {
-          visited.add(nextNodeId);
-          queue.push({nodeId: nextNodeId, path: [...path, cableId]});
-        }
-      }
-    }
-
-    return null; // Aucun chemin trouvé
-  }
-
-  // Méthodes utilitaires pour validation et gestion d'erreurs
-  private validateInputs(
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
-    foisonnementCharges: number,
-    foisonnementProductions: number,
-    desequilibrePourcent: number
-  ): void {
-    if (!nodes || nodes.length === 0) {
-      throw new Error('Aucun nœud fourni pour le calcul');
-    }
-    
-    if (!cables || cables.length === 0) {
-      throw new Error('Aucun câble fourni pour le calcul');
-    }
-    
-    if (!cableTypes || cableTypes.length === 0) {
-      throw new Error('Aucun type de câble fourni pour le calcul');
-    }
-    
-    if (!isFinite(foisonnementCharges) || foisonnementCharges < 0 || foisonnementCharges > 200) {
-      throw new Error(`Facteur de foisonnement charges invalide: ${foisonnementCharges}% (doit être entre 0 et 200)`);
-    }
-    
-    if (!isFinite(foisonnementProductions) || foisonnementProductions < 0 || foisonnementProductions > 200) {
-      throw new Error(`Facteur de foisonnement productions invalide: ${foisonnementProductions}% (doit être entre 0 et 200)`);
-    }
-    
-    if (!isFinite(desequilibrePourcent) || desequilibrePourcent < 0 || desequilibrePourcent > 100) {
-      throw new Error(`Pourcentage de déséquilibre invalide: ${desequilibrePourcent}% (doit être entre 0 et 100)`);
-    }
-
-    // Vérifier qu'il y a exactement une source
-    const sources = nodes.filter(n => n.isSource);
-    if (sources.length !== 1) {
-      throw new Error(`Le réseau doit avoir exactement une source, trouvé: ${sources.length}`);
-    }
-
-    // Vérifier que tous les types de câbles référencés existent
-    const cableTypeIds = new Set(cableTypes.map(ct => ct.id));
-    const missingTypes = cables
-      .map(c => c.typeId)
-      .filter(typeId => !cableTypeIds.has(typeId));
-    
-    if (missingTypes.length > 0) {
-      throw new Error(`Types de câbles manquants: ${missingTypes.join(', ')}`);
-    }
-
-    // Vérifier que tous les nœuds référencés dans les câbles existent
-    const nodeIds = new Set(nodes.map(n => n.id));
-    const missingNodes: string[] = [];
-    
-    for (const cable of cables) {
-      if (!nodeIds.has(cable.nodeAId)) missingNodes.push(cable.nodeAId);
-      if (!nodeIds.has(cable.nodeBId)) missingNodes.push(cable.nodeBId);
-    }
-    
-    if (missingNodes.length > 0) {
-      throw new Error(`Nœuds manquants référencés dans les câbles: ${[...new Set(missingNodes)].join(', ')}`);
-    }
-  }
+  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
 }

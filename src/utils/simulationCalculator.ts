@@ -120,20 +120,27 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     // Application des régulateurs de tension classiques (après SRG2)
     if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0) {
-      const activeRegulators = simulationEquipment.regulators.filter(r => r.enabled);
-      if (activeRegulators.length > 0) {
-        console.log(`🔧 Applying ${activeRegulators.length} voltage regulators...`);
+      // FILTRE: Exclure les régulateurs SRG2 du système classique
+      const classicRegulators = simulationEquipment.regulators.filter(r => 
+        r.enabled && !r.type?.includes('SRG2') && 
+        !(r.type?.includes('230V') || r.type?.includes('400V'))
+      );
+      
+      if (classicRegulators.length > 0) {
+        console.log(`🔧 Applying ${classicRegulators.length} classic voltage regulators...`);
         
-        // Utiliser le système unifié pour appliquer tous les régulateurs
+        // Utiliser le système unifié pour appliquer SEULEMENT les régulateurs classiques
         result = this.applyAllVoltageRegulators(
           modifiedNodes, // Utiliser les nœuds modifiés par SRG2
           project.cables,
-          activeRegulators,
+          classicRegulators, // SEULEMENT les régulateurs non-SRG2
           result,
           cableTypes,
           project,
           scenario
         );
+      } else if (simulationEquipment.regulators.filter(r => r.enabled).length > 0) {
+        console.log('ℹ️ All enabled regulators are SRG2 - handled by SRG2Regulator system');
       }
     }
 
