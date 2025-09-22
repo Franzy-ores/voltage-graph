@@ -274,7 +274,7 @@ export class ElectricalCalculator {
   }
 
   /**
-   * Méthode principale de calcul - ne contient plus de code SRG2
+   * Méthode principale de calcul - restaurée avec logique essentielle
    */
   calculateScenario(
     nodes: Node[],
@@ -300,20 +300,154 @@ export class ElectricalCalculator {
       throw new Error('Aucun nœud source trouvé');
     }
 
-    // Configuration de calcul simple sans SRG2
-    console.log('🔄 Creating result object...');
+    // Calculs des puissances totales
+    let totalLoads_kVA = 0;
+    let totalProductions_kVA = 0;
+    
+    for (const node of nodes) {
+      // Calcul des charges
+      const nodeLoads = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      totalLoads_kVA += nodeLoads * (foisonnementCharges / 100);
+      
+      // Calcul des productions
+      const nodeProductions = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+      totalProductions_kVA += nodeProductions * (foisonnementProductions / 100);
+    }
+
+    // Tension de référence
+    const U_ref = this.determineReferenceVoltage(source, transformerConfig, { transformerConfig } as Project, transformerConfig.nominalVoltage_V);
+    
+    // Calculs basiques par câble
+    const calculatedCables: Cable[] = [];
+    const nodeVoltageDrops: any[] = [];
+    const nodeMetrics: any[] = [];
+    const nodePhasors: any[] = [];
+    const cablePowerFlows: any[] = [];
+    
+    let maxVoltageDropPercent = 0;
+    let globalLosses_kW = 0;
+
+    // Index des types de câbles
+    const cableTypeMap = new Map(cableTypes.map(ct => [ct.id, ct]));
+    
+    for (const cable of cables) {
+      const cableType = cableTypeMap.get(cable.typeId);
+      if (!cableType) {
+        console.warn(`⚠️ Cable type ${cable.typeId} not found`);
+        continue;
+      }
+
+      // Calcul de la longueur
+      const length_m = cable.coordinates ? this.calculateLengthMeters(cable.coordinates) : 1000;
+      
+      // Nœuds A et B
+      const nodeA = nodes.find(n => n.id === cable.nodeAId);
+      const nodeB = nodes.find(n => n.id === cable.nodeBId);
+      
+      if (!nodeA || !nodeB) continue;
+
+      // Puissance au nœud B (simplifié)
+      const nodeBLoads = nodeB.clients.reduce((sum, client) => sum + client.S_kVA, 0) * (foisonnementCharges / 100);
+      const nodeBProductions = nodeB.productions.reduce((sum, prod) => sum + prod.S_kVA, 0) * (foisonnementProductions / 100);
+      const netPower_kVA = nodeBLoads - nodeBProductions;
+
+      // Calcul du courant
+      const connectionType = nodeB.connectionType || 'TÉTRA_3P+N_230_400V';
+      const current_A = this.calculateCurrentA(Math.abs(netPower_kVA), connectionType, U_ref);
+
+      // Paramètres électriques
+      const { R, X } = this.selectRX(cableType, connectionType);
+      const length_km = length_m / 1000;
+      
+      // Chute de tension (simplifiée)
+      const R_total = R * length_km;
+      const X_total = X * length_km;
+      const Z_total = Math.sqrt(R_total * R_total + X_total * X_total);
+      
+      const voltageDrop_V = current_A * Z_total;
+      const voltageDropPercent = (voltageDrop_V / U_ref) * 100;
+      
+      // Pertes
+      const losses_kW = (current_A * current_A * R_total * 3) / 1000; // Triphasé
+      
+      // Mise à jour des maximums
+      maxVoltageDropPercent = Math.max(maxVoltageDropPercent, Math.abs(voltageDropPercent));
+      globalLosses_kW += losses_kW;
+
+      // Câble calculé
+      const calculatedCable: Cable = {
+        ...cable,
+        length_m,
+        current_A,
+        voltageDrop_V,
+        voltageDropPercent,
+        losses_kW,
+        apparentPower_kVA: Math.abs(netPower_kVA)
+      };
+      calculatedCables.push(calculatedCable);
+
+      // Node voltage drop
+      nodeVoltageDrops.push({
+        nodeId: nodeB.id,
+        deltaU_cum_V: voltageDrop_V,
+        deltaU_cum_percent: voltageDropPercent
+      });
+
+      // Node metrics
+      const nodeVoltage = U_ref - voltageDrop_V;
+      nodeMetrics.push({
+        nodeId: nodeB.id,
+        V_phase_V: nodeVoltage,
+        V_pu: nodeVoltage / U_ref,
+        I_inj_A: current_A
+      });
+
+      // Node phasors (simplifié)
+      nodePhasors.push({
+        nodeId: nodeB.id,
+        V_real: nodeVoltage,
+        V_imag: 0,
+        V_phase_V: nodeVoltage,
+        V_angle_deg: 0
+      });
+
+      // Cable power flow
+      cablePowerFlows.push({
+        cableId: cable.id,
+        P_kW: netPower_kVA * this.cosPhi,
+        Q_kVAr: netPower_kVA * Math.sin(Math.acos(this.cosPhi)),
+        S_kVA: Math.abs(netPower_kVA),
+        pf: this.cosPhi
+      });
+    }
+
+    // Métriques par phase pour compatibilité
+    const nodeMetricsPerPhase = nodeMetrics.map(nm => ({
+      nodeId: nm.nodeId,
+      voltagesPerPhase: { A: nm.V_phase_V, B: nm.V_phase_V, C: nm.V_phase_V },
+      voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
+      currentPerPhase: { A: nm.I_inj_A, B: nm.I_inj_A, C: nm.I_inj_A },
+      powerPerPhase: { A: 0, B: 0, C: 0 }
+    }));
+
+    // Détermination de la conformité
+    const compliance = this.getComplianceStatus(maxVoltageDropPercent);
+
+    console.log(`📊 Calculation completed: ${calculatedCables.length} cables, max drop: ${maxVoltageDropPercent.toFixed(2)}%, losses: ${globalLosses_kW.toFixed(3)}kW`);
+
     const result: CalculationResult = {
       scenario,
-      cables: cables.map(c => ({ ...c })),
-      totalLoads_kVA: 0,
-      totalProductions_kVA: 0,
-      globalLosses_kW: 0,
-      maxVoltageDropPercent: 0,
-      compliance: 'normal' as const,
-      nodeVoltageDrops: [],
-      nodeMetrics: [],
-      nodePhasors: [],
-      cablePowerFlows: []
+      cables: calculatedCables,
+      totalLoads_kVA,
+      totalProductions_kVA,
+      globalLosses_kW,
+      maxVoltageDropPercent,
+      compliance,
+      nodeVoltageDrops,
+      nodeMetrics,
+      nodePhasors,
+      nodeMetricsPerPhase,
+      cablePowerFlows
     };
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
