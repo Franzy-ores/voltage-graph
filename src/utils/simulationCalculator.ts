@@ -131,79 +131,47 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    // Extraction précise des tensions réelles calculées
-    const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
-    const simpleNodeMetrics = baseResult.nodeMetrics?.find(n => n.nodeId === targetNode.id);
+    // NOUVELLE LOGIQUE: Utiliser la tension cible du nœud source pour déterminer les vraies tensions réseau
+    // Cela évite le problème d'ordre d'exécution où le calcul de base n'a pas encore les bonnes tensions
     
-    console.log(`🔍 [SRG2-VOLTAGE] Extracting real calculated voltages for node ${targetNode.id}:`);
-    console.log(`📊 Available data:`, {
-      nodeMetricsPerPhase: nodeMetrics ? {
-        voltagesPerPhase: nodeMetrics.voltagesPerPhase
-      } : 'NOT FOUND',
-      nodeMetrics: simpleNodeMetrics ? {
-        V_phase_V: simpleNodeMetrics.V_phase_V
-      } : 'NOT FOUND'
-    });
-    
-    // Extraction des tensions réelles (priorité: nodeMetricsPerPhase > nodeMetrics)
-    let actualVoltages = undefined;
-    
-    // Priorité 1: Utiliser les bonnes tensions selon le type de réseau
-    const networkType = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
-    
-    if (networkType === '230V' && nodeMetrics?.calculatedVoltagesComposed) {
-      // Réseau 230V: Utiliser les tensions composées (phase-phase)
-      const composedVoltages = nodeMetrics.calculatedVoltagesComposed;
-      if (composedVoltages.AB > 50 && composedVoltages.BC > 50 && composedVoltages.CA > 50) {
-        actualVoltages = {
-          A: composedVoltages.AB,
-          B: composedVoltages.BC, 
-          C: composedVoltages.CA
-        };
-        console.log(`✅ [SRG2-VOLTAGE] 230V Network - Using phase-phase voltages: AB=${composedVoltages.AB.toFixed(1)}V, BC=${composedVoltages.BC.toFixed(1)}V, CA=${composedVoltages.CA.toFixed(1)}V`);
-      }
-    } else if (networkType === '400V' && nodeMetrics?.calculatedVoltagesPerPhase) {
-      // Réseau 400V: Utiliser les tensions phase-neutre
-      const calculatedVoltages = nodeMetrics.calculatedVoltagesPerPhase;
-      if (calculatedVoltages.A > 50 && calculatedVoltages.B > 50 && calculatedVoltages.C > 50) {
-        actualVoltages = {
-          A: calculatedVoltages.A,
-          B: calculatedVoltages.B,
-          C: calculatedVoltages.C
-        };
-        console.log(`✅ [SRG2-VOLTAGE] 400V Network - Using phase-neutral voltages: A=${calculatedVoltages.A.toFixed(1)}V, B=${calculatedVoltages.B.toFixed(1)}V, C=${calculatedVoltages.C.toFixed(1)}V`);
-      }
+    // Trouver le nœud source (nœud avec isSource = true)
+    const sourceNode = project.nodes.find(n => n.isSource);
+    if (!sourceNode) {
+      console.error(`❌ [SRG2-VOLTAGE] CRITICAL: No source node found in project!`);
+      return { nodes, result: baseResult };
     }
     
-    // Priorité 2: Fallback sur tensions d'affichage (avec avertissement)
-    if (!actualVoltages && nodeMetrics?.voltagesPerPhase) {
-      const voltages = nodeMetrics.voltagesPerPhase;
-      if (voltages.A > 50 && voltages.B > 50 && voltages.C > 50) {
-        actualVoltages = {
-          A: voltages.A,
-          B: voltages.B,
-          C: voltages.C
-        };
-        console.warn(`⚠️ [SRG2-VOLTAGE] FALLBACK: Using display voltages (with scale): A=${voltages.A.toFixed(1)}V, B=${voltages.B.toFixed(1)}V, C=${voltages.C.toFixed(1)}V`);
-      }
-    }
+    const sourceTension = sourceNode.tensionCible;
+    console.log(`🎯 [SRG2-VOLTAGE] Source node ${sourceNode.id} has tensionCible: ${sourceTension}V`);
     
-    // Priorité 3: Utiliser la tension de phase calculée (équilibré)
-    if (!actualVoltages && simpleNodeMetrics?.V_phase_V && simpleNodeMetrics.V_phase_V > 50) {
-      const phaseVoltage = simpleNodeMetrics.V_phase_V;
+    let actualVoltages: { A: number; B: number; C: number } | undefined;
+    
+    // Pour un réseau 230V, utiliser les tensions composées basées sur la tension source
+    if (project.voltageSystem === 'TRIPHASÉ_230V') {
+      // La tension source (ex: 250V) correspond directement aux tensions composées
       actualVoltages = {
-        A: phaseVoltage,
-        B: phaseVoltage,
-        C: phaseVoltage
+        A: sourceTension, // AB
+        B: sourceTension, // BC  
+        C: sourceTension  // CA
       };
-      console.log(`✅ [SRG2-VOLTAGE] Using calculated balanced voltage: ${phaseVoltage.toFixed(1)}V`);
+      console.log(`✅ [SRG2-VOLTAGE] 230V Network - Using source-based composite voltages: AB=${sourceTension}V, BC=${sourceTension}V, CA=${sourceTension}V`);
+    }
+    // Pour un réseau 400V, calculer les tensions phase-neutre à partir de la tension source
+    else if (project.voltageSystem === 'TÉTRAPHASÉ_400V') {
+      // La tension source (ex: 420V) correspond aux tensions composées, 
+      // donc tension phase-neutre = tension_composée / √3
+      const phaseNeutralVoltage = sourceTension / Math.sqrt(3);
+      actualVoltages = {
+        A: phaseNeutralVoltage,
+        B: phaseNeutralVoltage,
+        C: phaseNeutralVoltage
+      };
+      console.log(`✅ [SRG2-VOLTAGE] 400V Network - Using source-based phase-neutral voltages: A=${phaseNeutralVoltage.toFixed(1)}V, B=${phaseNeutralVoltage.toFixed(1)}V, C=${phaseNeutralVoltage.toFixed(1)}V`);
     }
     
-    // ERREUR: Si aucune tension calculée n'est disponible
     if (!actualVoltages) {
-      console.error(`❌ [SRG2-VOLTAGE] CRITICAL: No calculated voltages found for node ${targetNode.id}!`);
-      console.error(`❌ This means SRG2 will use default tension (${targetNode.tensionCible}V) instead of real calculated voltage!`);
-      console.error(`❌ Check why nodeMetricsPerPhase or nodeMetrics is missing voltage data.`);
+      console.error(`❌ [SRG2-VOLTAGE] CRITICAL: Could not determine voltages for voltage system ${project.voltageSystem}!`);
+      return { nodes, result: baseResult };
     }
     
     console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
