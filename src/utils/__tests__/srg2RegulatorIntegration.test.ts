@@ -258,6 +258,9 @@ describe('SRG2 Regulator Integration', () => {
     const modifiedNodes = srg2Regulator.applyRegulationToNetwork(result, project.nodes, project.cables);
 
     const regulatedNode = modifiedNodes.find(n => n.id === 'srg2_node');
+    expect(regulatedNode?.srg2Applied).toBe(true);
+    expect(regulatedNode?.srg2State).toBe('LO2');
+    expect(regulatedNode?.srg2Ratio).toBe(0.93);
     expect(regulatedNode?.tensionCible).toBeCloseTo(420 * 0.93, 1);
   });
 });

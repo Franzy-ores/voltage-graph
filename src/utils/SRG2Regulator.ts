@@ -214,6 +214,11 @@ export class SRG2Regulator {
     if (regulatedNode) {
       regulatedNode.tensionCible = result.regulatedVoltage;
       
+      // Store SRG2 information for later use
+      regulatedNode.srg2Applied = true;
+      regulatedNode.srg2State = result.state;
+      regulatedNode.srg2Ratio = result.ratio;
+      
       console.log(`🔧 SRG2: Updated node ${result.nodeId} voltage to ${result.regulatedVoltage.toFixed(1)}V`);
     }
 
