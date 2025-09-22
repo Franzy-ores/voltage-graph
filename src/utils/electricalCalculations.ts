@@ -545,6 +545,7 @@ export class ElectricalCalculator {
       const transformationRatio = srg2Node.regulatorTargetVoltages?.A || 1.0;
       
       console.log(`🔧 SRG2 ${srg2Node.id}: Applying ratio ${transformationRatio.toFixed(3)} to ${downstreamNodes.size} downstream nodes`);
+      console.log(`🚨 UTILISATION INCORRECTE - regulatorTargetVoltages.A=${transformationRatio.toFixed(3)} est un RAPPORT, pas une tension !`);
       
       for (const downstreamNodeId of downstreamNodes) {
         // Apply to unbalanced calculation (single-phase)
@@ -1034,6 +1035,8 @@ export class ElectricalCalculator {
       // SRG2 FIX: Retourner le rapport de transformation selon l'échelon
       const transformationRatio = this.getSRG2TransformationRatio(finalState);
       targetVoltages[phase as keyof typeof targetVoltages] = transformationRatio;
+      
+      console.log(`🔧 SRG2 phase ${phase}: V=${voltage.toFixed(1)}V → State=${finalState} → Ratio=${transformationRatio.toFixed(3)} → Target=${(voltage * transformationRatio).toFixed(1)}V`);
     });
     
     // Sauvegarder les nouveaux états
@@ -1495,6 +1498,10 @@ export class ElectricalCalculator {
         U_line_base = transformerConfig.nominalVoltage_V;
       }
       console.log(`🔧 Source is SRG2 regulator, maintaining per-phase targets: A=${source.regulatorTargetVoltages.A.toFixed(1)}V, B=${source.regulatorTargetVoltages.B.toFixed(1)}V, C=${source.regulatorTargetVoltages.C.toFixed(1)}V`);
+      
+      console.log(`🚨 ERREUR CRITIQUE - source.regulatorTargetVoltages contient des RAPPORTS, pas des tensions !`);
+      console.log(`   Valeurs actuelles: A=${source.regulatorTargetVoltages.A.toFixed(3)}, B=${source.regulatorTargetVoltages.B.toFixed(3)}, C=${source.regulatorTargetVoltages.C.toFixed(3)}`);
+      console.log(`   Ces valeurs sont des ratios (0.965, 1.035, etc.) et NON des tensions en Volts !`);
     } else if (source.tensionCible) {
       U_line_base = source.tensionCible;
     }
@@ -2411,6 +2418,12 @@ export class ElectricalCalculator {
               C: regulationResult.targetVoltages.C
             };
             
+            console.log(`🚨 PROBLÈME IDENTIFIÉ - Les targetVoltages contiennent des RAPPORTS, pas des tensions:`);
+            console.log(`   A: ${regulationResult.targetVoltages.A.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
+            console.log(`   B: ${regulationResult.targetVoltages.B.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
+            console.log(`   C: ${regulationResult.targetVoltages.C.toFixed(3)} (devrait être une tension absolue, mais c'est un ratio!)`);
+            console.log(`   Pour corriger: multiplier par les tensions actuelles: A=${(currentVoltages.A * regulationResult.targetVoltages.A).toFixed(1)}V`);
+            
             // SRG2 FIX: Stocker les rapports de transformation par phase
             modifiedNodes[nodeIndex].isVoltageRegulator = true;
             modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
@@ -2439,6 +2452,10 @@ export class ElectricalCalculator {
               const currentV = nodeMetric.voltagesPerPhase?.A || 0;
               const transformationRatio = regNode.regulatorTargetVoltages.A || 1.0;
               const expectedV = currentV * transformationRatio;
+              
+              console.log(`🔧 SRG2 convergence check for ${regNode.id}: currentV=${currentV.toFixed(1)}V, ratio=${transformationRatio.toFixed(3)}, expectedV=${expectedV.toFixed(1)}V`);
+              console.log(`🚨 ERREUR DE LOGIQUE - transformationRatio=${transformationRatio.toFixed(3)} est un RAPPORT, utilisation correcte ici mais les données sont fausses !`);
+              
               // Check if the voltage is close to desired regulation target (230V)
               const deviation = Math.abs(expectedV - 230);
               if (deviation > 2) { // Allow ±2V tolerance
