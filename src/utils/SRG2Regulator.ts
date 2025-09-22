@@ -61,6 +61,13 @@ export class SRG2Regulator {
   ): { state: string; ratio: number } {
     const thresholds = this.getThresholds(network);
     
+    console.log(`🔧 [SRG2-COMPUTE] State computation for ${voltage.toFixed(1)}V (${network}):`, {
+      voltage: voltage.toFixed(1),
+      currentState: currentState?.state,
+      thresholds,
+      hasCurrentState: !!currentState
+    });
+    
     // Apply hysteresis if we have a current state
     const hysteresisAdjusted = currentState ? {
       UL: thresholds.UL + (currentState.state === 'LO2' ? -this.hysteresis : this.hysteresis),
@@ -69,11 +76,27 @@ export class SRG2Regulator {
       UB: thresholds.UB + (currentState.state === 'BO2' ? this.hysteresis : -this.hysteresis)
     } : thresholds;
 
-    if (voltage >= hysteresisAdjusted.UL) return { state: 'LO2', ratio: 0.93 };
-    if (voltage >= hysteresisAdjusted.LO1) return { state: 'LO1', ratio: 0.965 };
-    if (voltage <= hysteresisAdjusted.UB) return { state: 'BO2', ratio: 1.07 };
-    if (voltage <= hysteresisAdjusted.BO1) return { state: 'BO1', ratio: 1.035 };
-    return { state: 'BYP', ratio: 1.0 };
+    console.log(`🔧 [SRG2-COMPUTE] Hysteresis-adjusted thresholds:`, hysteresisAdjusted);
+
+    let result;
+    if (voltage >= hysteresisAdjusted.UL) {
+      result = { state: 'LO2', ratio: 0.93 };
+      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V >= ${hysteresisAdjusted.UL}V (UL) → LO2 (ratio: 0.93)`);
+    } else if (voltage >= hysteresisAdjusted.LO1) {
+      result = { state: 'LO1', ratio: 0.965 };
+      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V >= ${hysteresisAdjusted.LO1}V (LO1) → LO1 (ratio: 0.965)`);
+    } else if (voltage <= hysteresisAdjusted.UB) {
+      result = { state: 'BO2', ratio: 1.07 };
+      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V <= ${hysteresisAdjusted.UB}V (UB) → BO2 (ratio: 1.07)`);
+    } else if (voltage <= hysteresisAdjusted.BO1) {
+      result = { state: 'BO1', ratio: 1.035 };
+      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V <= ${hysteresisAdjusted.BO1}V (BO1) → BO1 (ratio: 1.035)`);
+    } else {
+      result = { state: 'BYP', ratio: 1.0 };
+      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V in BYP range [${hysteresisAdjusted.UB}V - ${hysteresisAdjusted.BO1}V] → BYP (ratio: 1.0)`);
+    }
+    
+    return result;
   }
 
   /** Calculate downstream power with diversity factors - Phase 1: Calcul complet du sous-arbre */
@@ -183,8 +206,22 @@ export class SRG2Regulator {
       maxInjection
     });
     
+    // Phase 2: Amélioration de la logique de vérification des limites - séparons consommation et injection
+    const isConsumption = powerCalc.netPower_kVA > 0;
+    const isInjection = powerCalc.netPower_kVA < 0;
+    
+    console.log(`🔍 [SRG2-LIMITS] Power analysis:`, {
+      netPower: powerCalc.netPower_kVA.toFixed(2),
+      totalPower: powerCalc.totalPower_kVA.toFixed(2),
+      isConsumption,
+      isInjection,
+      maxConsumption,
+      maxInjection
+    });
+    
     // Check consumption limit (positive net power = consumption)
-    if (powerCalc.netPower_kVA > 0 && powerCalc.totalPower_kVA > maxConsumption) {
+    if (isConsumption && powerCalc.totalPower_kVA > maxConsumption) {
+      console.log(`❌ [SRG2-LIMITS] Consumption limit exceeded: ${powerCalc.totalPower_kVA.toFixed(1)} > ${maxConsumption} kVA`);
       return {
         canApply: false,
         reason: `Downstream consumption (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxConsumption} kVA)`,
@@ -193,13 +230,17 @@ export class SRG2Regulator {
     }
     
     // Check injection limit (negative net power = injection/production)
-    if (powerCalc.netPower_kVA < 0 && powerCalc.totalPower_kVA > maxInjection) {
+    if (isInjection && powerCalc.totalPower_kVA > maxInjection) {
+      console.log(`❌ [SRG2-LIMITS] Injection limit exceeded: ${powerCalc.totalPower_kVA.toFixed(1)} > ${maxInjection} kVA`);
       return {
         canApply: false,
         reason: `Downstream injection (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxInjection} kVA)`,
         powerCalc
       };
     }
+    
+    console.log(`✅ [SRG2-LIMITS] Power limits OK - can apply SRG2`);
+    
 
     return { canApply: true, powerCalc };
   }
@@ -330,6 +371,13 @@ export class SRG2Regulator {
     this.lastSwitchTimes.delete(nodeId);
     this.currentStates.delete(nodeId);
     console.log(`🔄 SRG2: Reset state for node ${nodeId}`);
+  }
+
+  /** Reset all SRG2 states - Phase 4: Réinitialisation complète */
+  resetAll(): void {
+    console.log(`🔄 [SRG2-RESET] Resetting all SRG2 states`);
+    this.currentStates.clear();
+    this.lastSwitchTimes.clear();
   }
 
   /** Get current state for a node */

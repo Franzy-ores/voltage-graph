@@ -70,11 +70,10 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Réinitialise tous les états SRG2 (utile entre deux runs)
+   * Réinitialise tous les états SRG2 (utile entre deux runs) - Phase 4: Méthode publique
    */
   private resetAllSrg2(): void {
-    (this.srg2Regulator as any).currentStates.clear();
-    (this.srg2Regulator as any).lastSwitchTimes.clear();
+    this.srg2Regulator.resetAll();
     console.log('[SRG2-Reset] All SRG2 states cleared for new simulation');
   }
 
