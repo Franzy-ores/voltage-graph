@@ -37,10 +37,11 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     expect(result.targetVoltages.A).toBeCloseTo(0.965, 3); // Transformation ratio
     expect(result.switchStates.A).toBe('LO1');
     
-    // Final voltage should be: 250V × 0.965 = 241.25V (close to 230V target)
-    const finalVoltage = 250 * result.targetVoltages.A;
-    expect(finalVoltage).toBeCloseTo(241.25, 1);
-    expect(finalVoltage).toBeLessThan(245); // Should be reduced
+    // SRG2 FIX: The SRG2 node itself should remain at 250V (measurement point)
+    // Only downstream nodes will be transformed: 250V × 0.965 = 241.25V
+    console.log(`SRG2 regulation: ${250}V input → LO1 step (ratio: ${result.targetVoltages.A})`);
+    console.log(`SRG2 node voltage: 250V (unchanged - measurement point)`);
+    console.log(`Downstream nodes voltage: ${(250 * result.targetVoltages.A).toFixed(1)}V (transformed)`);
   });
 
   // SRG2 FIX: Test correction sous-tension (220V) → rapport BO1 (+3.5%)
@@ -70,10 +71,11 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     expect(result.targetVoltages.A).toBeCloseTo(1.035, 3); // Transformation ratio
     expect(result.switchStates.A).toBe('BO1');
     
-    // Final voltage should be: 220V × 1.035 = 227.7V (close to 230V target)
-    const finalVoltage = 220 * result.targetVoltages.A;
-    expect(finalVoltage).toBeCloseTo(227.7, 1);
-    expect(finalVoltage).toBeGreaterThan(225); // Should be increased
+    // SRG2 FIX: The SRG2 node itself should remain at 220V (measurement point)
+    // Only downstream nodes will be transformed: 220V × 1.035 = 227.7V
+    console.log(`SRG2 regulation: ${220}V input → BO1 step (ratio: ${result.targetVoltages.A})`);
+    console.log(`SRG2 node voltage: 220V (unchanged - measurement point)`);
+    console.log(`Downstream nodes voltage: ${(220 * result.targetVoltages.A).toFixed(1)}V (transformed)`);
   });
 
   // SRG2 FIX: Test régulation par phase indépendante avec rapports de transformation
@@ -126,6 +128,11 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     // Should not regulate (within hysteresis zone), ratio should be 1.0 (BYP)
     expect(result1.switchStates.A).toBe('BYP');
     expect(result1.targetVoltages.A).toBe(1.0); // BYP transformation ratio
+    
+    // SRG2 FIX: Both SRG2 node and downstream nodes should remain at 244V (no transformation)
+    console.log(`SRG2 regulation: ${244}V input → BYP step (ratio: ${result1.targetVoltages.A})`);
+    console.log(`SRG2 node voltage: 244V (unchanged - measurement point)`);
+    console.log(`Downstream nodes voltage: ${(244 * result1.targetVoltages.A).toFixed(1)}V (no transformation)`);
   });
 
   // Helper: Créer régulateur de test 

@@ -501,6 +501,74 @@ export class ElectricalCalculator {
   }
 
   /**
+   * SRG2 FIX: Apply transformation ratios to downstream nodes
+   * The SRG2 node measures its own voltage but transforms voltages of all downstream nodes
+   */
+  private applySRG2TransformationToDownstreamNodes(
+    cables: Cable[], 
+    nodes: Node[], 
+    V_node: Map<string, Complex>, 
+    V_node_phase: Map<string, Complex>
+  ): void {
+    // Find all SRG2 regulators
+    const srg2Nodes = nodes.filter(node => 
+      node.isVoltageRegulator && node.regulatorTargetVoltages
+    );
+
+    for (const srg2Node of srg2Nodes) {
+      // Find all downstream nodes from this SRG2 using BFS
+      const downstreamNodes = new Set<string>();
+      const visited = new Set<string>();
+      const queue = [srg2Node.id];
+      visited.add(srg2Node.id);
+
+      while (queue.length > 0) {
+        const currentNodeId = queue.shift()!;
+        
+        // Find all cables connected to this node where this node is the source
+        const outgoingCables = cables.filter(cable => 
+          cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId
+        );
+
+        for (const cable of outgoingCables) {
+          const neighborId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+          
+          if (!visited.has(neighborId)) {
+            visited.add(neighborId);
+            downstreamNodes.add(neighborId);
+            queue.push(neighborId);
+          }
+        }
+      }
+
+      // Apply transformation ratio to all downstream nodes
+      const transformationRatio = srg2Node.regulatorTargetVoltages?.A || 1.0;
+      
+      console.log(`🔧 SRG2 ${srg2Node.id}: Applying ratio ${transformationRatio.toFixed(3)} to ${downstreamNodes.size} downstream nodes`);
+      
+      for (const downstreamNodeId of downstreamNodes) {
+        // Apply to unbalanced calculation (single-phase)
+        const currentVoltagePhase = V_node_phase.get(downstreamNodeId);
+        if (currentVoltagePhase) {
+          const originalVoltage = abs(currentVoltagePhase);
+          const transformedVoltage = mul(currentVoltagePhase, C(transformationRatio, 0));
+          V_node_phase.set(downstreamNodeId, transformedVoltage);
+          console.log(`🔧   Node ${downstreamNodeId} (phase): ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(transformedVoltage).toFixed(1)}V`);
+        }
+
+        // Apply to balanced calculation (3-phase)
+        const currentVoltage = V_node.get(downstreamNodeId);
+        if (currentVoltage) {
+          const originalVoltage = abs(currentVoltage);
+          const transformedVoltage = mul(currentVoltage, C(transformationRatio, 0));
+          V_node.set(downstreamNodeId, transformedVoltage);
+          console.log(`🔧   Node ${downstreamNodeId} (3ph): ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(transformedVoltage).toFixed(1)}V`);
+        }
+      }
+    }
+  }
+
+  /**
    * Recalcule le réseau en aval d'un nœud donné avec de nouvelles tensions
    * @param nodeId ID du nœud à partir duquel recalculer
    * @param newVoltages Nouvelles tensions au nœud (Phase-Neutre en V)
@@ -1638,15 +1706,8 @@ export class ElectricalCalculator {
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // SRG2 FIX: Apply transformation ratio for SRG2 nodes (auto-transformer model)
-              const nodeV = nodeById.get(v);
-              if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-                // Apply transformation ratio instead of direct voltage replacement
-                const transformationRatio = nodeV.regulatorTargetVoltages.A || 1.0;
-                const originalVoltage = abs(Vv);
-                Vv = mul(Vv, C(transformationRatio, 0));
-                console.log(`🔧 SRG2 node ${v}: ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(Vv).toFixed(1)}V`);
-              }
+              // SRG2 FIX: Do not apply transformation to SRG2 node itself
+              // The SRG2 node voltage is the measurement point and should remain unchanged
               
               V_node_phase.set(v, Vv);
               stack2.push(v);
@@ -1660,7 +1721,14 @@ export class ElectricalCalculator {
             const d = abs(sub(Vn, Vp));
             if (d > maxDelta) maxDelta = d;
           }
-          if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { converged2 = true; break; }
+          if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { 
+            converged2 = true; 
+            
+            // SRG2 FIX: Apply transformation to downstream nodes after convergence
+            this.applySRG2TransformationToDownstreamNodes(cables, nodes, new Map(), V_node_phase);
+            
+            break; 
+          }
         }
         if (!converged2) {
           console.warn(`⚠️ BFS phase ${angleDeg}° non convergé`);
@@ -1972,15 +2040,8 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // SRG2 FIX: Apply transformation ratio for SRG2 nodes (auto-transformer model)
-          const nodeV = nodeById.get(v);
-          if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-            // Apply transformation ratio instead of direct voltage replacement
-            const transformationRatio = nodeV.regulatorTargetVoltages.A || 1.0;
-            const originalVoltage = abs(Vv);
-            Vv = mul(Vv, C(transformationRatio, 0));
-            console.log(`🔧 SRG2 node ${v}: ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(Vv).toFixed(1)}V`);
-          }
+          // SRG2 FIX: Do not apply transformation to SRG2 node itself
+          // The SRG2 node voltage is the measurement point and should remain unchanged
           
           V_node.set(v, Vv);
           stack2.push(v);
@@ -1994,7 +2055,14 @@ export class ElectricalCalculator {
         const d = abs(sub(Vn, Vp));
         if (d > maxDelta) maxDelta = d;
       }
-      if (maxDelta / (Vslack_phase || 1) < tol) { converged = true; break; }
+      if (maxDelta / (Vslack_phase || 1) < tol) { 
+        converged = true;
+        
+        // SRG2 FIX: Apply transformation to downstream nodes after convergence
+        this.applySRG2TransformationToDownstreamNodes(cables, nodes, V_node, new Map());
+        
+        break; 
+      }
     }
     if (!converged) {
       console.warn(`⚠️ Backward–Forward Sweep non convergé (tol=${tol}, maxIter=${maxIter}). Les résultats peuvent être approximatifs.`);
