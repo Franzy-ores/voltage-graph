@@ -34,9 +34,9 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     );
     
     // The corrected voltage should be around 230V, not below 228V (no overshoot)
-    expect(result.regulatorTargetVoltages.A).toBeCloseTo(230, 1);
-    expect(result.regulatorTargetVoltages.A).toBeGreaterThanOrEqual(228); // No overshoot
-    expect(result.regulatorTargetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
+    expect(result.targetVoltages.A).toBeCloseTo(230, 1);
+    expect(result.targetVoltages.A).toBeGreaterThanOrEqual(228); // No overshoot
+    expect(result.targetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
   });
 
   // SRG2 FIX: Test correction sous-tension (<222V) → tension relevée ≈ 230V
@@ -63,9 +63,9 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     );
     
     // The corrected voltage should be raised to around 230V
-    expect(result.regulatorTargetVoltages.A).toBeCloseTo(230, 1);
-    expect(result.regulatorTargetVoltages.A).toBeGreaterThanOrEqual(228); // Should be raised
-    expect(result.regulatorTargetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
+    expect(result.targetVoltages.A).toBeCloseTo(230, 1);
+    expect(result.targetVoltages.A).toBeGreaterThanOrEqual(228); // Should be raised
+    expect(result.targetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
   });
 
   // SRG2 FIX: Test régulation par phase indépendante (pas de moyenne)
@@ -81,17 +81,17 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     
     console.log(`Mixed phases: A=${250}V (high), B=${210}V (low), C=${230}V (normal)`);
     console.log(`States: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
-    console.log(`Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+    console.log(`Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
     
     // SRG2 FIX: Chaque phase doit réguler indépendamment
     expect(regulationResult.switchStates.A).toMatch(/^LO[12]$/); // Abaissement pour phase A
     expect(regulationResult.switchStates.B).toMatch(/^BO[12]$/); // Augmentation pour phase B  
     expect(regulationResult.switchStates.C).toBe('BYP');         // Pas de régulation pour phase C
     
-    // Vérifier que les corrections vont dans le bon sens
-    expect(regulationResult.adjustmentPerPhase.A).toBeLessThan(0); // Correction négative pour surtension
-    expect(regulationResult.adjustmentPerPhase.B).toBeGreaterThan(0); // Correction positive pour sous-tension
-    expect(regulationResult.adjustmentPerPhase.C).toBe(0); // Pas de correction
+    // Vérifier que les tensions cibles sont correctes
+    expect(regulationResult.targetVoltages.A).toBe(230); // Cible pour surtension
+    expect(regulationResult.targetVoltages.B).toBe(230); // Cible pour sous-tension
+    expect(regulationResult.targetVoltages.C).toBe(230); // Pas de régulation, garde la tension actuelle
   });
 
   // SRG2 FIX: Test absence d'oscillation avec hystérésis
@@ -117,7 +117,7 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     
     // Should not regulate (within hysteresis zone)
     expect(result1.switchStates.A).toBe('BYP');
-    expect(result1.adjustmentPerPhase.A).toBe(0);
+    expect(result1.targetVoltages.A).toBe(244); // Should keep current voltage
   });
 
   // Helper: Créer régulateur de test 

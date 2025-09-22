@@ -789,16 +789,16 @@ export class ElectricalCalculator {
         }
 
         console.log(`  - Switch states: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
-        console.log(`  - Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+        console.log(`  - Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
 
-        // NOUVELLE APPROCHE : Modifier la tension de référence du nœud au lieu de modifier directement les tensions
+        // NOUVELLE APPROCHE : Utiliser les tensions cibles absolues du SRG2
         const newTargetVoltages = {
-          A: currentVoltages.A + regulationResult.adjustmentPerPhase.A,
-          B: currentVoltages.B + regulationResult.adjustmentPerPhase.B,
-          C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
+          A: regulationResult.targetVoltages.A,
+          B: regulationResult.targetVoltages.B,
+          C: regulationResult.targetVoltages.C
         };
 
-        // SRG2 FIX: Appliquer la nouvelle tension de référence au nœud régulateur
+        // SRG2 FIX: Appliquer les nouvelles tensions cibles au nœud régulateur
         // CORRECTION: Ne plus moyenner les phases pour SRG2 - chaque phase régule indépendamment
         modifiedNodes[nodeIndex].isVoltageRegulator = true;
         modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
@@ -890,7 +890,7 @@ export class ElectricalCalculator {
     voltagesPerPhase: { A: number; B: number; C: number },
     networkType: '400V' | '230V'
   ): { 
-    adjustmentPerPhase: { A: number; B: number; C: number };
+    targetVoltages: { A: number; B: number; C: number };
     switchStates: { A: string; B: string; C: string };
     canRegulate: boolean;
   } {
@@ -918,7 +918,7 @@ export class ElectricalCalculator {
     };
     
     const maxAdjustment = networkType === '400V' ? 16 : 14; // Volts
-    const adjustmentPerPhase = { A: 0, B: 0, C: 0 };
+    const targetVoltages = { A: 230, B: 230, C: 230 }; // SRG2 always targets 230V
     const switchStates = { A: 'BYP', B: 'BYP', C: 'BYP' };
     
     // Traitement par phase (indépendant pour 400V, avec contraintes pour 230V)
@@ -963,27 +963,14 @@ export class ElectricalCalculator {
       
       switchStates[phase as keyof typeof switchStates] = finalState;
       
-      // SRG2 FIX: Corriger l'ordre des conditions - vérifier d'abord les seuils les plus extrêmes
-      if (finalState === 'LO2') {
-        // Abaissement complet
-        const targetVoltage = 230; // SRG2 régule toujours vers 230V
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = targetVoltage - voltage;
-      } else if (finalState === 'LO1') {
-        // Abaissement partiel
-        const targetVoltage = 230;
-        const fullCorrection = targetVoltage - voltage;
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = fullCorrection * 0.6; // Correction partielle
-      } else if (finalState === 'BO2') {
-        // Augmentation complète
-        const targetVoltage = 230;
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = targetVoltage - voltage;
-      } else if (finalState === 'BO1') {
-        // Augmentation partielle
-        const targetVoltage = 230;
-        const fullCorrection = targetVoltage - voltage;
-        adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = fullCorrection * 0.6; // Correction partielle
+      // SRG2 FIX: Corriger pour retourner les tensions cibles absolues
+      if (finalState === 'LO2' || finalState === 'LO1' || finalState === 'BO2' || finalState === 'BO1') {
+        // Pour tous les états actifs, la cible est 230V
+        targetVoltages[phase as keyof typeof targetVoltages] = 230;
+      } else {
+        // En BYP, garder la tension actuelle
+        targetVoltages[phase as keyof typeof targetVoltages] = voltage;
       }
-      // Sinon reste en BYP (pas d'ajustement)
     });
     
     // Sauvegarder les nouveaux états
@@ -992,46 +979,40 @@ export class ElectricalCalculator {
     // Contraintes SRG2 révisées selon type de réseau
     if (networkType === '230V') {
       // SRG2-230 : contrainte plus souple - éviter seulement les écarts extrêmes
-      const hasIncrease = Object.values(adjustmentPerPhase).some(adj => adj > 0);
-      const hasDecrease = Object.values(adjustmentPerPhase).some(adj => adj < 0);
+      const hasRegulationA = switchStates.A !== 'BYP';
+      const hasRegulationB = switchStates.B !== 'BYP';
+      const hasRegulationC = switchStates.C !== 'BYP';
       
-      if (hasIncrease && hasDecrease) {
-        // Calculer l'écart moyen pour déterminer la tendance générale
-        const avgAdjustment = (adjustmentPerPhase.A + adjustmentPerPhase.B + adjustmentPerPhase.C) / 3;
+      const activeRegulations = [hasRegulationA, hasRegulationB, hasRegulationC].filter(Boolean).length;
+      
+      if (activeRegulations > 1) {
+        // Pour SRG2-230, limiter à la phase avec l'écart maximum
+        const deviations = {
+          A: Math.abs(voltagesPerPhase.A - V_nominal),
+          B: Math.abs(voltagesPerPhase.B - V_nominal), 
+          C: Math.abs(voltagesPerPhase.C - V_nominal)
+        };
         
-        // Si l'écart moyen est faible (< 4V), permettre la régulation individuelle
-        if (Math.abs(avgAdjustment) < 4) {
-          console.log(`📊 SRG2-230: Régulation individuelle autorisée (écart moyen: ${avgAdjustment.toFixed(1)}V)`);
-          // Garder tous les ajustements
-        } else {
-          // Sinon, priorité à la phase avec écart maximum
-          const deviations = {
-            A: Math.abs(voltagesPerPhase.A - V_nominal),
-            B: Math.abs(voltagesPerPhase.B - V_nominal), 
-            C: Math.abs(voltagesPerPhase.C - V_nominal)
-          };
-          
-          const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
-          const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
-          
-          console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
-          
-          // Annuler les autres ajustements
-          ['A', 'B', 'C'].forEach(phase => {
-            if (phase !== priorityPhase) {
-              adjustmentPerPhase[phase as keyof typeof adjustmentPerPhase] = 0;
-              switchStates[phase as keyof typeof switchStates] = 'BYP';
-            }
-          });
-        }
+        const maxDeviation = Math.max(deviations.A, deviations.B, deviations.C);
+        const priorityPhase = Object.entries(deviations).find(([_, dev]) => dev === maxDeviation)?.[0];
+        
+        console.log(`📊 SRG2-230: Priorité phase ${priorityPhase} (écart: ${maxDeviation.toFixed(1)}V)`);
+        
+        // Désactiver les autres régulations
+        ['A', 'B', 'C'].forEach(phase => {
+          if (phase !== priorityPhase) {
+            targetVoltages[phase as keyof typeof targetVoltages] = voltagesPerPhase[phase as keyof typeof voltagesPerPhase];
+            switchStates[phase as keyof typeof switchStates] = 'BYP';
+          }
+        });
       }
     } else {
       // SRG2-400 : régulation indépendante par phase (plus de flexibilité)
       console.log(`📊 SRG2-400: Régulation indépendante par phase autorisée`);
     }
     
-    const canRegulate = Object.values(adjustmentPerPhase).some(adj => adj !== 0);
-    return { adjustmentPerPhase, switchStates, canRegulate };
+    const canRegulate = Object.values(switchStates).some(state => state !== 'BYP');
+    return { targetVoltages, switchStates, canRegulate };
   }
 
   // Méthode supprimée - utiliser les méthodes unifiées dans SimulationCalculator
@@ -2359,10 +2340,11 @@ export class ElectricalCalculator {
           );
           
           if (regulationResult.canRegulate) {
+            // SRG2 FIX: Use absolute target voltages directly
             const newTargetVoltages = {
-              A: currentVoltages.A + regulationResult.adjustmentPerPhase.A,
-              B: currentVoltages.B + regulationResult.adjustmentPerPhase.B,
-              C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
+              A: regulationResult.targetVoltages.A,
+              B: regulationResult.targetVoltages.B,
+              C: regulationResult.targetVoltages.C
             };
             
             // SRG2 FIX: Modifier nœud pour recalcul amont/aval - CONSERVER CIBLES PAR PHASE
@@ -2374,7 +2356,7 @@ export class ElectricalCalculator {
             hasValidRegulators = true;
             
             console.log(`✅ SRG2-${detectedNetworkType} activated: ${regulationResult.switchStates.A}/${regulationResult.switchStates.B}/${regulationResult.switchStates.C}`);
-            console.log(`   Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
+            console.log(`   Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
           } else {
             console.log(`✓ SRG2-${detectedNetworkType}: voltages within normal range`);
           }
