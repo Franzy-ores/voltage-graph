@@ -124,10 +124,7 @@ describe('SRG2 Voltage Propagation Tests', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'A',
-        enabled: true,
-        networkType: '230V',
-        maxPowerInjection_kVA: 500,
-        maxPowerConsumption_kVA: 500
+        enabled: true
       },
       neutralCompensators: [],
       cableUpgrades: []
@@ -172,10 +169,7 @@ describe('SRG2 Voltage Propagation Tests', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'A',
-        enabled: true,
-        networkType: '230V',
-        maxPowerInjection_kVA: 500,
-        maxPowerConsumption_kVA: 500
+        enabled: true
       },
       neutralCompensators: [],
       cableUpgrades: []
@@ -212,10 +206,7 @@ describe('SRG2 Voltage Propagation Tests', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'A',
-        enabled: false, // Disabled
-        networkType: '230V',
-        maxPowerInjection_kVA: 500,
-        maxPowerConsumption_kVA: 500
+        enabled: false // Disabled
       },
       neutralCompensators: [],
       cableUpgrades: []
@@ -246,10 +237,7 @@ describe('SRG2 Voltage Propagation Tests', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'A',
-        enabled: true,
-        networkType: '230V',
-        maxPowerInjection_kVA: 500,
-        maxPowerConsumption_kVA: 500
+        enabled: true
       },
       neutralCompensators: [],
       cableUpgrades: []

@@ -104,10 +104,7 @@ describe('SRG2 Voltage Regulator', () => {
       'PRÉLÈVEMENT',
       { srg2: { 
         nodeId: 'node1', 
-        enabled: true,
-        networkType: '230V',
-        maxPowerInjection_kVA: 77,
-        maxPowerConsumption_kVA: 77
+        enabled: true
       }, neutralCompensators: [], cableUpgrades: [] }
     );
     
@@ -134,10 +131,7 @@ describe('SRG2 Voltage Regulator', () => {
       'PRÉLÈVEMENT',
       { srg2: { 
         nodeId: 'node1', 
-        enabled: true,
-        networkType: '230V',
-        maxPowerInjection_kVA: 77,
-        maxPowerConsumption_kVA: 77
+        enabled: true
       }, neutralCompensators: [], cableUpgrades: [] }
     );
 

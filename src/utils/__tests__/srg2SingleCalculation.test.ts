@@ -107,10 +107,7 @@ describe('SRG2 Single Calculation Test', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'node-srg2',
-        enabled: true,
-        networkType: '400V',
-        maxPowerInjection_kVA: 85,
-        maxPowerConsumption_kVA: 100
+        enabled: true
       },
       neutralCompensators: [],
       cableUpgrades: []
@@ -145,10 +142,7 @@ describe('SRG2 Single Calculation Test', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'node-srg2',
-        enabled: false, // Disabled
-        networkType: '400V',
-        maxPowerInjection_kVA: 85,
-        maxPowerConsumption_kVA: 100
+        enabled: false // Disabled
       },
       neutralCompensators: [],
       cableUpgrades: []
@@ -171,10 +165,7 @@ describe('SRG2 Single Calculation Test', () => {
     const equipment: SimulationEquipment = {
       srg2: {
         nodeId: 'non-existent-node',
-        enabled: true,
-        networkType: '400V',
-        maxPowerInjection_kVA: 85,
-        maxPowerConsumption_kVA: 100
+        enabled: true
       },
       neutralCompensators: [],
       cableUpgrades: []

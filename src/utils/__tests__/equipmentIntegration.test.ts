@@ -173,8 +173,15 @@ describe('Equipment Integration Tests', () => {
       );
 
       const baselineResult = electricalCalculator.calculateScenario(
-        mockProject,
-        'MIXTE'
+        mockProject.nodes,
+        mockProject.cables,
+        mockProject.cableTypes,
+        'MIXTE',
+        mockProject.foisonnementCharges || 100,
+        mockProject.foisonnementProductions || 100,
+        mockProject.transformerConfig,
+        mockProject.loadModel || 'polyphase_equilibre',
+        mockProject.desequilibrePourcent || 0
       );
 
       expect(simulationResult).toBeDefined();
