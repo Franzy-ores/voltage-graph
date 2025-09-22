@@ -1662,12 +1662,14 @@ export class ElectricalCalculator {
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // SRG2 MODÈLE PHYSIQUE CORRECT - PAS DE FORÇAGE BRUTAL
+              // SRG2 FIX: Apply target voltages directly for SRG2 nodes
               const nodeV = nodeById.get(v);
               if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-                // Laisser le calcul naturel se faire : Vv = Vu - Z*I
-                // Le SRG2 sera modélisé comme source équivalente en amont
-                console.log(`🔧 SRG2 node detected at ${v} - regulation handled by equivalent source model`);
+                // For phase calculations, use phase A as reference since we're in balanced mode  
+                const targetPhaseVoltage = nodeV.regulatorTargetVoltages.A || 230;
+                const targetComplex = C(targetPhaseVoltage, 0);
+                Vv = targetComplex;
+                console.log(`🔧 SRG2 node ${v}: applying target voltage ${targetPhaseVoltage}V`);
               }
               
               V_node_phase.set(v, Vv);
@@ -1994,12 +1996,13 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // SRG2 MODÈLE PHYSIQUE CORRECT - PAS DE FORÇAGE BRUTAL  
+          // SRG2 FIX: Apply target voltages directly for SRG2 nodes
           const nodeV = nodeById.get(v);
           if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-            // Laisser le calcul naturel se faire : Vv = Vu - Z*I
-            // Le SRG2 sera modélisé comme source équivalente en amont
-            console.log(`🔧 SRG2 node detected at ${v} - regulation handled by equivalent source model`);
+            const targetVoltage = nodeV.regulatorTargetVoltages.A || 230; // Use phase A as reference for balanced case
+            const targetComplex = C(targetVoltage, 0);
+            Vv = targetComplex;
+            console.log(`🔧 SRG2 node ${v}: applying target voltage ${targetVoltage}V`);
           }
           
           V_node.set(v, Vv);
@@ -2377,23 +2380,27 @@ export class ElectricalCalculator {
           }
         }
         
-        // RECALCUL AVEC PROTECTION RÉCURSION ET CONVERGENCE
+        // SRG2 FIX: Improved convergence with target voltage validation
         if (hasValidRegulators && this.srg2IterationCount < ElectricalCalculator.SRG2_MAX_ITERATIONS) {
           this.srg2IterationCount++;
           
-          // Vérifier convergence avant recalcul
-          const activeRegulatorsList = srg2RegulatorNodes
-            .filter(n => n.isVoltageRegulator)
-            .map(n => ({
-              id: `srg2_${n.id}`,
-              nodeId: n.id,
-              type: 'SRG2' as any,
-              targetVoltage_V: 230,
-              maxPower_kVA: 77,
-              enabled: true
-            }));
-          const hasConverged = this.checkSRG2Convergence(activeRegulatorsList, result);
-          if (hasConverged) {
+          // Check convergence with actual voltages vs targets
+          let allConverged = true;
+          for (const regNode of srg2RegulatorNodes.filter(n => n.isVoltageRegulator)) {
+            const nodeMetric = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === regNode.id);
+            if (nodeMetric && regNode.regulatorTargetVoltages) {
+              const currentV = nodeMetric.voltagesPerPhase?.A || 0;
+              const targetV = regNode.regulatorTargetVoltages.A || 230;
+              const deviation = Math.abs(currentV - targetV);
+              if (deviation > 2) { // Allow ±2V tolerance
+                allConverged = false;
+                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V → target ${targetV}V (dev: ${deviation.toFixed(1)}V)`);
+                break;
+              }
+            }
+          }
+          
+          if (allConverged) {
             console.log(`✅ SRG2 converged after ${this.srg2IterationCount} iterations`);
             this.srg2IterationCount = 0;
             return result;
