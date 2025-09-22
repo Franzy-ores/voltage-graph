@@ -437,19 +437,23 @@ export class ElectricalCalculator {
    * Calcul avec configuration HT (simplified)
    */
   calculateScenarioWithHTConfig(
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
+    project: Project,
     scenario: CalculationScenario,
     foisonnementCharges: number,
     foisonnementProductions: number,
-    transformerConfig: TransformerConfig,
-    htConfig?: any
+    manualPhaseDistribution?: any
   ): CalculationResult {
     return this.calculateScenario(
-      nodes, cables, cableTypes, scenario,
-      foisonnementCharges, foisonnementProductions,
-      transformerConfig
+      project.nodes,
+      project.cables,
+      project.cableTypes,
+      scenario,
+      foisonnementCharges,
+      foisonnementProductions,
+      project.transformerConfig,
+      project.loadModel || 'polyphase_equilibre',
+      project.desequilibrePourcent || 0,
+      manualPhaseDistribution
     );
   }
 
