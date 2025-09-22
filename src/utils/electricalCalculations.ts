@@ -437,60 +437,9 @@ export class ElectricalCalculator {
     cables: Cable[],
     cableTypes: CableType[]
   ): { Zph: number; Zn: number } {
-    // CORRECTION: Calculer l'impédance totale le long du chemin source → nœud
-    const sourceNode = nodes.find(n => n.isSource);
-    if (!sourceNode) {
-      console.warn(`⚠️ No source node found for impedance calculation`);
-      return { Zph: 0.2, Zn: 0.3 }; // Default values
-    }
-
-    // Trouver le chemin source → nœud cible par BFS
-    const path = this.findPathBetweenNodes(sourceNode.id, nodeId, cables);
-    if (!path || path.length === 0) {
-      console.warn(`⚠️ No path found from source ${sourceNode.id} to node ${nodeId}`);
-      return { Zph: 0.2, Zn: 0.3 }; // Default values
-    }
-
-    let totalZph = 0;
-    let totalZn = 0;
-
-    // CORRECTION: Sommer toutes les impédances sur le chemin
-    path.forEach(cableId => {
-      const cable = cables.find(c => c.id === cableId);
-      const cableType = cableTypes.find(ct => ct.id === cable?.typeId);
-      
-      if (cable && cableType && cable.length_m) {
-        const lengthKm = cable.length_m / 1000; // Convert to km
-        
-        // Phase impedance (magnitude of R + jX)
-        const R12 = cableType.R12_ohm_per_km * lengthKm;
-        const X12 = cableType.X12_ohm_per_km * lengthKm;
-        totalZph += Math.sqrt(R12 * R12 + X12 * X12);
-        
-        // Neutral impedance (using R0, X0 for neutral path)
-        const R0 = cableType.R0_ohm_per_km * lengthKm;
-        const X0 = cableType.X0_ohm_per_km * lengthKm;
-        totalZn += Math.sqrt(R0 * R0 + X0 * X0);
-        
-        console.log(`🔌 Cable ${cable.id}: Zph=${Math.sqrt(R12*R12 + X12*X12).toFixed(3)}Ω, Zn=${Math.sqrt(R0*R0 + X0*X0).toFixed(3)}Ω`);
-      }
-    });
-
-    console.log(`⚡ Total network impedances from source to ${nodeId}: Zph=${totalZph.toFixed(3)}Ω, Zn=${totalZn.toFixed(3)}Ω`);
-
-    // Si aucune impédance calculée, utiliser des valeurs par défaut
-    if (totalZph === 0) {
-      totalZph = 0.2; // Default phase impedance
-    }
-    if (totalZn === 0) {
-      totalZn = 0.3; // Default neutral impedance
-    }
-
-    // Ensure minimum impedance as per EQUI8 conditions (Zph, Zn > 0.15Ω)
-    return {
-      Zph: Math.max(totalZph, 0.15),
-      Zn: Math.max(totalZn, 0.15)
-    };
+    // Utiliser une impédance par défaut simplifiée
+    // Le calcul détaillé est maintenant géré par d'autres méthodes
+    return { Zph: 0.2, Zn: 0.3 }; // Valeurs par défaut
   }
 
   // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
@@ -2147,42 +2096,8 @@ export class ElectricalCalculator {
           console.log(`🔧 SRG2 assessment for node ${regNode.id}:`);
           console.log(`  - Current voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
           
-          // Détection réseau local
-          const detectedNetworkType = this.detectNetworkType({ transformerConfig } as Project).type;
-          
-          // Ancien système SRG2 supprimé - pas de régulation ici
-          const regulationResult = { canRegulate: false };
-          
-          if (regulationResult.canRegulate) {
-            // SRG2 FIX: Les targetVoltages sont maintenant correctement fixées à 230V
-            const newTargetVoltages = {
-              A: regulationResult.targetVoltages.A, // = 230V
-              B: regulationResult.targetVoltages.B, // = 230V
-              C: regulationResult.targetVoltages.C  // = 230V
-            };
-            
-            console.log(`✅ SRG2 CORRECTION - Les targetVoltages sont maintenant des tensions absolues:`);
-            console.log(`   A: ${regulationResult.targetVoltages.A.toFixed(1)}V (tension cible absolue)`);
-            console.log(`   B: ${regulationResult.targetVoltages.B.toFixed(1)}V (tension cible absolue)`);
-            console.log(`   C: ${regulationResult.targetVoltages.C.toFixed(1)}V (tension cible absolue)`);
-            console.log(`   Transformation ratios: A=${regulationResult.transformationRatios.A.toFixed(3)}, B=${regulationResult.transformationRatios.B.toFixed(3)}, C=${regulationResult.transformationRatios.C.toFixed(3)}`);
-            
-            // SRG2 FIX: Stocker correctement les tensions cibles (230V) ET les ratios de transformation
-            modifiedNodes[nodeIndex].isVoltageRegulator = true;
-            modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
-            // SRG2 FIX: Stocker les ratios de transformation séparément (CRITIQUE!)
-            modifiedNodes[nodeIndex].regulatorTransformationRatios = regulationResult.transformationRatios;
-            // Calculer tension moyenne pour affichage
-            const avgTargetVoltage = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
-            modifiedNodes[nodeIndex].tensionCible = avgTargetVoltage;
-            
-            hasValidRegulators = true;
-            
-            console.log(`✅ SRG2-${detectedNetworkType} activated: ${regulationResult.switchStates.A}/${regulationResult.switchStates.B}/${regulationResult.switchStates.C}`);
-            console.log(`   Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
-          } else {
-            console.log(`✓ SRG2-${detectedNetworkType}: voltages within normal range`);
-          }
+          // Ancien système SRG2 supprimé - utiliser uniquement SRG2Regulator
+          console.log(`ℹ️ SRG2 regulation handled by SRG2Regulator class only`);
         }
         // Ancien système SRG2 supprimé - utilisation de SRG2Regulator uniquement
       }
