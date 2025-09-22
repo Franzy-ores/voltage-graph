@@ -181,7 +181,13 @@ export class SRG2Regulator {
     const { state, ratio } = this.computeState(feedVoltage, networkType, currentState);
     
     // Trace détaillée des valeurs critiques
-    console.log(`[SRG2] Node ${node.id} → actualV=${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'N/A'} | avgV=${feedVoltage.toFixed(1)}V | state=${state} | ratio=${ratio}`);
+    console.log(`[SRG2-VOLTAGES] Node ${node.id}:`, {
+      actualVoltages,
+      feedVoltage: feedVoltage.toFixed(1),
+      state,
+      ratio,
+      tensionCible: node.tensionCible
+    });
 
     // Check timing constraint
     if (currentState && currentState.state !== state && (now - lastSwitch) < this.switchDelay) {
@@ -324,8 +330,11 @@ export class SRG2Regulator {
           // -------------------------------------------------------------
           // Application du ratio en préservant la cohérence des tensions
           // -------------------------------------------------------------
-          const baseVoltage = neighbour.tensionCible ?? result.originalVoltage;
-          const newVoltage = baseVoltage * result.ratio;
+          const currentVoltage = neighbour.tensionCible ?? result.originalVoltage;
+          const newVoltage = currentVoltage * result.ratio;
+          
+          console.log(`🔧 [SRG2-PROPAGATION] Node ${neighbourId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)})`);
+          
           neighbour.tensionCible = newVoltage;
 
           // On conserve les informations de trace (facultatif)
@@ -333,7 +342,7 @@ export class SRG2Regulator {
           neighbour.srg2State = result.state;
           neighbour.srg2Ratio = result.ratio;
 
-          console.log(`[SRG2-prop] Updating ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)} from ${curId})`);
+          console.log(`[SRG2-prop] Updating ${neighbourId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)} from ${curId})`);
         }
       }
     };

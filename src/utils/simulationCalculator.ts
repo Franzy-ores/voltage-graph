@@ -111,12 +111,19 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
 
     // Extract actual calculated voltages from base result
-    const nodeMetrics = baseResult.nodeMetricsPerPhase?.[targetNode.id];
-    const actualVoltages = nodeMetrics ? {
-      A: Math.abs(nodeMetrics.A.voltage),
-      B: Math.abs(nodeMetrics.B.voltage), 
-      C: Math.abs(nodeMetrics.C.voltage)
+    const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
+    const actualVoltages = nodeMetrics?.voltagesPerPhase ? {
+      A: nodeMetrics.voltagesPerPhase.A,
+      B: nodeMetrics.voltagesPerPhase.B, 
+      C: nodeMetrics.voltagesPerPhase.C
     } : undefined;
+    
+    console.log(`🔍 [SRG2-DEBUG] Extracting voltages for node ${targetNode.id}:`, {
+      nodeMetricsFound: !!nodeMetrics,
+      voltagesPerPhase: nodeMetrics?.voltagesPerPhase,
+      extractedActualVoltages: actualVoltages,
+      tensionCible: targetNode.tensionCible
+    });
     
     console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
     const srg2Result = this.srg2Regulator.apply(
@@ -138,7 +145,15 @@ export class SimulationCalculator extends ElectricalCalculator {
       'downstream'
     );
 
-    console.log('🔄 Recalculating scenario with SRG2 regulation...');
+    console.log(`🔄 [SRG2-RECALC] Starting recalculation with ${updatedNodes.length} nodes after SRG2 regulation...`);
+    
+    // Log node voltages before recalculation
+    updatedNodes.forEach(n => {
+      if (n.srg2Applied || n.id === srg2Result.nodeId) {
+        console.log(`📊 [PRE-RECALC] Node ${n.id}: tensionCible=${n.tensionCible}V, srg2Applied=${n.srg2Applied}, srg2Ratio=${n.srg2Ratio}`);
+      }
+    });
+    
     const newResult = this.calculateScenario(
       updatedNodes,
       project.cables,
@@ -150,6 +165,14 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.loadModel ?? 'polyphase_equilibre',
       project.desequilibrePourcent ?? 0
     );
+    
+    // Log final results
+    if (newResult.nodeMetricsPerPhase) {
+      const srg2NodeMetrics = newResult.nodeMetricsPerPhase.find(n => n.nodeId === srg2Result.nodeId);
+      if (srg2NodeMetrics?.voltagesPerPhase) {
+        console.log(`✅ [SRG2-FINAL] Node ${srg2Result.nodeId} final voltages:`, srg2NodeMetrics.voltagesPerPhase);
+      }
+    }
 
     return { nodes: updatedNodes, result: newResult, srg2Result };
   }
