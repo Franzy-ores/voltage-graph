@@ -205,35 +205,103 @@ export class SRG2Regulator {
     return this.currentStates.get(nodeId);
   }
 
-  /** Update node voltage with SRG2 regulation and propagate to downstream */
+  /**
+   * Applique la régulation SRG2 à l'ensemble du réseau.
+   * - Met à jour le nœud ciblé.
+   * - Propage le ratio de tension en aval (et optionnellement en amont).
+   *
+   * @param result   Résultat SRG2 (contient le ratio)
+   * @param nodes    Liste complète des nœuds du projet
+   * @param cables   Liste complète des câbles du projet
+   * @param direction 'downstream' | 'upstream' | 'both' (défaut = 'both')
+   */
   applyRegulationToNetwork(
     result: SRG2Result,
     nodes: Node[],
-    cables: Cable[]
+    cables: Cable[],
+    direction: 'downstream' | 'upstream' | 'both' = 'both'
   ): Node[] {
     if (!result.isActive) {
       return nodes;
     }
 
-    // Clone nodes to avoid mutation
-    const modifiedNodes = nodes.map(node => ({ ...node }));
-    
-    // Find the regulated node and update its voltage
-    const regulatedNode = modifiedNodes.find(n => n.id === result.nodeId);
-    if (regulatedNode) {
-      regulatedNode.tensionCible = result.regulatedVoltage;
-      
-      // Store SRG2 information for later use
-      regulatedNode.srg2Applied = true;
-      regulatedNode.srg2State = result.state;
-      regulatedNode.srg2Ratio = result.ratio;
-      
-      console.log(`🔧 SRG2: Updated node ${result.nodeId} voltage to ${result.regulatedVoltage.toFixed(1)}V`);
+    // -----------------------------------------------------------------
+    // 1️⃣  Copie profonde (on clone uniquement les propriétés primitives)
+    // -----------------------------------------------------------------
+    const clonedNodes: Node[] = nodes.map(n => ({ ...n }));
+
+    // -----------------------------------------------------------------
+    // 2️⃣  Met à jour le nœud régulé
+    // -----------------------------------------------------------------
+    const regNode = clonedNodes.find(n => n.id === result.nodeId);
+    if (!regNode) return clonedNodes; // sécurité
+
+    regNode.tensionCible = result.regulatedVoltage;
+    regNode.srg2Applied = true;
+    regNode.srg2State = result.state;
+    regNode.srg2Ratio = result.ratio;
+
+    console.log(`🔧 SRG2: Updated node ${result.nodeId} voltage to ${result.regulatedVoltage.toFixed(1)}V`);
+
+    // -----------------------------------------------------------------
+    // 3️⃣  Fonction utilitaire de propagation
+    // -----------------------------------------------------------------
+    const propagate = (
+      startIds: string[],
+      allowedDirection: 'downstream' | 'upstream'
+    ) => {
+      const visited = new Set<string>(startIds);
+      const queue = [...startIds];
+
+      while (queue.length) {
+        const curId = queue.shift()!;
+        // Trouve les câbles reliés au nœud courant
+        const relatedCables = cables.filter(c =>
+          allowedDirection === 'downstream'
+            ? c.nodeAId === curId               // on part du côté « amont » vers le descendant
+            : c.nodeBId === curId               // on part du côté « aval » vers l'amont
+        );
+
+        for (const cab of relatedCables) {
+          const neighbourId =
+            allowedDirection === 'downstream' ? cab.nodeBId : cab.nodeAId;
+
+          if (visited.has(neighbourId)) continue;
+          visited.add(neighbourId);
+          queue.push(neighbourId);
+
+          const neighbour = clonedNodes.find(n => n.id === neighbourId);
+          if (!neighbour) continue;
+
+          // -------------------------------------------------------------
+          // Application du même ratio (ou ratio atténué)
+          // -------------------------------------------------------------
+          const baseVoltage = neighbour.tensionCible ?? result.originalVoltage;
+          neighbour.tensionCible = baseVoltage * result.ratio;
+
+          // On conserve les informations de trace (facultatif)
+          neighbour.srg2Applied = true;
+          neighbour.srg2State = result.state;
+          neighbour.srg2Ratio = result.ratio;
+
+          console.log(`🔄 SRG2: Propagated to node ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${neighbour.tensionCible.toFixed(1)}V`);
+        }
+      }
+    };
+
+    // -----------------------------------------------------------------
+    // 4️⃣  Propagation selon le paramètre `direction`
+    // -----------------------------------------------------------------
+    if (direction === 'downstream' || direction === 'both') {
+      // Les câbles dont le nœud régulé est le **nodeA** (amont → aval)
+      propagate([result.nodeId], 'downstream');
     }
 
-    // TODO: Propagate voltage changes to downstream nodes
-    // This would require network topology analysis
+    if (direction === 'upstream' || direction === 'both') {
+      // Les câbles dont le nœud régulé est le **nodeB** (aval ← amont)
+      propagate([result.nodeId], 'upstream');
+    }
 
-    return modifiedNodes;
+    return clonedNodes;
   }
 }

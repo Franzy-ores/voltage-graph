@@ -18,6 +18,17 @@ export class SimulationCalculator extends ElectricalCalculator {
     simulationEquipment: SimulationEquipment,
     forcedModeConfig?: any
   ): SimulationResult {
+    // Réinitialiser les états SRG2 entre les simulations
+    this.resetAllSrg2();
+    
+    // S'assurer que chaque nœud possède une tension de référence
+    project.nodes.forEach(node => {
+      if (node.tensionCible == null) {
+        // Valeur par défaut : tension nominale du transformateur ou 230 V
+        node.tensionCible = project.transformerConfig?.nominalVoltage_V ?? 230;
+      }
+    });
+    
     console.log('🔄 Starting simulation calculation...');
     
     // Calcul de base
@@ -55,6 +66,15 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Réinitialise tous les états SRG2 (utile entre deux runs)
+   */
+  private resetAllSrg2(): void {
+    (this.srg2Regulator as any).currentStates.clear();
+    (this.srg2Regulator as any).lastSwitchTimes.clear();
+    console.log('🔄 Reset all SRG2 states');
+  }
+
+  /**
    * Fonction centrale pour appliquer le régulateur SRG2 - point d'entrée unique
    * Toute application du SRG2 doit passer par cette fonction pour éviter les calculs multiples
    */
@@ -86,10 +106,12 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult, srg2Result };
     }
 
+    // Propagation uniquement en aval (typique)
     const updatedNodes = this.srg2Regulator.applyRegulationToNetwork(
       srg2Result,
       nodes,
-      project.cables
+      project.cables,
+      'downstream'
     );
 
     console.log('🔄 Recalculating scenario with SRG2 regulation...');
