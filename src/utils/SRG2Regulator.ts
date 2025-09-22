@@ -145,6 +145,9 @@ export class SRG2Regulator {
 
     // Compute new state
     const { state, ratio } = this.computeState(feedVoltage, config.networkType, currentState);
+    
+    // Trace détaillée des valeurs critiques
+    console.log(`[SRG2] Node ${node.id} → feed=${feedVoltage}V | state=${state} | ratio=${ratio}`);
 
     // Check timing constraint
     if (currentState && currentState.state !== state && (now - lastSwitch) < this.switchDelay) {
@@ -266,6 +269,9 @@ export class SRG2Regulator {
           const neighbourId =
             allowedDirection === 'downstream' ? cab.nodeBId : cab.nodeAId;
 
+          // Empêcher la double régulation du nœud cible
+          if (neighbourId === result.nodeId) continue;
+          
           if (visited.has(neighbourId)) continue;
           visited.add(neighbourId);
           queue.push(neighbourId);
@@ -284,7 +290,7 @@ export class SRG2Regulator {
           neighbour.srg2State = result.state;
           neighbour.srg2Ratio = result.ratio;
 
-          console.log(`🔄 SRG2: Propagated to node ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${neighbour.tensionCible.toFixed(1)}V`);
+          console.log(`[SRG2-prop] Updating ${neighbourId}: ${baseVoltage.toFixed(1)}V → ${neighbour.tensionCible.toFixed(1)}V (from ${curId})`);
         }
       }
     };

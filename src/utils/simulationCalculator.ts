@@ -71,7 +71,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   private resetAllSrg2(): void {
     (this.srg2Regulator as any).currentStates.clear();
     (this.srg2Regulator as any).lastSwitchTimes.clear();
-    console.log('🔄 Reset all SRG2 states');
+    console.log('[SRG2-Reset] All SRG2 states cleared for new simulation');
   }
 
   /**
@@ -87,6 +87,13 @@ export class SimulationCalculator extends ElectricalCalculator {
   ): { nodes: Node[]; result: CalculationResult; srg2Result?: SRG2Result } {
     if (!simulationEquipment.srg2?.enabled) {
       return { nodes, result: baseResult };
+    }
+
+    // Vérification de la cohérence du type de réseau
+    const expectedVoltage = project.transformerConfig?.nominalVoltage_V ?? 230;
+    const expectedNetworkType = expectedVoltage > 300 ? '400V' : '230V';
+    if (simulationEquipment.srg2.networkType !== expectedNetworkType) {
+      console.warn(`⚠️ SRG2: Network type mismatch - config: ${simulationEquipment.srg2.networkType}, expected: ${expectedNetworkType} (${expectedVoltage}V)`);
     }
 
     const targetNode = nodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
