@@ -149,8 +149,21 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Extraction des tensions réelles (priorité: nodeMetricsPerPhase > nodeMetrics)
     let actualVoltages = undefined;
     
-    // Priorité 1: Utiliser les tensions calculées par phase
-    if (nodeMetrics?.voltagesPerPhase) {
+    // Priorité 1: Utiliser les VRAIES tensions calculées (avant scaleLine) pour SRG2
+    if (nodeMetrics?.calculatedVoltagesPerPhase) {
+      const calculatedVoltages = nodeMetrics.calculatedVoltagesPerPhase;
+      if (calculatedVoltages.A > 50 && calculatedVoltages.B > 50 && calculatedVoltages.C > 50) {
+        actualVoltages = {
+          A: calculatedVoltages.A,
+          B: calculatedVoltages.B,
+          C: calculatedVoltages.C
+        };
+        console.log(`✅ [SRG2-VOLTAGE] Using TRUE calculated voltages (pre-scale): A=${calculatedVoltages.A.toFixed(1)}V, B=${calculatedVoltages.B.toFixed(1)}V, C=${calculatedVoltages.C.toFixed(1)}V`);
+      }
+    }
+    
+    // Priorité 2: Fallback sur tensions d'affichage (avec avertissement)
+    if (!actualVoltages && nodeMetrics?.voltagesPerPhase) {
       const voltages = nodeMetrics.voltagesPerPhase;
       if (voltages.A > 50 && voltages.B > 50 && voltages.C > 50) {
         actualVoltages = {
@@ -158,11 +171,11 @@ export class SimulationCalculator extends ElectricalCalculator {
           B: voltages.B,
           C: voltages.C
         };
-        console.log(`✅ [SRG2-VOLTAGE] Using calculated phase voltages: A=${voltages.A.toFixed(1)}V, B=${voltages.B.toFixed(1)}V, C=${voltages.C.toFixed(1)}V`);
+        console.warn(`⚠️ [SRG2-VOLTAGE] FALLBACK: Using display voltages (with scale): A=${voltages.A.toFixed(1)}V, B=${voltages.B.toFixed(1)}V, C=${voltages.C.toFixed(1)}V`);
       }
     }
     
-    // Priorité 2: Utiliser la tension de phase calculée (équilibré)
+    // Priorité 3: Utiliser la tension de phase calculée (équilibré)
     if (!actualVoltages && simpleNodeMetrics?.V_phase_V && simpleNodeMetrics.V_phase_V > 50) {
       const phaseVoltage = simpleNodeMetrics.V_phase_V;
       actualVoltages = {

@@ -284,6 +284,7 @@ export interface CalculationResult {
   nodeMetricsPerPhase?: { 
     nodeId: string; 
     voltagesPerPhase: { A: number; B: number; C: number };
+    calculatedVoltagesPerPhase?: { A: number; B: number; C: number };
     voltageDropsPerPhase: { A: number; B: number; C: number };
     currentPerPhase?: { A: number; B: number; C: number };
     powerPerPhase?: { A: number; B: number; C: number };

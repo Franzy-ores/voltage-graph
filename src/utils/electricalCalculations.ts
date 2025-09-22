@@ -1644,10 +1644,16 @@ export class ElectricalCalculator {
         const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
+        // Vraies tensions calculées (pour SRG2 et calculs techniques)
+        const Va_calculated = abs(Va);
+        const Vb_calculated = abs(Vb);
+        const Vc_calculated = abs(Vc);
+        
+        // Tensions d'affichage (avec facteur d'échelle pour interface utilisateur)
         const scaleLine = this.getDisplayLineScale(n.connectionType);
-        const Va_display = abs(Va) * scaleLine;
-        const Vb_display = abs(Vb) * scaleLine;
-        const Vc_display = abs(Vc) * scaleLine;
+        const Va_display = Va_calculated * scaleLine;
+        const Vb_display = Vb_calculated * scaleLine;
+        const Vc_display = Vc_calculated * scaleLine;
         
         let { U_base: U_ref } = this.getVoltage(n.connectionType);
         const sourceNode = nodes.find(s => s.isSource);
@@ -1659,6 +1665,11 @@ export class ElectricalCalculator {
             A: Va_display,
             B: Vb_display,
             C: Vc_display
+          },
+          calculatedVoltagesPerPhase: {
+            A: Va_calculated,
+            B: Vb_calculated,
+            C: Vc_calculated
           },
           voltageDropsPerPhase: {
             A: U_ref - Va_display,
