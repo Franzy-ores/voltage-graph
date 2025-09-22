@@ -963,14 +963,9 @@ export class ElectricalCalculator {
       
       switchStates[phase as keyof typeof switchStates] = finalState;
       
-      // SRG2 FIX: Corriger pour retourner les tensions cibles absolues
-      if (finalState === 'LO2' || finalState === 'LO1' || finalState === 'BO2' || finalState === 'BO1') {
-        // Pour tous les états actifs, la cible est 230V
-        targetVoltages[phase as keyof typeof targetVoltages] = 230;
-      } else {
-        // En BYP, garder la tension actuelle
-        targetVoltages[phase as keyof typeof targetVoltages] = voltage;
-      }
+      // SRG2 FIX: Retourner le rapport de transformation selon l'échelon
+      const transformationRatio = this.getSRG2TransformationRatio(finalState);
+      targetVoltages[phase as keyof typeof targetVoltages] = transformationRatio;
     });
     
     // Sauvegarder les nouveaux états
@@ -1643,14 +1638,14 @@ export class ElectricalCalculator {
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // SRG2 FIX: Apply target voltages directly for SRG2 nodes
+              // SRG2 FIX: Apply transformation ratio for SRG2 nodes (auto-transformer model)
               const nodeV = nodeById.get(v);
               if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-                // For phase calculations, use phase A as reference since we're in balanced mode  
-                const targetPhaseVoltage = nodeV.regulatorTargetVoltages.A || 230;
-                const targetComplex = C(targetPhaseVoltage, 0);
-                Vv = targetComplex;
-                console.log(`🔧 SRG2 node ${v}: applying target voltage ${targetPhaseVoltage}V`);
+                // Apply transformation ratio instead of direct voltage replacement
+                const transformationRatio = nodeV.regulatorTargetVoltages.A || 1.0;
+                const originalVoltage = abs(Vv);
+                Vv = mul(Vv, C(transformationRatio, 0));
+                console.log(`🔧 SRG2 node ${v}: ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(Vv).toFixed(1)}V`);
               }
               
               V_node_phase.set(v, Vv);
@@ -1977,13 +1972,14 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // SRG2 FIX: Apply target voltages directly for SRG2 nodes
+          // SRG2 FIX: Apply transformation ratio for SRG2 nodes (auto-transformer model)
           const nodeV = nodeById.get(v);
           if (nodeV?.isVoltageRegulator && nodeV?.regulatorTargetVoltages) {
-            const targetVoltage = nodeV.regulatorTargetVoltages.A || 230; // Use phase A as reference for balanced case
-            const targetComplex = C(targetVoltage, 0);
-            Vv = targetComplex;
-            console.log(`🔧 SRG2 node ${v}: applying target voltage ${targetVoltage}V`);
+            // Apply transformation ratio instead of direct voltage replacement
+            const transformationRatio = nodeV.regulatorTargetVoltages.A || 1.0;
+            const originalVoltage = abs(Vv);
+            Vv = mul(Vv, C(transformationRatio, 0));
+            console.log(`🔧 SRG2 node ${v}: ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(Vv).toFixed(1)}V`);
           }
           
           V_node.set(v, Vv);
@@ -2347,11 +2343,12 @@ export class ElectricalCalculator {
               C: regulationResult.targetVoltages.C
             };
             
-            // SRG2 FIX: Modifier nœud pour recalcul amont/aval - CONSERVER CIBLES PAR PHASE
+            // SRG2 FIX: Stocker les rapports de transformation par phase
             modifiedNodes[nodeIndex].isVoltageRegulator = true;
             modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
-            // CORRECTION: Garder la moyenne uniquement pour compatibilité affichage
-            modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+            // Calculer tension moyenne pour affichage (approximative)
+            const avgRatio = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+            modifiedNodes[nodeIndex].tensionCible = 230 * avgRatio; // Approximation pour affichage
             
             hasValidRegulators = true;
             
@@ -2366,17 +2363,19 @@ export class ElectricalCalculator {
         if (hasValidRegulators && this.srg2IterationCount < ElectricalCalculator.SRG2_MAX_ITERATIONS) {
           this.srg2IterationCount++;
           
-          // Check convergence with actual voltages vs targets
+          // Check convergence with transformation ratios instead of absolute voltages
           let allConverged = true;
           for (const regNode of srg2RegulatorNodes.filter(n => n.isVoltageRegulator)) {
             const nodeMetric = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === regNode.id);
             if (nodeMetric && regNode.regulatorTargetVoltages) {
               const currentV = nodeMetric.voltagesPerPhase?.A || 0;
-              const targetV = regNode.regulatorTargetVoltages.A || 230;
-              const deviation = Math.abs(currentV - targetV);
+              const transformationRatio = regNode.regulatorTargetVoltages.A || 1.0;
+              const expectedV = currentV * transformationRatio;
+              // Check if the voltage is close to desired regulation target (230V)
+              const deviation = Math.abs(expectedV - 230);
               if (deviation > 2) { // Allow ±2V tolerance
                 allConverged = false;
-                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V → target ${targetV}V (dev: ${deviation.toFixed(1)}V)`);
+                console.log(`🔄 SRG2 node ${regNode.id}: ${currentV.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${expectedV.toFixed(1)}V (dev: ${deviation.toFixed(1)}V from 230V)`);
                 break;
               }
             }
@@ -2594,6 +2593,23 @@ export class ElectricalCalculator {
     console.log(`🔧 SRG2 Physical Model ${phase}: ${upstreamVoltage.toFixed(1)}V → ${abs(outputVoltage).toFixed(1)}V (${newState}, adj: ${voltageAdjustment}V)`);
     
     return { outputVoltage, switchState: newState };
+  }
+
+  /**
+   * Retourne le rapport de transformation selon l'échelon SRG2
+   * Selon la documentation technique: LO2=-7%, LO1=-3.5%, BYP=0%, BO1=+3.5%, BO2=+7%
+   */
+  private getSRG2TransformationRatio(switchState: string): number {
+    switch (switchState) {
+      case 'LO2': return 0.93;   // -7%
+      case 'LO1': return 0.965;  // -3.5%
+      case 'BYP': return 1.0;    // 0%
+      case 'BO1': return 1.035;  // +3.5%
+      case 'BO2': return 1.07;   // +7%
+      default:
+        console.warn(`🚨 SRG2 unknown switch state: ${switchState}, defaulting to BYP`);
+        return 1.0;
+    }
   }
 
   /**

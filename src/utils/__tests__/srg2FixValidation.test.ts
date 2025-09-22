@@ -10,8 +10,8 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     calculator = new ElectricalCalculator(0.95);
   });
 
-  // SRG2 FIX: Test correction surtension (>246V) → tension corrigée ≈ 230V sans overshoot
-  test('should correct overvoltage without overshoot (250V → 230V)', () => {
+  // SRG2 FIX: Test correction surtension (250V) → tension régulée avec rapport LO1 (-3.5%)
+  test('should apply correct transformation ratio for overvoltage (250V)', () => {
     const calculator = new ElectricalCalculator();
     
     // Test SRG2 regulation logic directly
@@ -33,14 +33,18 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
       undefined // No previous state
     );
     
-    // The corrected voltage should be around 230V, not below 228V (no overshoot)
-    expect(result.targetVoltages.A).toBeCloseTo(230, 1);
-    expect(result.targetVoltages.A).toBeGreaterThanOrEqual(228); // No overshoot
-    expect(result.targetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
+    // Should select LO1 step (-3.5% = 0.965 ratio) for 250V
+    expect(result.targetVoltages.A).toBeCloseTo(0.965, 3); // Transformation ratio
+    expect(result.switchStates.A).toBe('LO1');
+    
+    // Final voltage should be: 250V × 0.965 = 241.25V (close to 230V target)
+    const finalVoltage = 250 * result.targetVoltages.A;
+    expect(finalVoltage).toBeCloseTo(241.25, 1);
+    expect(finalVoltage).toBeLessThan(245); // Should be reduced
   });
 
-  // SRG2 FIX: Test correction sous-tension (<222V) → tension relevée ≈ 230V
-  test('should correct undervoltage (220V → 230V)', () => {
+  // SRG2 FIX: Test correction sous-tension (220V) → rapport BO1 (+3.5%)
+  test('should apply correct transformation ratio for undervoltage (220V)', () => {
     const calculator = new ElectricalCalculator();
     
     // Test SRG2 regulation for undervoltage
@@ -62,14 +66,18 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
       undefined // No previous state
     );
     
-    // The corrected voltage should be raised to around 230V
-    expect(result.targetVoltages.A).toBeCloseTo(230, 1);
-    expect(result.targetVoltages.A).toBeGreaterThanOrEqual(228); // Should be raised
-    expect(result.targetVoltages.A).toBeLessThanOrEqual(232); // Within bounds
+    // Should select BO1 step (+3.5% = 1.035 ratio) for 220V
+    expect(result.targetVoltages.A).toBeCloseTo(1.035, 3); // Transformation ratio
+    expect(result.switchStates.A).toBe('BO1');
+    
+    // Final voltage should be: 220V × 1.035 = 227.7V (close to 230V target)
+    const finalVoltage = 220 * result.targetVoltages.A;
+    expect(finalVoltage).toBeCloseTo(227.7, 1);
+    expect(finalVoltage).toBeGreaterThan(225); // Should be increased
   });
 
-  // SRG2 FIX: Test régulation par phase indépendante (pas de moyenne)
-  test('SRG2-400V: Régulation indépendante par phase', () => {
+  // SRG2 FIX: Test régulation par phase indépendante avec rapports de transformation
+  test('SRG2-400V: Independent phase regulation with transformation ratios', () => {
     const regulator = createTestRegulator('400V_44kVA');
     
     // Simuler déséquilibre important entre phases
@@ -81,21 +89,21 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
     
     console.log(`Mixed phases: A=${250}V (high), B=${210}V (low), C=${230}V (normal)`);
     console.log(`States: A=${regulationResult.switchStates.A}, B=${regulationResult.switchStates.B}, C=${regulationResult.switchStates.C}`);
-    console.log(`Target voltages: A=${regulationResult.targetVoltages.A}V, B=${regulationResult.targetVoltages.B}V, C=${regulationResult.targetVoltages.C}V`);
+    console.log(`Ratios: A=${regulationResult.targetVoltages.A}, B=${regulationResult.targetVoltages.B}, C=${regulationResult.targetVoltages.C}`);
     
-    // SRG2 FIX: Chaque phase doit réguler indépendamment
+    // SRG2 FIX: Chaque phase doit réguler indépendamment avec les bons rapports
     expect(regulationResult.switchStates.A).toMatch(/^LO[12]$/); // Abaissement pour phase A
     expect(regulationResult.switchStates.B).toMatch(/^BO[12]$/); // Augmentation pour phase B  
     expect(regulationResult.switchStates.C).toBe('BYP');         // Pas de régulation pour phase C
     
-    // Vérifier que les tensions cibles sont correctes
-    expect(regulationResult.targetVoltages.A).toBe(230); // Cible pour surtension
-    expect(regulationResult.targetVoltages.B).toBe(230); // Cible pour sous-tension
-    expect(regulationResult.targetVoltages.C).toBe(230); // Pas de régulation, garde la tension actuelle
+    // Vérifier que les rapports de transformation sont corrects
+    expect(regulationResult.targetVoltages.A).toBeLessThan(1.0); // Ratio de réduction
+    expect(regulationResult.targetVoltages.B).toBeGreaterThan(1.0); // Ratio d'augmentation
+    expect(regulationResult.targetVoltages.C).toBe(1.0); // Pas de transformation
   });
 
-  // SRG2 FIX: Test absence d'oscillation avec hystérésis
-  test('should prevent oscillation with hysteresis', () => {
+  // SRG2 FIX: Test absence d'oscillation avec hystérésis et rapport BYP
+  test('should prevent oscillation with hysteresis (244V → BYP)', () => {
     const calculator = new ElectricalCalculator();
     
     const mockRegulator = {
@@ -106,8 +114,8 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
       enabled: true
     };
     
-    // First calculation at threshold boundary (246V - hysteresis test)
-    const voltageAtThreshold = { A: 244, B: 244, C: 244 }; // Just below UL threshold
+    // First calculation at threshold boundary (244V - within hysteresis zone)
+    const voltageAtThreshold = { A: 244, B: 244, C: 244 }; // Just below UL threshold (246V)
     
     const result1 = (calculator as any).applySRG2RegulationLogic(
       mockRegulator,
@@ -115,9 +123,9 @@ describe('SRG2 Correctifs - Validation des problèmes corrigés', () => {
       undefined
     );
     
-    // Should not regulate (within hysteresis zone)
+    // Should not regulate (within hysteresis zone), ratio should be 1.0 (BYP)
     expect(result1.switchStates.A).toBe('BYP');
-    expect(result1.targetVoltages.A).toBe(244); // Should keep current voltage
+    expect(result1.targetVoltages.A).toBe(1.0); // BYP transformation ratio
   });
 
   // Helper: Créer régulateur de test 
