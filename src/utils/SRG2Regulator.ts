@@ -278,30 +278,29 @@ export class SRG2Regulator {
       };
     }
 
-    // Phase 3: Extraction intelligente des tensions avec fallbacks sécurisés
+    // Déterminer la tension d'alimentation réelle avec priorité sur les calculs
     let feedVoltage: number;
     
     if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
-      // Utiliser la moyenne des tensions réelles si elles sont disponibles et valides
+      // Utiliser la moyenne des tensions calculées (CORRECT)
       feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
-      console.log(`✅ [SRG2-VOLTAGE] Using actual calculated voltages for node ${node.id}: A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V, avg=${feedVoltage.toFixed(1)}V`);
+      console.log(`✅ [SRG2-REGULATION] REAL VOLTAGE: ${feedVoltage.toFixed(1)}V (calculated from network: A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
     } else {
-      // Fallbacks multiples pour éviter d'utiliser 230V par défaut
-      console.warn(`⚠️ [SRG2-VOLTAGE] Actual voltages not available for node ${node.id}, trying fallbacks...`);
-      console.log(`   actualVoltages received:`, actualVoltages);
-      console.log(`   node.tensionCible:`, node.tensionCible);
-      console.log(`   project.transformerConfig?.nominalVoltage_V:`, project.transformerConfig?.nominalVoltage_V);
+      // ERREUR CRITIQUE: Pas de tension calculée - utilisation de valeurs par défaut
+      console.error(`❌ [SRG2-REGULATION] CRITICAL ERROR: No calculated voltages available for node ${node.id}!`);
+      console.error(`❌ actualVoltages received:`, actualVoltages);
+      console.error(`❌ SRG2 regulation will be INCORRECT - using fallback values`);
       
-      // Ordre de priorité des fallbacks
-      if (node.tensionCible && node.tensionCible > 50 && node.tensionCible < 500) {
+      // Utiliser les fallbacks mais avec des avertissements critiques
+      if (node.tensionCible && node.tensionCible > 50) {
         feedVoltage = node.tensionCible;
-        console.log(`🔄 [SRG2-VOLTAGE] Using node.tensionCible fallback: ${feedVoltage.toFixed(1)}V`);
+        console.error(`❌ FALLBACK: Using node.tensionCible = ${feedVoltage}V instead of REAL calculated voltage`);
       } else if (project.transformerConfig?.nominalVoltage_V) {
         feedVoltage = project.transformerConfig.nominalVoltage_V;
-        console.log(`🔄 [SRG2-VOLTAGE] Using transformer nominal voltage fallback: ${feedVoltage.toFixed(1)}V`);
+        console.error(`❌ FALLBACK: Using transformer nominal = ${feedVoltage}V instead of REAL calculated voltage`);
       } else {
-        feedVoltage = 230; // Dernier recours
-        console.warn(`❌ [SRG2-VOLTAGE] Using last resort fallback: ${feedVoltage}V - THIS SHOULD BE INVESTIGATED`);
+        feedVoltage = 230;
+        console.error(`❌ FALLBACK: Using hardcoded 230V - INVESTIGATION REQUIRED!`);
       }
     }
     

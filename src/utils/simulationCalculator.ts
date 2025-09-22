@@ -132,72 +132,53 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    // Phase 1: Diagnostic détaillé de la structure des données
-    console.log(`🔍 [SRG2-DEBUG] Complete base result structure for node ${targetNode.id}:`, {
-      hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
-      nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0,
-      hasNodeMetrics: !!baseResult.nodeMetrics,
-      nodeMetricsCount: baseResult.nodeMetrics?.length || 0,
-      allNodeIds: {
-        nodeMetricsPerPhase: baseResult.nodeMetricsPerPhase?.map(n => n.nodeId) || [],
-        nodeMetrics: baseResult.nodeMetrics?.map(n => n.nodeId) || []
-      }
-    });
-    
+    // Extraction précise des tensions réelles calculées
     const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
     const simpleNodeMetrics = baseResult.nodeMetrics?.find(n => n.nodeId === targetNode.id);
     
-    console.log(`🔍 [SRG2-DEBUG] Found metrics for node ${targetNode.id}:`, {
+    console.log(`🔍 [SRG2-VOLTAGE] Extracting real calculated voltages for node ${targetNode.id}:`);
+    console.log(`📊 Available data:`, {
       nodeMetricsPerPhase: nodeMetrics ? {
-        hasVoltagesPerPhase: !!nodeMetrics.voltagesPerPhase,
         voltagesPerPhase: nodeMetrics.voltagesPerPhase
-      } : null,
-      simpleNodeMetrics: simpleNodeMetrics ? {
-        V_phase_V: simpleNodeMetrics.V_phase_V,
-        V_pu: simpleNodeMetrics.V_pu
-      } : null
+      } : 'NOT FOUND',
+      nodeMetrics: simpleNodeMetrics ? {
+        V_phase_V: simpleNodeMetrics.V_phase_V
+      } : 'NOT FOUND'
     });
     
-    // Phase 2: Extraction des tensions avec fallbacks multiples
+    // Extraction des tensions réelles (priorité: nodeMetricsPerPhase > nodeMetrics)
     let actualVoltages = undefined;
     
-    // Première tentative: nodeMetricsPerPhase
+    // Priorité 1: Utiliser les tensions calculées par phase
     if (nodeMetrics?.voltagesPerPhase) {
       const voltages = nodeMetrics.voltagesPerPhase;
-      if (voltages.A > 0 && voltages.B > 0 && voltages.C > 0 && 
-          voltages.A < 500 && voltages.B < 500 && voltages.C < 500) {
+      if (voltages.A > 50 && voltages.B > 50 && voltages.C > 50) {
         actualVoltages = {
           A: voltages.A,
           B: voltages.B,
           C: voltages.C
         };
-        console.log(`✅ [SRG2-VOLTAGE] Using nodeMetricsPerPhase voltages for ${targetNode.id}:`, actualVoltages);
-      } else {
-        console.warn(`⚠️ [SRG2-VOLTAGE] Invalid voltages in nodeMetricsPerPhase for ${targetNode.id}:`, voltages);
+        console.log(`✅ [SRG2-VOLTAGE] Using calculated phase voltages: A=${voltages.A.toFixed(1)}V, B=${voltages.B.toFixed(1)}V, C=${voltages.C.toFixed(1)}V`);
       }
     }
     
-    // Deuxième fallback: nodeMetrics (tension simple)
-    if (!actualVoltages && simpleNodeMetrics?.V_phase_V && simpleNodeMetrics.V_phase_V > 0) {
+    // Priorité 2: Utiliser la tension de phase calculée (équilibré)
+    if (!actualVoltages && simpleNodeMetrics?.V_phase_V && simpleNodeMetrics.V_phase_V > 50) {
       const phaseVoltage = simpleNodeMetrics.V_phase_V;
-      if (phaseVoltage > 50 && phaseVoltage < 500) {
-        // Utiliser la même tension pour les 3 phases (équilibré)
-        actualVoltages = {
-          A: phaseVoltage,
-          B: phaseVoltage,
-          C: phaseVoltage
-        };
-        console.log(`🔄 [SRG2-VOLTAGE] Using nodeMetrics fallback for ${targetNode.id}: ${phaseVoltage}V (balanced)`);
-      }
+      actualVoltages = {
+        A: phaseVoltage,
+        B: phaseVoltage,
+        C: phaseVoltage
+      };
+      console.log(`✅ [SRG2-VOLTAGE] Using calculated balanced voltage: ${phaseVoltage.toFixed(1)}V`);
     }
     
-    console.log(`🔍 [SRG2-DEBUG] Voltage extraction for node ${targetNode.id}:`, {
-      nodeMetricsFound: !!nodeMetrics,
-      voltagesPerPhase: nodeMetrics?.voltagesPerPhase,
-      extractedActualVoltages: actualVoltages,
-      tensionCible: targetNode.tensionCible,
-      isValidVoltages: !!actualVoltages
-    });
+    // ERREUR: Si aucune tension calculée n'est disponible
+    if (!actualVoltages) {
+      console.error(`❌ [SRG2-VOLTAGE] CRITICAL: No calculated voltages found for node ${targetNode.id}!`);
+      console.error(`❌ This means SRG2 will use default tension (${targetNode.tensionCible}V) instead of real calculated voltage!`);
+      console.error(`❌ Check why nodeMetricsPerPhase or nodeMetrics is missing voltage data.`);
+    }
     
     console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
     const srg2Result = this.srg2Regulator.apply(
