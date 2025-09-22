@@ -132,20 +132,38 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    // Phase 2: Amélioration de l'extraction des tensions réelles avec vérifications de sécurité
-    console.log(`🔍 [SRG2-DEBUG] Base result structure:`, {
+    // Phase 1: Diagnostic détaillé de la structure des données
+    console.log(`🔍 [SRG2-DEBUG] Complete base result structure for node ${targetNode.id}:`, {
       hasNodeMetricsPerPhase: !!baseResult.nodeMetricsPerPhase,
-      nodeMetricsCount: baseResult.nodeMetricsPerPhase?.length || 0,
-      nodeIds: baseResult.nodeMetricsPerPhase?.map(n => n.nodeId) || []
+      nodeMetricsPerPhaseCount: baseResult.nodeMetricsPerPhase?.length || 0,
+      hasNodeMetrics: !!baseResult.nodeMetrics,
+      nodeMetricsCount: baseResult.nodeMetrics?.length || 0,
+      allNodeIds: {
+        nodeMetricsPerPhase: baseResult.nodeMetricsPerPhase?.map(n => n.nodeId) || [],
+        nodeMetrics: baseResult.nodeMetrics?.map(n => n.nodeId) || []
+      }
     });
     
     const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
+    const simpleNodeMetrics = baseResult.nodeMetrics?.find(n => n.nodeId === targetNode.id);
     
-    // Vérifications de sécurité pour l'extraction des tensions
+    console.log(`🔍 [SRG2-DEBUG] Found metrics for node ${targetNode.id}:`, {
+      nodeMetricsPerPhase: nodeMetrics ? {
+        hasVoltagesPerPhase: !!nodeMetrics.voltagesPerPhase,
+        voltagesPerPhase: nodeMetrics.voltagesPerPhase
+      } : null,
+      simpleNodeMetrics: simpleNodeMetrics ? {
+        V_phase_V: simpleNodeMetrics.V_phase_V,
+        V_pu: simpleNodeMetrics.V_pu
+      } : null
+    });
+    
+    // Phase 2: Extraction des tensions avec fallbacks multiples
     let actualVoltages = undefined;
+    
+    // Première tentative: nodeMetricsPerPhase
     if (nodeMetrics?.voltagesPerPhase) {
       const voltages = nodeMetrics.voltagesPerPhase;
-      // Vérifier que les tensions sont valides (non nulles et réalistes)
       if (voltages.A > 0 && voltages.B > 0 && voltages.C > 0 && 
           voltages.A < 500 && voltages.B < 500 && voltages.C < 500) {
         actualVoltages = {
@@ -153,8 +171,23 @@ export class SimulationCalculator extends ElectricalCalculator {
           B: voltages.B,
           C: voltages.C
         };
+        console.log(`✅ [SRG2-VOLTAGE] Using nodeMetricsPerPhase voltages for ${targetNode.id}:`, actualVoltages);
       } else {
-        console.warn(`⚠️ [SRG2-VOLTAGE] Invalid voltages detected for node ${targetNode.id}:`, voltages);
+        console.warn(`⚠️ [SRG2-VOLTAGE] Invalid voltages in nodeMetricsPerPhase for ${targetNode.id}:`, voltages);
+      }
+    }
+    
+    // Deuxième fallback: nodeMetrics (tension simple)
+    if (!actualVoltages && simpleNodeMetrics?.V_phase_V && simpleNodeMetrics.V_phase_V > 0) {
+      const phaseVoltage = simpleNodeMetrics.V_phase_V;
+      if (phaseVoltage > 50 && phaseVoltage < 500) {
+        // Utiliser la même tension pour les 3 phases (équilibré)
+        actualVoltages = {
+          A: phaseVoltage,
+          B: phaseVoltage,
+          C: phaseVoltage
+        };
+        console.log(`🔄 [SRG2-VOLTAGE] Using nodeMetrics fallback for ${targetNode.id}: ${phaseVoltage}V (balanced)`);
       }
     }
     

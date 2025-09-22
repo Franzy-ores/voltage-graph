@@ -278,7 +278,7 @@ export class SRG2Regulator {
       };
     }
 
-    // Phase 2: Amélioration de l'extraction des tensions réelles
+    // Phase 3: Extraction intelligente des tensions avec fallbacks sécurisés
     let feedVoltage: number;
     
     if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
@@ -286,10 +286,23 @@ export class SRG2Regulator {
       feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
       console.log(`✅ [SRG2-VOLTAGE] Using actual calculated voltages for node ${node.id}: A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V, avg=${feedVoltage.toFixed(1)}V`);
     } else {
-      // Fallback sur tensionCible ou tension nominale si les tensions réelles ne sont pas disponibles
-      feedVoltage = node.tensionCible ?? project.transformerConfig?.nominalVoltage_V ?? 230;
-      console.log(`⚠️ [SRG2-VOLTAGE] Using fallback voltage for node ${node.id}: ${feedVoltage.toFixed(1)}V (actualVoltages not available or invalid)`);
-      console.log(`   actualVoltages:`, actualVoltages);
+      // Fallbacks multiples pour éviter d'utiliser 230V par défaut
+      console.warn(`⚠️ [SRG2-VOLTAGE] Actual voltages not available for node ${node.id}, trying fallbacks...`);
+      console.log(`   actualVoltages received:`, actualVoltages);
+      console.log(`   node.tensionCible:`, node.tensionCible);
+      console.log(`   project.transformerConfig?.nominalVoltage_V:`, project.transformerConfig?.nominalVoltage_V);
+      
+      // Ordre de priorité des fallbacks
+      if (node.tensionCible && node.tensionCible > 50 && node.tensionCible < 500) {
+        feedVoltage = node.tensionCible;
+        console.log(`🔄 [SRG2-VOLTAGE] Using node.tensionCible fallback: ${feedVoltage.toFixed(1)}V`);
+      } else if (project.transformerConfig?.nominalVoltage_V) {
+        feedVoltage = project.transformerConfig.nominalVoltage_V;
+        console.log(`🔄 [SRG2-VOLTAGE] Using transformer nominal voltage fallback: ${feedVoltage.toFixed(1)}V`);
+      } else {
+        feedVoltage = 230; // Dernier recours
+        console.warn(`❌ [SRG2-VOLTAGE] Using last resort fallback: ${feedVoltage}V - THIS SHOULD BE INVESTIGATED`);
+      }
     }
     
     const currentState = this.currentStates.get(node.id);
