@@ -120,9 +120,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult };
     }
 
-    // Vérification de la cohérence du type de réseau
-    // Check if it's an SRG2 node (no network type checking needed)
-    if (!simulationEquipment.srg2?.enabled || simulationEquipment.srg2.nodeId !== simulationEquipment.srg2.nodeId) {
+    // Check if it's an SRG2 node
+    if (!simulationEquipment.srg2?.enabled) {
       return { nodes, result: baseResult };
     }
 
