@@ -924,6 +924,17 @@ export class ElectricalCalculator {
     );
 
     console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
+    
+    // DIAGNOSTIC : Vérifier que le recalcul a bien les nodeMetricsPerPhase
+    if (!recalculatedResult.nodeMetricsPerPhase) {
+      console.error('❌ CRITICAL: Recalculated result missing nodeMetricsPerPhase!');
+      console.log('📊 Recalculated result keys:', Object.keys(recalculatedResult));
+      console.log('📊 Base result had nodeMetricsPerPhase:', !!baseResult.nodeMetricsPerPhase);
+      // Fallback: utiliser le baseResult si le recalcul échoue
+      return baseResult;
+    }
+    
+    console.log('✅ Recalculated result has nodeMetricsPerPhase:', recalculatedResult.nodeMetricsPerPhase.length, 'nodes');
     return recalculatedResult;
   }
 
