@@ -541,14 +541,15 @@ export class ElectricalCalculator {
         }
       }
 
-      // Apply transformation ratio to all downstream nodes
-      const transformationRatio = srg2Node.regulatorTargetVoltages?.A || 1.0;
+      // Apply transformation ratios to all downstream nodes
+      const transformationRatios = srg2Node.regulatorTransformationRatios || { A: 1.0, B: 1.0, C: 1.0 };
       
-      console.log(`🔧 SRG2 ${srg2Node.id}: Applying ratio ${transformationRatio.toFixed(3)} to ${downstreamNodes.size} downstream nodes`);
-      console.log(`🚨 UTILISATION INCORRECTE - regulatorTargetVoltages.A=${transformationRatio.toFixed(3)} est un RAPPORT, pas une tension !`);
+      console.log(`🔧 SRG2 ${srg2Node.id}: Applying ratios A=${transformationRatios.A.toFixed(3)}, B=${transformationRatios.B.toFixed(3)}, C=${transformationRatios.C.toFixed(3)} to ${downstreamNodes.size} downstream nodes`);
+      console.log(`✅ CORRECTION APPLIQUÉE - Utilisation des vrais ratios de transformation au lieu des tensions cibles !`);
       
       for (const downstreamNodeId of downstreamNodes) {
-        // Apply to unbalanced calculation (single-phase)
+        // Apply to unbalanced calculation (single-phase) - utiliser le ratio de la phase A
+        const transformationRatio = transformationRatios.A;
         const currentVoltagePhase = V_node_phase.get(downstreamNodeId);
         if (currentVoltagePhase) {
           const originalVoltage = abs(currentVoltagePhase);
@@ -557,7 +558,7 @@ export class ElectricalCalculator {
           console.log(`🔧   Node ${downstreamNodeId} (phase): ${originalVoltage.toFixed(1)}V × ${transformationRatio.toFixed(3)} = ${abs(transformedVoltage).toFixed(1)}V`);
         }
 
-        // Apply to balanced calculation (3-phase)
+        // Apply to balanced calculation (3-phase) - pour l'instant utiliser ratio A, à améliorer pour 3-phase indépendant
         const currentVoltage = V_node.get(downstreamNodeId);
         if (currentVoltage) {
           const originalVoltage = abs(currentVoltage);
@@ -2452,9 +2453,11 @@ export class ElectricalCalculator {
             console.log(`   C: ${regulationResult.targetVoltages.C.toFixed(1)}V (tension cible absolue)`);
             console.log(`   Transformation ratios: A=${regulationResult.transformationRatios.A.toFixed(3)}, B=${regulationResult.transformationRatios.B.toFixed(3)}, C=${regulationResult.transformationRatios.C.toFixed(3)}`);
             
-            // SRG2 FIX: Stocker correctement les tensions cibles (230V)
+            // SRG2 FIX: Stocker correctement les tensions cibles (230V) ET les ratios de transformation
             modifiedNodes[nodeIndex].isVoltageRegulator = true;
             modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
+            // SRG2 FIX: Stocker les ratios de transformation séparément (CRITIQUE!)
+            modifiedNodes[nodeIndex].regulatorTransformationRatios = regulationResult.transformationRatios;
             // Calculer tension moyenne pour affichage
             const avgTargetVoltage = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
             modifiedNodes[nodeIndex].tensionCible = avgTargetVoltage;

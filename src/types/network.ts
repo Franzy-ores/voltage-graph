@@ -85,6 +85,7 @@ export interface Node {
   tensionCible?: number; // tension cible en V (optionnel)
   isVoltageRegulator?: boolean; // Marqueur pour les nœuds régulateurs
   regulatorTargetVoltages?: { A: number; B: number; C: number }; // Tensions cibles par phase pour SRG2
+  regulatorTransformationRatios?: { A: number; B: number; C: number }; // Ratios de transformation par phase pour SRG2
 }
 
 export interface Cable {
