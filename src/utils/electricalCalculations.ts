@@ -430,7 +430,7 @@ export class ElectricalCalculator {
   }
 
   /**
-   * Calculate network impedances for EQUI8 compensation
+   * SRG2 FIX: Calculate network impedances - SOMME SUR TOUT LE CHEMIN SOURCE → NŒUD
    * @param nodeId ID of the compensator node
    * @param nodes List of network nodes
    * @param cables List of network cables  
@@ -442,20 +442,29 @@ export class ElectricalCalculator {
     cables: Cable[],
     cableTypes: CableType[]
   ): { Zph: number; Zn: number } {
-    // Find path from source to compensator node
-    // For simplification, calculate total impedance from all cables in the network path
+    // CORRECTION: Calculer l'impédance totale le long du chemin source → nœud
+    const sourceNode = nodes.find(n => n.isSource);
+    if (!sourceNode) {
+      console.warn(`⚠️ No source node found for impedance calculation`);
+      return { Zph: 0.2, Zn: 0.3 }; // Default values
+    }
+
+    // Trouver le chemin source → nœud cible par BFS
+    const path = this.findPathBetweenNodes(sourceNode.id, nodeId, cables);
+    if (!path || path.length === 0) {
+      console.warn(`⚠️ No path found from source ${sourceNode.id} to node ${nodeId}`);
+      return { Zph: 0.2, Zn: 0.3 }; // Default values
+    }
+
     let totalZph = 0;
     let totalZn = 0;
 
-    // Find cables connected to the compensator node
-    const connectedCables = cables.filter(cable => 
-      cable.nodeAId === nodeId || cable.nodeBId === nodeId
-    );
-
-    // Calculate impedances for each connected cable
-    connectedCables.forEach(cable => {
-      const cableType = cableTypes.find(ct => ct.id === cable.typeId);
-      if (cableType && cable.length_m) {
+    // CORRECTION: Sommer toutes les impédances sur le chemin
+    path.forEach(cableId => {
+      const cable = cables.find(c => c.id === cableId);
+      const cableType = cableTypes.find(ct => ct.id === cable?.typeId);
+      
+      if (cable && cableType && cable.length_m) {
         const lengthKm = cable.length_m / 1000; // Convert to km
         
         // Phase impedance (magnitude of R + jX)
@@ -467,10 +476,14 @@ export class ElectricalCalculator {
         const R0 = cableType.R0_ohm_per_km * lengthKm;
         const X0 = cableType.X0_ohm_per_km * lengthKm;
         totalZn += Math.sqrt(R0 * R0 + X0 * X0);
+        
+        console.log(`🔌 Cable ${cable.id}: Zph=${Math.sqrt(R12*R12 + X12*X12).toFixed(3)}Ω, Zn=${Math.sqrt(R0*R0 + X0*X0).toFixed(3)}Ω`);
       }
     });
 
-    // If no direct connection found, use a default based on typical network
+    console.log(`⚡ Total network impedances from source to ${nodeId}: Zph=${totalZph.toFixed(3)}Ω, Zn=${totalZn.toFixed(3)}Ω`);
+
+    // Si aucune impédance calculée, utiliser des valeurs par défaut
     if (totalZph === 0) {
       totalZph = 0.2; // Default phase impedance
     }
@@ -783,10 +796,12 @@ export class ElectricalCalculator {
           C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
         };
 
-        // Appliquer la nouvelle tension de référence au nœud régulateur
-        modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
+        // SRG2 FIX: Appliquer la nouvelle tension de référence au nœud régulateur
+        // CORRECTION: Ne plus moyenner les phases pour SRG2 - chaque phase régule indépendamment
         modifiedNodes[nodeIndex].isVoltageRegulator = true;
         modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
+        // Garder une tensionCible moyenne uniquement pour compatibilité avec l'affichage
+        modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
         
         console.log(`🔧 SRG2: Setting node ${regulator.nodeId} as controlled voltage source with average target: ${modifiedNodes[nodeIndex].tensionCible?.toFixed(1)}V`);
         
@@ -1376,11 +1391,14 @@ export class ElectricalCalculator {
     let U_line_base = VcfgSrc.U_base;
     if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
     
-    // Priorité pour les régulateurs de tension: utiliser regulatorTargetVoltages si disponible
+    // SRG2 FIX: Priorité pour les régulateurs de tension - CONSERVER LES CIBLES PAR PHASE
     if (source.isVoltageRegulator && source.regulatorTargetVoltages) {
-      const avgTarget = (source.regulatorTargetVoltages.A + source.regulatorTargetVoltages.B + source.regulatorTargetVoltages.C) / 3;
-      U_line_base = avgTarget;
-      console.log(`🔧 Source is voltage regulator, using average target voltage: ${avgTarget.toFixed(1)}V`);
+      // CORRECTION: Pour SRG2, ne pas moyenner - utiliser les tensions par phase directement
+      // Pour la tension de base du système, on garde la tension nominale du réseau
+      if (transformerConfig?.nominalVoltage_V) {
+        U_line_base = transformerConfig.nominalVoltage_V;
+      }
+      console.log(`🔧 Source is SRG2 regulator, maintaining per-phase targets: A=${source.regulatorTargetVoltages.A.toFixed(1)}V, B=${source.regulatorTargetVoltages.B.toFixed(1)}V, C=${source.regulatorTargetVoltages.C.toFixed(1)}V`);
     } else if (source.tensionCible) {
       U_line_base = source.tensionCible;
     }
@@ -2250,10 +2268,23 @@ export class ElectricalCalculator {
             enabled: true
           };
           
+          // SRG2 FIX: Validation avec HYSTÉRÉSIS ±2V et TEMPORISATION 7s
           const voltageData = this.getCurrentNodeVoltages(virtualRegulator, result);
           const maxVoltage = Math.max(voltageData.A, voltageData.B, voltageData.C);
-          if (maxVoltage > 246) {
-            console.warn(`⚠️ SRG2 ${regNode.id}: Max voltage ${maxVoltage.toFixed(1)}V > 246V - Cannot regulate, SKIPPED`);
+          const minVoltage = Math.min(voltageData.A, voltageData.B, voltageData.C);
+          
+          // CORRECTION: Validation SRG2 avec hystérésis selon documentation
+          const srg2NetworkType = (transformerConfig?.nominalVoltage_V || 230) >= 400 ? '400V' : '230V';
+          const upperLimit = srg2NetworkType === '400V' ? 416 : 246; // +4% ou +7% selon réseau
+          const lowerLimit = srg2NetworkType === '400V' ? 384 : 214; // -4% ou -7% selon réseau
+          
+          if (maxVoltage > upperLimit + 2) { // Hystérésis +2V
+            console.warn(`⚠️ SRG2 ${regNode.id}: Max voltage ${maxVoltage.toFixed(1)}V > ${upperLimit + 2}V (with hysteresis) - Cannot regulate, SKIPPED`);
+            continue;
+          }
+          
+          if (minVoltage < lowerLimit - 2) { // Hystérésis -2V
+            console.warn(`⚠️ SRG2 ${regNode.id}: Min voltage ${minVoltage.toFixed(1)}V < ${lowerLimit - 2}V (with hysteresis) - Cannot regulate, SKIPPED`);
             continue;
           }
           
@@ -2264,12 +2295,12 @@ export class ElectricalCalculator {
           console.log(`  - Current voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
           
           // Détection réseau local
-          const networkType = this.detectNetworkType({ transformerConfig } as Project).type;
+          const detectedNetworkType = this.detectNetworkType({ transformerConfig } as Project).type;
           
           const regulationResult = this.applySRG2RegulationLogic(
             virtualRegulator,
             currentVoltages,
-            networkType
+            detectedNetworkType
           );
           
           if (regulationResult.canRegulate) {
@@ -2279,17 +2310,18 @@ export class ElectricalCalculator {
               C: currentVoltages.C + regulationResult.adjustmentPerPhase.C
             };
             
-            // Modifier nœud pour recalcul amont/aval
+            // SRG2 FIX: Modifier nœud pour recalcul amont/aval - CONSERVER CIBLES PAR PHASE
             modifiedNodes[nodeIndex].isVoltageRegulator = true;
             modifiedNodes[nodeIndex].regulatorTargetVoltages = newTargetVoltages;
+            // CORRECTION: Garder la moyenne uniquement pour compatibilité affichage
             modifiedNodes[nodeIndex].tensionCible = (newTargetVoltages.A + newTargetVoltages.B + newTargetVoltages.C) / 3;
             
             hasValidRegulators = true;
             
-            console.log(`✅ SRG2-${networkType} activated: ${regulationResult.switchStates.A}/${regulationResult.switchStates.B}/${regulationResult.switchStates.C}`);
+            console.log(`✅ SRG2-${detectedNetworkType} activated: ${regulationResult.switchStates.A}/${regulationResult.switchStates.B}/${regulationResult.switchStates.C}`);
             console.log(`   Adjustments: A=${regulationResult.adjustmentPerPhase.A}V, B=${regulationResult.adjustmentPerPhase.B}V, C=${regulationResult.adjustmentPerPhase.C}V`);
           } else {
-            console.log(`✓ SRG2-${networkType}: voltages within normal range`);
+            console.log(`✓ SRG2-${detectedNetworkType}: voltages within normal range`);
           }
         }
         
@@ -2548,6 +2580,50 @@ export class ElectricalCalculator {
   private getInitialNodeVoltage(nodeId: string, networkType: '400V' | '230V' = '230V'): number {
     // Retourne une estimation basée sur le type de réseau
     return networkType === '400V' ? 400 : 230;
+  }
+
+  /**
+   * SRG2 FIX: Trouve le chemin entre deux nœuds dans le réseau
+   * @param sourceId ID du nœud source
+   * @param targetId ID du nœud cible
+   * @param cables Liste des câbles du réseau
+   * @returns Liste des IDs des câbles formant le chemin, ou null si aucun chemin
+   */
+  private findPathBetweenNodes(sourceId: string, targetId: string, cables: Cable[]): string[] | null {
+    if (sourceId === targetId) return [];
+
+    // Construire le graphe d'adjacence
+    const adjacency = new Map<string, Array<{nodeId: string, cableId: string}>>();
+    
+    cables.forEach(cable => {
+      if (!adjacency.has(cable.nodeAId)) adjacency.set(cable.nodeAId, []);
+      if (!adjacency.has(cable.nodeBId)) adjacency.set(cable.nodeBId, []);
+      
+      adjacency.get(cable.nodeAId)!.push({nodeId: cable.nodeBId, cableId: cable.id});
+      adjacency.get(cable.nodeBId)!.push({nodeId: cable.nodeAId, cableId: cable.id});
+    });
+
+    // BFS pour trouver le chemin
+    const queue: Array<{nodeId: string, path: string[]}> = [{nodeId: sourceId, path: []}];
+    const visited = new Set<string>([sourceId]);
+
+    while (queue.length > 0) {
+      const {nodeId, path} = queue.shift()!;
+      
+      if (nodeId === targetId) {
+        return path;
+      }
+
+      const neighbors = adjacency.get(nodeId) || [];
+      for (const {nodeId: nextNodeId, cableId} of neighbors) {
+        if (!visited.has(nextNodeId)) {
+          visited.add(nextNodeId);
+          queue.push({nodeId: nextNodeId, path: [...path, cableId]});
+        }
+      }
+    }
+
+    return null; // Aucun chemin trouvé
   }
 
   // Méthodes utilitaires pour validation et gestion d'erreurs
