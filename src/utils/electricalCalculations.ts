@@ -1644,10 +1644,15 @@ export class ElectricalCalculator {
         const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
-        // Vraies tensions calculées (pour SRG2 et calculs techniques)
+        // Vraies tensions calculées phase-neutre (pour SRG2 et calculs techniques)
         const Va_calculated = abs(Va);
         const Vb_calculated = abs(Vb);
         const Vc_calculated = abs(Vc);
+        
+        // Calcul des tensions composées (phase-phase) pour réseaux 230V
+        const Vab_calculated = abs(sub(Va, Vb)); // Phase A-B
+        const Vbc_calculated = abs(sub(Vb, Vc)); // Phase B-C  
+        const Vca_calculated = abs(sub(Vc, Va)); // Phase C-A
         
         // Tensions d'affichage (avec facteur d'échelle pour interface utilisateur)
         const scaleLine = this.getDisplayLineScale(n.connectionType);
@@ -1670,6 +1675,11 @@ export class ElectricalCalculator {
             A: Va_calculated,
             B: Vb_calculated,
             C: Vc_calculated
+          },
+          calculatedVoltagesComposed: {
+            AB: Vab_calculated,
+            BC: Vbc_calculated,
+            CA: Vca_calculated
           },
           voltageDropsPerPhase: {
             A: U_ref - Va_display,

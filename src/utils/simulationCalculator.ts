@@ -149,8 +149,22 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Extraction des tensions réelles (priorité: nodeMetricsPerPhase > nodeMetrics)
     let actualVoltages = undefined;
     
-    // Priorité 1: Utiliser les VRAIES tensions calculées (avant scaleLine) pour SRG2
-    if (nodeMetrics?.calculatedVoltagesPerPhase) {
+    // Priorité 1: Utiliser les bonnes tensions selon le type de réseau
+    const networkType = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+    
+    if (networkType === '230V' && nodeMetrics?.calculatedVoltagesComposed) {
+      // Réseau 230V: Utiliser les tensions composées (phase-phase)
+      const composedVoltages = nodeMetrics.calculatedVoltagesComposed;
+      if (composedVoltages.AB > 50 && composedVoltages.BC > 50 && composedVoltages.CA > 50) {
+        actualVoltages = {
+          A: composedVoltages.AB,
+          B: composedVoltages.BC, 
+          C: composedVoltages.CA
+        };
+        console.log(`✅ [SRG2-VOLTAGE] 230V Network - Using phase-phase voltages: AB=${composedVoltages.AB.toFixed(1)}V, BC=${composedVoltages.BC.toFixed(1)}V, CA=${composedVoltages.CA.toFixed(1)}V`);
+      }
+    } else if (networkType === '400V' && nodeMetrics?.calculatedVoltagesPerPhase) {
+      // Réseau 400V: Utiliser les tensions phase-neutre
       const calculatedVoltages = nodeMetrics.calculatedVoltagesPerPhase;
       if (calculatedVoltages.A > 50 && calculatedVoltages.B > 50 && calculatedVoltages.C > 50) {
         actualVoltages = {
@@ -158,7 +172,7 @@ export class SimulationCalculator extends ElectricalCalculator {
           B: calculatedVoltages.B,
           C: calculatedVoltages.C
         };
-        console.log(`✅ [SRG2-VOLTAGE] Using TRUE calculated voltages (pre-scale): A=${calculatedVoltages.A.toFixed(1)}V, B=${calculatedVoltages.B.toFixed(1)}V, C=${calculatedVoltages.C.toFixed(1)}V`);
+        console.log(`✅ [SRG2-VOLTAGE] 400V Network - Using phase-neutral voltages: A=${calculatedVoltages.A.toFixed(1)}V, B=${calculatedVoltages.B.toFixed(1)}V, C=${calculatedVoltages.C.toFixed(1)}V`);
       }
     }
     

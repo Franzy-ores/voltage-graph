@@ -278,13 +278,23 @@ export class SRG2Regulator {
       };
     }
 
-    // Déterminer la tension d'alimentation réelle avec priorité sur les calculs
+    // Déterminer la tension d'alimentation selon le type de réseau et modèle de charge
     let feedVoltage: number;
     
     if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
-      // Utiliser la moyenne des tensions calculées (CORRECT)
-      feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
-      console.log(`✅ [SRG2-REGULATION] REAL VOLTAGE: ${feedVoltage.toFixed(1)}V (calculated from network: A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+      // Sélection de tension selon le modèle de charge du projet
+      const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
+                                (!project.loadModel && node.clients.length > 0);
+      
+      if (isMonophaseReparti) {
+        // Mode monophasé: Prendre la tension la plus élevée (si déséquilibre)
+        feedVoltage = Math.max(actualVoltages.A, actualVoltages.B, actualVoltages.C);
+        console.log(`✅ [SRG2-REGULATION] MONOPHASE MODE: ${feedVoltage.toFixed(1)}V (max of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+      } else {
+        // Mode polyphasé: Utiliser la tension moyenne globale
+        feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
+        console.log(`✅ [SRG2-REGULATION] POLYPHASE MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+      }
     } else {
       // ERREUR CRITIQUE: Pas de tension calculée - utilisation de valeurs par défaut
       console.error(`❌ [SRG2-REGULATION] CRITICAL ERROR: No calculated voltages available for node ${node.id}!`);
