@@ -1,6 +1,15 @@
 import { Complex, mul, scale } from '@/utils/complex';
 import { Node, Cable, Project } from '@/types/network';
 
+/**
+ * SRG2Regulator - Régulateur de tension secondaire
+ * 
+ * IMPORTANT: Tout usage de ce régulateur doit passer exclusivement par
+ * SimulationCalculator.applySrg2IfNeeded() pour éviter les calculs multiples.
+ * 
+ * Ne jamais appeler directement SRG2Regulator.apply() depuis d'autres parties du code.
+ */
+
 export interface SRG2State {
   state: 'LO2' | 'LO1' | 'BYP' | 'BO1' | 'BO2' | 'WAIT';
   ratio: number;

@@ -55,6 +55,60 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Fonction centrale pour appliquer le régulateur SRG2 - point d'entrée unique
+   * Toute application du SRG2 doit passer par cette fonction pour éviter les calculs multiples
+   */
+  private applySrg2IfNeeded(
+    simulationEquipment: SimulationEquipment,
+    nodes: Node[],
+    project: Project,
+    scenario: CalculationScenario,
+    baseResult: CalculationResult
+  ): { nodes: Node[]; result: CalculationResult; srg2Result?: SRG2Result } {
+    if (!simulationEquipment.srg2?.enabled) {
+      return { nodes, result: baseResult };
+    }
+
+    const targetNode = nodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
+    if (!targetNode) {
+      console.warn(`⚠️ SRG2: Node ${simulationEquipment.srg2.nodeId} not found`);
+      return { nodes, result: baseResult };
+    }
+
+    console.log('🔧 Applying SRG2 voltage regulator...');
+    const srg2Result = this.srg2Regulator.apply(
+      simulationEquipment.srg2,
+      targetNode,
+      project
+    );
+
+    if (!srg2Result.isActive) {
+      return { nodes, result: baseResult, srg2Result };
+    }
+
+    const updatedNodes = this.srg2Regulator.applyRegulationToNetwork(
+      srg2Result,
+      nodes,
+      project.cables
+    );
+
+    console.log('🔄 Recalculating scenario with SRG2 regulation...');
+    const newResult = this.calculateScenario(
+      updatedNodes,
+      project.cables,
+      project.cableTypes,
+      scenario,
+      project.foisonnementCharges ?? 100,
+      project.foisonnementProductions ?? 100,
+      project.transformerConfig,
+      project.loadModel ?? 'polyphase_equilibre',
+      project.desequilibrePourcent ?? 0
+    );
+
+    return { nodes: updatedNodes, result: newResult, srg2Result };
+  }
+
+  /**
    * Applique les équipements de simulation
    */
   private calculateScenarioWithEquipment(
@@ -69,44 +123,21 @@ export class SimulationCalculator extends ElectricalCalculator {
     let result = { ...baseResult };
     let modifiedNodes = [...nodes];
 
-    // Application du régulateur SRG2 (PRIORITÉ 1 - avant tous les autres équipements)
-    let srg2Result: SRG2Result | undefined;
-    if (simulationEquipment.srg2 && simulationEquipment.srg2.enabled) {
-      console.log('🔧 Applying SRG2 voltage regulator...');
-      
-      const targetNode = modifiedNodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
-      if (targetNode) {
-        srg2Result = this.srg2Regulator.apply(
-          simulationEquipment.srg2,
-          targetNode,
-          project
-        );
+    // Application du régulateur SRG2 (PRIORITÉ 1 - via fonction centralisée)
+    const { nodes: afterSrg2Nodes, result: afterSrg2Result, srg2Result } =
+      this.applySrg2IfNeeded(
+        simulationEquipment,
+        modifiedNodes,
+        project,
+        scenario,
+        baseResult
+      );
 
-        // Apply regulation to network if active
-        if (srg2Result.isActive) {
-          modifiedNodes = this.srg2Regulator.applyRegulationToNetwork(
-            srg2Result,
-            modifiedNodes,
-            cables
-          );
+    result = afterSrg2Result;
+    modifiedNodes = afterSrg2Nodes;
 
-          // Recalculate the scenario with SRG2-modified nodes
-          console.log('🔄 Recalculating scenario with SRG2 regulation...');
-          result = this.calculateScenario(
-            modifiedNodes,
-            project.cables,
-            project.cableTypes,
-            scenario,
-            project.foisonnementCharges || 100,
-            project.foisonnementProductions || 100,
-            project.transformerConfig,
-            project.loadModel || 'polyphase_equilibre',
-            project.desequilibrePourcent || 0
-          );
-        }
-      } else {
-        console.warn(`⚠️ SRG2: Node ${simulationEquipment.srg2.nodeId} not found`);
-      }
+    if (srg2Result) {
+      (result as any).srg2Result = srg2Result;
     }
 
     // Application des compensateurs de neutre (ÉQUI8)
@@ -144,10 +175,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     }
 
-    // Store SRG2 result in the final result
-    if (srg2Result) {
-      (result as any).srg2Result = srg2Result;
-    }
+    // SRG2 result déjà stocké dans le bloc précédent
 
     return result;
   }

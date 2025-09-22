@@ -2032,7 +2032,7 @@ export class ElectricalCalculator {
       virtualBusbar
     };
 
-    // SRG2 regulation is now handled exclusively by SRG2Regulator class in SimulationCalculator
+    
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
     return result;
