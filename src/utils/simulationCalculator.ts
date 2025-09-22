@@ -75,6 +75,13 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
+   * Phase 1 - Fonction utilitaire pour identifier les nœuds SRG2
+   */
+  private isSRG2Node(nodeId: string, simulationEquipment?: SimulationEquipment): boolean {
+    return simulationEquipment?.srg2?.enabled === true && simulationEquipment.srg2.nodeId === nodeId;
+  }
+
+  /**
    * Fonction centrale pour appliquer le régulateur SRG2 - point d'entrée unique
    * Toute application du SRG2 doit passer par cette fonction pour éviter les calculs multiples
    */
@@ -152,6 +159,24 @@ export class SimulationCalculator extends ElectricalCalculator {
     let result = { ...baseResult };
     let modifiedNodes = [...nodes];
 
+    // Phase 2 - Validation avant application (détection de conflits)
+    if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0 && simulationEquipment.srg2?.enabled) {
+      const srg2NodeId = simulationEquipment.srg2.nodeId;
+      const conflictingRegulators = simulationEquipment.regulators.filter(reg => 
+        reg.enabled && reg.nodeId === srg2NodeId
+      );
+      
+      if (conflictingRegulators.length > 0) {
+        console.warn(`⚠️ [INTERFERENCE-WARNING] Node ${srg2NodeId} has both SRG2 and classical regulators configured!`);
+        console.warn(`   Classical regulators will be skipped for this node to prevent interference.`);
+        conflictingRegulators.forEach(reg => 
+          console.warn(`   - Classical regulator ${reg.id} on node ${reg.nodeId} will be ignored`)
+        );
+      }
+    }
+
+    console.log(`[ORDER-TRACE] Starting equipment application in priority order: SRG2 → Compensators → Classical regulators`);
+
     // Application du régulateur SRG2 (PRIORITÉ 1 - via fonction centralisée)
     const { nodes: afterSrg2Nodes, result: afterSrg2Result, srg2Result } =
       this.applySrg2IfNeeded(
@@ -167,6 +192,9 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     if (srg2Result) {
       (result as any).srg2Result = srg2Result;
+      console.log(`✅ [ORDER-TRACE] SRG2 applied successfully - node ${srg2Result.nodeId} regulated with ratio ${srg2Result.ratio.toFixed(3)}`);
+    } else {
+      console.log(`ℹ️ [ORDER-TRACE] No SRG2 regulation applied`);
     }
 
     // Application des compensateurs de neutre (ÉQUI8)
@@ -180,14 +208,24 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     // Application des régulateurs de tension classiques (après SRG2)
     if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0) {
-      // FILTRE: Exclure les régulateurs SRG2 du système classique
-      const classicRegulators = simulationEquipment.regulators.filter(r => 
-        r.enabled && !r.type?.includes('SRG2') && 
-        !(r.type?.includes('230V') || r.type?.includes('400V'))
-      );
+      // Phase 2 - FILTRE renforcé: Exclure les nœuds SRG2 du système classique
+      const classicRegulators = simulationEquipment.regulators.filter(r => {
+        const isEnabled = r.enabled;
+        const isNotSRG2Type = !r.type?.includes('SRG2') && !(r.type?.includes('230V') || r.type?.includes('400V'));
+        const isNotSRG2Node = !(simulationEquipment.srg2?.enabled && r.nodeId === simulationEquipment.srg2.nodeId);
+        
+        if (isEnabled && !isNotSRG2Type) {
+          console.log(`⏭️ [FILTER] Excluding SRG2-type regulator ${r.id} (type: ${r.type})`);
+        }
+        if (isEnabled && !isNotSRG2Node) {
+          console.log(`⏭️ [FILTER] Excluding regulator ${r.id} on SRG2 node ${r.nodeId}`);
+        }
+        
+        return isEnabled && isNotSRG2Type && isNotSRG2Node;
+      });
       
       if (classicRegulators.length > 0) {
-        console.log(`🔧 Applying ${classicRegulators.length} classic voltage regulators...`);
+        console.log(`🔧 [ORDER-TRACE] Applying ${classicRegulators.length} classic voltage regulators (filtered from ${simulationEquipment.regulators.length} total)...`);
         
         // Utiliser le système unifié pour appliquer SEULEMENT les régulateurs classiques
         result = this.applyAllVoltageRegulators(

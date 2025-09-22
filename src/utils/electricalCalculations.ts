@@ -715,11 +715,23 @@ export class ElectricalCalculator {
       console.log(`  - Initial voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
       console.log(`  - Network type: ${networkDetection.type}`);
 
+      // Phase 2 - Exclure les nœuds SRG2 du traitement des régulateurs classiques
+      console.log(`[INTERFERENCE-CHECK] Checking if node ${regulator.nodeId} is SRG2 node...`);
+      
+      // Vérifier si ce nœud est géré par SRG2 (chercher dans les nœuds modifiés)
+      const nodeHasSRG2Applied = modifiedNodes[nodeIndex].srg2Applied === true;
+      if (nodeHasSRG2Applied) {
+        console.log(`⏭️ [INTERFERENCE-FIX] Skipping SRG2 node ${regulator.nodeId} from classical regulator processing`);
+        console.log(`   - Node already regulated by SRG2 with tensionCible=${modifiedNodes[nodeIndex].tensionCible.toFixed(1)}V`);
+        continue;
+      }
+
       // Régulateur classique uniquement - SRG2 géré par SRG2Regulator
       const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
       const targetVoltage = regulator.targetVoltage_V;
       
       if (Math.abs(targetVoltage - avgCurrentVoltage) > 1.0) {
+        console.log(`[INTERFERENCE-TRACE] Classical regulator setting tensionCible: ${targetVoltage}V (was: ${modifiedNodes[nodeIndex].tensionCible?.toFixed(1) || 'undefined'}V)`);
         modifiedNodes[nodeIndex].tensionCible = targetVoltage;
         modifiedNodes[nodeIndex].isVoltageRegulator = true;
         
@@ -1206,20 +1218,37 @@ export class ElectricalCalculator {
     let U_line_base = VcfgSrc.U_base;
     if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
     
-    // SRG2 FIX: Priorité pour les régulateurs de tension - CONSERVER LES CIBLES PAR PHASE
-    if (source.isVoltageRegulator && source.regulatorTargetVoltages) {
-      // CORRECTION: Pour SRG2, ne pas moyenner - utiliser les tensions par phase directement
-      // Pour la tension de base du système, on garde la tension nominale du réseau
-      if (transformerConfig?.nominalVoltage_V) {
-        U_line_base = transformerConfig.nominalVoltage_V;
+    // Phase 2 - Correction du bloc problématique SRG2
+    console.log(`[INTERFERENCE-TRACE] calculateScenario source analysis: isVoltageRegulator=${source.isVoltageRegulator}, srg2Applied=${source.srg2Applied}, tensionCible=${source.tensionCible?.toFixed(1)}`);
+    
+    if (source.srg2Applied === true) {
+      // Nœud SRG2 : utiliser tensionCible définie par SRG2Regulator
+      if (source.tensionCible) {
+        U_line_base = source.tensionCible;
+        console.log(`✅ [SRG2-CLEAN] Using SRG2 tensionCible: ${U_line_base.toFixed(1)}V for node ${source.id}`);
+      } else {
+        console.warn(`⚠️ [SRG2-ERROR] SRG2 node without tensionCible, using transformer voltage`);
+        if (transformerConfig?.nominalVoltage_V) {
+          U_line_base = transformerConfig.nominalVoltage_V;
+        }
       }
-      console.log(`🔧 Source is SRG2 regulator, maintaining per-phase targets: A=${source.regulatorTargetVoltages.A.toFixed(1)}V, B=${source.regulatorTargetVoltages.B.toFixed(1)}V, C=${source.regulatorTargetVoltages.C.toFixed(1)}V`);
+    } else if (source.isVoltageRegulator && source.regulatorTargetVoltages) {
+      // ANCIEN CODE SRG2 RÉSIDUEL - NE PLUS UTILISER
+      console.error(`🚨 [INTERFERENCE-ERROR] Residual SRG2 code detected! source.regulatorTargetVoltages should not be used anymore.`);
+      console.error(`   Node ${source.id} has regulatorTargetVoltages but srg2Applied=false - this indicates old/residual SRG2 code.`);
+      console.error(`   Values: A=${source.regulatorTargetVoltages.A.toFixed(3)}, B=${source.regulatorTargetVoltages.B.toFixed(3)}, C=${source.regulatorTargetVoltages.C.toFixed(3)}`);
       
-      console.log(`🚨 ERREUR CRITIQUE - source.regulatorTargetVoltages contient des RAPPORTS, pas des tensions !`);
-      console.log(`   Valeurs actuelles: A=${source.regulatorTargetVoltages.A.toFixed(3)}, B=${source.regulatorTargetVoltages.B.toFixed(3)}, C=${source.regulatorTargetVoltages.C.toFixed(3)}`);
-      console.log(`   Ces valeurs sont des ratios (0.965, 1.035, etc.) et NON des tensions en Volts !`);
+      // Fallback sécurisé : utiliser tensionCible si disponible, sinon tension nominale
+      if (source.tensionCible) {
+        U_line_base = source.tensionCible;
+        console.log(`🔧 [FALLBACK] Using tensionCible instead: ${U_line_base.toFixed(1)}V`);
+      } else if (transformerConfig?.nominalVoltage_V) {
+        U_line_base = transformerConfig.nominalVoltage_V;
+        console.log(`🔧 [FALLBACK] Using transformer nominal voltage: ${U_line_base.toFixed(1)}V`);
+      }
     } else if (source.tensionCible) {
       U_line_base = source.tensionCible;
+      console.log(`✅ [CLASSICAL] Using classical tensionCible: ${U_line_base.toFixed(1)}V for node ${source.id}`);
     }
     
     const isSrcThree = VcfgSrc.isThreePhase;
