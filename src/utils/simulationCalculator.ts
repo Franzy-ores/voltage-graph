@@ -160,19 +160,10 @@ export class SimulationCalculator extends ElectricalCalculator {
     let modifiedNodes = [...nodes];
 
     // Phase 2 - Validation avant application (détection de conflits)
-    if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0 && simulationEquipment.srg2?.enabled) {
+    // Note: Plus de conflits possibles car il n'y a plus que SRG2
+    if (simulationEquipment.srg2?.enabled) {
       const srg2NodeId = simulationEquipment.srg2.nodeId;
-      const conflictingRegulators = simulationEquipment.regulators.filter(reg => 
-        reg.enabled && reg.nodeId === srg2NodeId
-      );
-      
-      if (conflictingRegulators.length > 0) {
-        console.warn(`⚠️ [INTERFERENCE-WARNING] Node ${srg2NodeId} has both SRG2 and classical regulators configured!`);
-        console.warn(`   Classical regulators will be skipped for this node to prevent interference.`);
-        conflictingRegulators.forEach(reg => 
-          console.warn(`   - Classical regulator ${reg.id} on node ${reg.nodeId} will be ignored`)
-        );
-      }
+      console.log(`✅ [SRG2-INFO] SRG2 regulator configured on node ${srg2NodeId}`);
     }
 
     console.log(`[ORDER-TRACE] Starting equipment application in priority order: SRG2 → Compensators → Classical regulators`);

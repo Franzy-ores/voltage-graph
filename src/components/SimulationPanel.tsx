@@ -179,13 +179,13 @@ export const SimulationPanel = () => {
                       <span className="ml-1 font-mono">{srg2Result.ratio.toFixed(3)}</span>
                     </div>
                   )}
-                  {(srg2Result.u1_V || srg2Result.u2_V || srg2Result.u3_V) && (
+                  {srg2Result.regulatedVoltage && (
                       <div>
                         <span className="text-muted-foreground">Tensions:</span>
                         <div className="ml-1 font-mono text-xs">
-                          U1: {srg2Result.u1_V?.toFixed(1)}V<br/>
-                          U2: {srg2Result.u2_V?.toFixed(1)}V<br/>
-                          U3: {srg2Result.u3_V?.toFixed(1)}V
+                          Originale: {srg2Result.originalVoltage?.toFixed(1)}V<br/>
+                          Régulée: {srg2Result.regulatedVoltage?.toFixed(1)}V<br/>
+                          Ratio: {srg2Result.ratio?.toFixed(3)}
                         </div>
                       </div>
                   )}

@@ -182,7 +182,6 @@ describe('SRG2 Regulator Integration', () => {
   test('should integrate with SimulationCalculator', () => {
     const project = createTestProject();
     const simulationEquipment: SimulationEquipment = {
-      regulators: [],
       neutralCompensators: [],
       cableUpgrades: [],
       srg2: createSRG2Config()

@@ -36,7 +36,7 @@ const Index = () => {
     calculationResultsForScenario: !!calculationResults?.[selectedScenario],
     usingSimulation: simulationMode && activeEquipmentCount > 0,
     equipmentDetails: {
-      regulators: simulationEquipment.regulators.map(r => ({ id: r.id, enabled: r.enabled })),
+      srg2: simulationEquipment.srg2 ? { nodeId: simulationEquipment.srg2.nodeId, enabled: simulationEquipment.srg2.enabled } : null,
       compensators: simulationEquipment.neutralCompensators.map(c => ({ id: c.id, enabled: c.enabled }))
     }
   });

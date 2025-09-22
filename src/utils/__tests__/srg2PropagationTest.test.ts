@@ -130,7 +130,6 @@ describe('SRG2 Voltage Propagation Tests', () => {
         maxPowerConsumption_kVA: 500
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 
@@ -179,7 +178,6 @@ describe('SRG2 Voltage Propagation Tests', () => {
         maxPowerConsumption_kVA: 500
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 
@@ -220,7 +218,6 @@ describe('SRG2 Voltage Propagation Tests', () => {
         maxPowerConsumption_kVA: 500
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 
@@ -255,7 +252,6 @@ describe('SRG2 Voltage Propagation Tests', () => {
         maxPowerConsumption_kVA: 500
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 

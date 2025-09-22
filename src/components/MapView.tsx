@@ -57,7 +57,7 @@ export const MapView = () => {
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
-  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+  const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   console.log('🐛 MapView results logic:', {
@@ -578,7 +578,7 @@ export const MapView = () => {
       
       // PHASE 3: Check for active equipment on this node
       const activeCompensator = simulationEquipment.neutralCompensators.find(c => c.nodeId === node.id && c.enabled);
-      const activeRegulator = simulationEquipment.regulators.find(r => r.nodeId === node.id && r.enabled);
+      const activeSRG2 = simulationEquipment.srg2?.nodeId === node.id && simulationEquipment.srg2?.enabled;
       
       // Determine equipment status
       let equipmentIndicator = '';
@@ -591,12 +591,12 @@ export const MapView = () => {
         equipmentStatus = isOverloaded ? ' SURCHARGÉ' : ' COMPENSATEUR';
       }
       
-      if (activeRegulator) {
-        const isLimited = (activeRegulator as any).isLimited;  
-        const statusColor = isLimited ? 'text-red-500' : 'text-blue-500';
-        const regulatorIcon = equipmentIndicator ? `<div class="text-[8px] ${statusColor} font-bold">⚡</div>` : `<div class="text-[8px] ${statusColor} font-bold">⚡</div>`;
-        equipmentIndicator = equipmentIndicator + regulatorIcon;
-        equipmentStatus += (isLimited ? ' RÉGUL.LIMITÉ' : ' RÉGULATEUR');
+      if (activeSRG2) {
+        const srg2Result = simulationResults?.[selectedScenario]?.srg2Result;
+        const statusColor = srg2Result?.isActive ? 'text-green-500' : 'text-gray-500';
+        const srg2Icon = equipmentIndicator ? `<div class="text-[8px] ${statusColor} font-bold">🔧</div>` : `<div class="text-[8px] ${statusColor} font-bold">🔧</div>`;
+        equipmentIndicator = equipmentIndicator + srg2Icon;
+        equipmentStatus += (srg2Result?.isActive ? ' SRG2 ACTIF' : ' SRG2');
       }
       
       // Déterminer si on affiche du texte (charge/production uniquement si > 0)
@@ -716,13 +716,13 @@ export const MapView = () => {
         }
       }
       
-      if (activeRegulator) {
-        const isLimited = (activeRegulator as any).isLimited;
-        const statusText = isLimited ? 'LIMITÉ' : 'ACTIF';
-        const statusColor = isLimited ? 'orange' : 'blue';
-        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">⚡ Régulateur ${statusText}</div>`;
-        if (isLimited) {
-          popupContent += `<div style="color: orange; font-size: 12px;">Puissance limitée</div>`;
+      if (activeSRG2) {
+        const srg2Result = simulationResults?.[selectedScenario]?.srg2Result;
+        const statusText = srg2Result?.isActive ? 'ACTIF' : 'INACTIF';
+        const statusColor = srg2Result?.isActive ? 'green' : 'gray';
+        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">🔧 SRG2 ${statusText}</div>`;
+        if (srg2Result?.state) {
+          popupContent += `<div style="color: ${statusColor}; font-size: 12px;">État: ${srg2Result.state}</div>`;
         }
       }
 

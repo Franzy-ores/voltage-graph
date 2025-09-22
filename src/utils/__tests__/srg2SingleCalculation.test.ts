@@ -113,7 +113,6 @@ describe('SRG2 Single Calculation Test', () => {
         maxPowerConsumption_kVA: 100
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 
@@ -152,7 +151,6 @@ describe('SRG2 Single Calculation Test', () => {
         maxPowerConsumption_kVA: 100
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 
@@ -179,7 +177,6 @@ describe('SRG2 Single Calculation Test', () => {
         maxPowerConsumption_kVA: 100
       },
       neutralCompensators: [],
-      regulators: [],
       cableUpgrades: []
     };
 

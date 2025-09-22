@@ -120,24 +120,6 @@ describe('SRG2 Interference Prevention', () => {
         maxPowerInjection_kVA: 85,
         maxPowerConsumption_kVA: 100
       },
-      regulators: [
-        {
-          id: 'classical-reg',
-          nodeId: 'srg2-node', // CONFLIT INTENTIONNEL - même nœud que SRG2
-          type: '230V_77kVA',
-          targetVoltage_V: 235,
-          maxPower_kVA: 77,
-          enabled: true
-        },
-        {
-          id: 'other-classical-reg',
-          nodeId: 'classical-node', // Nœud différent - OK
-          type: '230V_77kVA',
-          targetVoltage_V: 240,
-          maxPower_kVA: 77,
-          enabled: true
-        }
-      ],
       neutralCompensators: [],
       cableUpgrades: []
     };
@@ -183,16 +165,6 @@ describe('SRG2 Interference Prevention', () => {
         maxPowerInjection_kVA: 85,
         maxPowerConsumption_kVA: 100
       },
-      regulators: [
-        {
-          id: 'classical-reg',
-          nodeId: 'classical-node', // Nœud DIFFÉRENT du SRG2
-          type: '230V_77kVA',
-          targetVoltage_V: 240,
-          maxPower_kVA: 77,
-          enabled: true
-        }
-      ],
       neutralCompensators: [],
       cableUpgrades: []
     };

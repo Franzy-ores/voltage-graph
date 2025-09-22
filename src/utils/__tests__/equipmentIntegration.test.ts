@@ -102,14 +102,13 @@ describe('Equipment Integration Tests', () => {
   describe('Voltage Regulator Integration', () => {
     it('should apply voltage regulation and maintain downstream voltage levels', () => {
       const equipment: SimulationEquipment = {
-        regulators: [{
-          id: 'reg1',
+        srg2: {
           nodeId: 'intermediate',
-          type: '400V_44kVA',
-          targetVoltage_V: 400,
-          maxPower_kVA: 44,
-          enabled: true
-        }],
+          enabled: true,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [],
         cableUpgrades: []
       };
@@ -139,24 +138,13 @@ describe('Equipment Integration Tests', () => {
 
     it('should handle multiple voltage regulators in sequence', () => {
       const equipment: SimulationEquipment = {
-        regulators: [
-          {
-            id: 'reg1',
-            nodeId: 'intermediate',
-            type: '400V_44kVA',
-            targetVoltage_V: 380,
-            maxPower_kVA: 44,
-            enabled: true
-          },
-          {
-            id: 'reg2',
-            nodeId: 'load-node',
-            type: '230V_77kVA',
-            targetVoltage_V: 230,
-            maxPower_kVA: 77,
-            enabled: true
-          }
-        ],
+        srg2: {
+          nodeId: 'intermediate',
+          enabled: true,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [],
         cableUpgrades: []
       };
@@ -188,7 +176,7 @@ describe('Equipment Integration Tests', () => {
       mockProject.desequilibrePourcent = 30;
 
       const equipment: SimulationEquipment = {
-        regulators: [],
+        srg2: null,
         neutralCompensators: [{
           id: 'comp1',
           nodeId: 'load-node',
@@ -229,14 +217,13 @@ describe('Equipment Integration Tests', () => {
       mockProject.desequilibrePourcent = 20;
 
       const equipment: SimulationEquipment = {
-        regulators: [{
-          id: 'reg1',
+        srg2: {
           nodeId: 'intermediate',
-          type: '400V_44kVA',
-          targetVoltage_V: 400,
-          maxPower_kVA: 44,
-          enabled: true
-        }],
+          enabled: true,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [{
           id: 'comp1',
           nodeId: 'load-node',
@@ -264,23 +251,22 @@ describe('Equipment Integration Tests', () => {
       const loadNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'load-node');
       expect(loadNode?.equi8).toBeDefined();
       
-      // Both should be active
-      const regulator = equipment.regulators[0];
+      // Equipment should be active
+      const srg2 = equipment.srg2;
       const compensator = equipment.neutralCompensators[0];
-      expect((regulator as any).isActive).toBe(true);
+      expect(srg2?.enabled).toBe(true);
       expect((compensator as any).isLimited).toBe(false);
     });
 
     it('should maintain baseline comparison', () => {
       const equipment: SimulationEquipment = {
-        regulators: [{
-          id: 'reg1',
+        srg2: {
           nodeId: 'intermediate',
-          type: '400V_44kVA',
-          targetVoltage_V: 400,
-          maxPower_kVA: 44,
-          enabled: true
-        }],
+          enabled: true,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [],
         cableUpgrades: []
       };
@@ -307,14 +293,13 @@ describe('Equipment Integration Tests', () => {
   describe('Error Handling and Edge Cases', () => {
     it('should handle disabled equipment gracefully', () => {
       const equipment: SimulationEquipment = {
-        regulators: [{
-          id: 'reg1',
+        srg2: {
           nodeId: 'intermediate',
-          type: '400V_44kVA',
-          targetVoltage_V: 400,
-          maxPower_kVA: 44,
-          enabled: false // Disabled
-        }],
+          enabled: false,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [{
           id: 'comp1',
           nodeId: 'load-node',
@@ -335,22 +320,21 @@ describe('Equipment Integration Tests', () => {
       expect(result.isSimulation).toBe(true);
       
       // Equipment should not be active
-      const regulator = equipment.regulators[0];
+      const srg2 = equipment.srg2;
       const compensator = equipment.neutralCompensators[0];
-      expect((regulator as any).isActive).toBeUndefined();
+      expect(srg2?.enabled).toBe(false);
       expect((compensator as any).isLimited).toBeUndefined();
     });
 
     it('should handle equipment on non-existent nodes', () => {
       const equipment: SimulationEquipment = {
-        regulators: [{
-          id: 'reg1',
+        srg2: {
           nodeId: 'non-existent-node',
-          type: '400V_44kVA',
-          targetVoltage_V: 400,
-          maxPower_kVA: 44,
-          enabled: true
-        }],
+          enabled: true,
+          networkType: '400V',
+          maxPowerInjection_kVA: 44,
+          maxPowerConsumption_kVA: 44
+        },
         neutralCompensators: [],
         cableUpgrades: []
       };

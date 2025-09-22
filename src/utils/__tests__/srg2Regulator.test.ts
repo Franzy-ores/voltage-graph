@@ -102,14 +102,13 @@ describe('SRG2 Voltage Regulator', () => {
     const simulationResult = calculator.calculateWithSimulation(
       testProject,
       'PRÉLÈVEMENT',
-      { regulators: [{ 
-        id: 'regulator1',
+      { srg2: { 
         nodeId: 'node1', 
-        type: '230V_77kVA',
-        targetVoltage_V: 230,
-        maxPower_kVA: 77,
-        enabled: true
-      }], neutralCompensators: [], cableUpgrades: [] }
+        enabled: true,
+        networkType: '230V',
+        maxPowerInjection_kVA: 77,
+        maxPowerConsumption_kVA: 77
+      }, neutralCompensators: [], cableUpgrades: [] }
     );
     
     // Check that the regulated node has expected voltage behavior
@@ -133,14 +132,13 @@ describe('SRG2 Voltage Regulator', () => {
     const simulationResult = calculator.calculateWithSimulation(
       testProject,
       'PRÉLÈVEMENT',
-      { regulators: [{ 
-        id: 'regulator1',
+      { srg2: { 
         nodeId: 'node1', 
-        type: '230V_77kVA',
-        targetVoltage_V: 230,
-        maxPower_kVA: 77,
-        enabled: true
-      }], neutralCompensators: [], cableUpgrades: [] }
+        enabled: true,
+        networkType: '230V',
+        maxPowerInjection_kVA: 77,
+        maxPowerConsumption_kVA: 77
+      }, neutralCompensators: [], cableUpgrades: [] }
     );
 
     // Check that the regulated node has the expected voltage

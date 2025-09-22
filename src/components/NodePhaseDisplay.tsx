@@ -13,7 +13,7 @@ export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
   }
 
   // Utiliser les résultats de simulation si du matériel de simulation est actif ET en mode simulation
-  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+  const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
