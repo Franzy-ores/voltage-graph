@@ -1,7 +1,6 @@
 // SRG2 FIX: Tests unitaires pour vérifier les corrections des bugs SRG2
 import { SimulationCalculator } from '../simulationCalculator';
-import { Node, Cable, CableType, Project, VoltageRegulator } from '../../types/network';
-import { CalculationResult } from '../electricalCalculations';
+import { Node, Cable, CableType, Project, VoltageRegulator, CalculationResult } from '../../types/network';
 
 describe('SRG2 Corrections Tests', () => {
   let calculator: SimulationCalculator;
@@ -16,7 +15,8 @@ describe('SRG2 Corrections Tests', () => {
       {
         id: 'source',
         name: 'Source',
-        x: 0, y: 0,
+        lat: 0, lng: 0,
+        connectionType: 'TÉTRA_3P+N_230_400V',
         clients: [],
         productions: [],
         isSource: true
@@ -24,12 +24,12 @@ describe('SRG2 Corrections Tests', () => {
       {
         id: 'reg_node',
         name: 'SRG2 Node',
-        x: 100, y: 0,
+        lat: 100, lng: 0,
+        connectionType: 'TÉTRA_3P+N_230_400V',
         clients: [{
           id: 'load1',
-          name: 'Test Load',
-          power_kW: 20,
-          connectionType: 'TRIPHASÉ_400V'
+          label: 'Test Load',
+          S_kVA: 20
         }],
         productions: [],
         isVoltageRegulator: true
@@ -43,6 +43,7 @@ describe('SRG2 Corrections Tests', () => {
         nodeAId: 'source',
         nodeBId: 'reg_node',
         typeId: 'test_type',
+        pose: 'AÉRIEN',
         length_m: 200,
         coordinates: []
       }
@@ -51,19 +52,21 @@ describe('SRG2 Corrections Tests', () => {
     const mockCableTypes: CableType[] = [
       {
         id: 'test_type',
-        name: 'Test Type',
+        label: 'Test Type',
         R12_ohm_per_km: 0.5,
         X12_ohm_per_km: 0.3,
         R0_ohm_per_km: 0.8,
         X0_ohm_per_km: 0.5,
-        Imax_A: 100
+        matiere: 'CUIVRE',
+        posesPermises: ['AÉRIEN', 'SOUTERRAIN'],
+        maxCurrent_A: 100
       }
     ];
 
     const mockRegulator: VoltageRegulator = {
       id: 'srg2_reg',
       nodeId: 'reg_node',
-      type: 'SRG2-400V',
+      type: '400V_44kVA',
       targetVoltage_V: 400,
       maxPower_kVA: 77,
       enabled: true
@@ -72,10 +75,22 @@ describe('SRG2 Corrections Tests', () => {
     const mockProject: Project = {
       id: 'test_project',
       name: 'Test Project',
+      voltageSystem: 'TÉTRAPHASÉ_400V',
+      cosPhi: 0.9,
+      foisonnementCharges: 100,
+      foisonnementProductions: 100,
+      defaultChargeKVA: 5,
+      defaultProductionKVA: 5,
       nodes: mockNodes,
       cables: mockCables,
       cableTypes: mockCableTypes,
-      transformerConfig: { nominalVoltage_V: 400, power_kVA: 630, phases: 3 } as any,
+      transformerConfig: { 
+        rating: '630kVA',
+        nominalPower_kVA: 630,
+        nominalVoltage_V: 400, 
+        shortCircuitVoltage_percent: 4,
+        cosPhi: 0.9
+      },
       desequilibrePourcent: 15, // Déséquilibre pour tester régulation par phase
       manualPhaseDistribution: undefined,
       forcedModeConfig: undefined
@@ -83,16 +98,20 @@ describe('SRG2 Corrections Tests', () => {
 
     // Simulation avec tensions déséquilibrées
     const mockBaseResult: CalculationResult = {
+      scenario: 'MIXTE',
+      cables: mockCables,
+      totalLoads_kVA: 20,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0.5,
+      maxVoltageDropPercent: 3.2,
+      compliance: 'normal',
       nodeMetricsPerPhase: [
         {
           nodeId: 'reg_node',
           voltagesPerPhase: { A: 420, B: 385, C: 405 }, // Tensions déséquilibrées
-          currentsPerPhase: { A: 10, B: 15, C: 12 },
-          current_A: 12.3,
-          voltage_V: 403.3
+          voltageDropsPerPhase: { A: 10, B: 25, C: 15 }
         }
-      ],
-      cableMetrics: []
+      ]
     };
 
     const result = calculator.applyAllVoltageRegulators(
@@ -123,7 +142,7 @@ describe('SRG2 Corrections Tests', () => {
     const mockRegulator: VoltageRegulator = {
       id: 'srg2_reg',
       nodeId: 'test_node',
-      type: 'SRG2-230V',
+      type: '230V_77kVA',
       targetVoltage_V: 230,
       maxPower_kVA: 44,
       enabled: true
@@ -131,16 +150,20 @@ describe('SRG2 Corrections Tests', () => {
 
     // Cas 1: Tension juste au-dessus du seuil sans hystérésis → Ne doit PAS activer
     const highVoltageResult: CalculationResult = {
+      scenario: 'MIXTE',
+      cables: [],
+      totalLoads_kVA: 10,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0.2,
+      maxVoltageDropPercent: 2.5,
+      compliance: 'warning',
       nodeMetricsPerPhase: [
         {
           nodeId: 'test_node',
           voltagesPerPhase: { A: 247, B: 247, C: 247 }, // Juste > 246V mais < 248V (hystérésis)
-          currentsPerPhase: { A: 10, B: 10, C: 10 },
-          current_A: 10,
-          voltage_V: 247
+          voltageDropsPerPhase: { A: 5, B: 5, C: 5 }
         }
-      ],
-      cableMetrics: []
+      ]
     };
 
     // SRG2 FIX: Avec hystérésis, 247V ne devrait pas déclencher (< 246+2=248V)
@@ -149,7 +172,8 @@ describe('SRG2 Corrections Tests', () => {
         [{
           id: 'test_node',
           name: 'Test',
-          x: 0, y: 0,
+          lat: 0, lng: 0,
+          connectionType: 'MONO_230V_PN',
           clients: [],
           productions: []
         }],
@@ -165,16 +189,20 @@ describe('SRG2 Corrections Tests', () => {
 
     // Cas 2: Tension bien au-dessus avec hystérésis → Doit rejeter
     const tooHighVoltageResult: CalculationResult = {
+      scenario: 'MIXTE',
+      cables: [],
+      totalLoads_kVA: 10,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0.2,
+      maxVoltageDropPercent: 2.5,
+      compliance: 'critical',
       nodeMetricsPerPhase: [
         {
           nodeId: 'test_node',
           voltagesPerPhase: { A: 250, B: 250, C: 250 }, // > 246+2=248V
-          currentsPerPhase: { A: 10, B: 10, C: 10 },
-          current_A: 10,
-          voltage_V: 250
+          voltageDropsPerPhase: { A: 8, B: 8, C: 8 }
         }
-      ],
-      cableMetrics: []
+      ]
     };
 
     // SRG2 FIX: 250V devrait être rejeté avec message d'avertissement
@@ -184,7 +212,8 @@ describe('SRG2 Corrections Tests', () => {
       [{
         id: 'test_node',
         name: 'Test',
-        x: 0, y: 0,
+        lat: 0, lng: 0,
+        connectionType: 'MONO_230V_PN',
         clients: [],
         productions: []
       }],
@@ -207,9 +236,9 @@ describe('SRG2 Corrections Tests', () => {
   // SRG2 FIX: Test calcul d'impédances sur tout le chemin
   test('should calculate impedances along entire path from source to node', () => {
     const mockNodes: Node[] = [
-      { id: 'source', name: 'Source', x: 0, y: 0, clients: [], productions: [], isSource: true },
-      { id: 'node1', name: 'Node 1', x: 50, y: 0, clients: [], productions: [] },
-      { id: 'compensator', name: 'Compensator', x: 100, y: 0, clients: [], productions: [] }
+      { id: 'source', name: 'Source', lat: 0, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [], isSource: true },
+      { id: 'node1', name: 'Node 1', lat: 50, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [] },
+      { id: 'compensator', name: 'Compensator', lat: 100, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [] }
     ];
 
     const mockCables: Cable[] = [
@@ -219,6 +248,7 @@ describe('SRG2 Corrections Tests', () => {
         nodeAId: 'source',
         nodeBId: 'node1',
         typeId: 'type1',
+        pose: 'AÉRIEN',
         length_m: 100,
         coordinates: []
       },
@@ -228,6 +258,7 @@ describe('SRG2 Corrections Tests', () => {
         nodeAId: 'node1',
         nodeBId: 'compensator',
         typeId: 'type2',
+        pose: 'SOUTERRAIN',
         length_m: 150,
         coordinates: []
       }
@@ -236,21 +267,25 @@ describe('SRG2 Corrections Tests', () => {
     const mockCableTypes: CableType[] = [
       {
         id: 'type1',
-        name: 'Type 1',
+        label: 'Type 1',
         R12_ohm_per_km: 1.0,
         X12_ohm_per_km: 0.5,
         R0_ohm_per_km: 1.5,
         X0_ohm_per_km: 0.8,
-        Imax_A: 100
+        matiere: 'CUIVRE',
+        posesPermises: ['AÉRIEN', 'SOUTERRAIN'],
+        maxCurrent_A: 100
       },
       {
         id: 'type2',
-        name: 'Type 2', 
+        label: 'Type 2', 
         R12_ohm_per_km: 0.8,
         X12_ohm_per_km: 0.4,
         R0_ohm_per_km: 1.2,
         X0_ohm_per_km: 0.6,
-        Imax_A: 80
+        matiere: 'ALUMINIUM',
+        posesPermises: ['SOUTERRAIN'],
+        maxCurrent_A: 80
       }
     ];
 
