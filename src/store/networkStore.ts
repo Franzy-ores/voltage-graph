@@ -1087,7 +1087,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
     // Utiliser le calculateur pour créer la configuration SRG2
     const calculator = new SimulationCalculator();
-    const newSRG2Config = calculator.createDefaultSRG2Config(nodeId, currentProject.voltageSystem);
+    const newSRG2Config = calculator.createDefaultSRG2Config(nodeId);
 
     set({
       simulationEquipment: {

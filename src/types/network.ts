@@ -234,9 +234,8 @@ export interface CableUpgrade {
 export interface SRG2Config {
   nodeId: string;
   enabled: boolean;
-  networkType: '230V' | '400V';
-  maxPowerInjection_kVA: number;
-  maxPowerConsumption_kVA: number;
+  // networkType is derived from project.voltageSystem, no longer configurable
+  // Fixed power limits: 85 kVA injection, 100 kVA consumption
 }
 
 export interface SRG2Result {
@@ -247,6 +246,10 @@ export interface SRG2Result {
   ratio: number;
   phaseRatios?: { A: number; B: number; C: number };
   powerDownstream_kVA: number;
+  diversifiedLoad_kVA?: number;        // Charge foisonnée
+  diversifiedProduction_kVA?: number;  // Production foisonnée  
+  netPower_kVA?: number;              // Puissance nette downstream
+  networkType?: '230V' | '400V';      // Type réseau dérivé
   isActive: boolean;
   limitReason?: string;
 }

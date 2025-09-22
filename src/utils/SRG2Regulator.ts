@@ -20,9 +20,8 @@ export interface SRG2State {
 export interface SRG2Config {
   nodeId: string;
   enabled: boolean;
-  networkType: '230V' | '400V';
-  maxPowerInjection_kVA: number;
-  maxPowerConsumption_kVA: number;
+  // networkType is derived from project.voltageSystem, no longer configurable
+  // Fixed power limits: 85 kVA injection, 100 kVA consumption
 }
 
 export interface SRG2Result {
@@ -33,6 +32,10 @@ export interface SRG2Result {
   ratio: number;
   phaseRatios?: { A: number; B: number; C: number };
   powerDownstream_kVA: number;
+  diversifiedLoad_kVA?: number;        // Charge foisonnée
+  diversifiedProduction_kVA?: number;  // Production foisonnée
+  netPower_kVA?: number;              // Puissance nette downstream  
+  networkType?: '230V' | '400V';      // Type réseau dérivé
   isActive: boolean;
   limitReason?: string;
 }
@@ -73,45 +76,64 @@ export class SRG2Regulator {
     return { state: 'BYP', ratio: 1.0 };
   }
 
-  /** Calculate downstream power for validation */
+  /** Calculate downstream power with diversity factors */
   private calculateDownstreamPower(
     node: Node,
     project: Project
-  ): number {
-    let totalPower = 0;
+  ): {
+    totalPower_kVA: number;
+    diversifiedLoad_kVA: number;
+    diversifiedProduction_kVA: number;
+    netPower_kVA: number;
+  } {
+    let directLoad = 0;
+    let directProduction = 0;
 
-    // Add direct loads
+    // Add direct loads  
     if (node.clients) {
-      totalPower += node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
+      directLoad = node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
     }
 
-    // Subtract productions
+    // Add direct productions
     if (node.productions) {
-      totalPower -= node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
+      directProduction = node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
     }
+
+    // Apply diversity factors
+    const diversifiedLoad = directLoad * (project.foisonnementCharges / 100);
+    const diversifiedProduction = directProduction * (project.foisonnementProductions / 100);
+    
+    // Net power (load - production)
+    const netPower = diversifiedLoad - diversifiedProduction;
 
     // TODO: Add downstream nodes calculation via cable connections
     // This would require traversing the network graph
 
-    return Math.abs(totalPower);
+    return {
+      totalPower_kVA: Math.abs(netPower),
+      diversifiedLoad_kVA: diversifiedLoad,
+      diversifiedProduction_kVA: diversifiedProduction,
+      netPower_kVA: netPower
+    };
   }
 
-  /** Check if SRG2 can be applied based on power limits */
+  /** Check if SRG2 can be applied based on fixed power limits */
   private canApplySRG2(
     node: Node,
-    project: Project,
-    config: SRG2Config
-  ): { canApply: boolean; reason?: string } {
-    const downstreamPower = this.calculateDownstreamPower(node, project);
+    project: Project
+  ): { canApply: boolean; reason?: string; powerCalc: ReturnType<typeof this.calculateDownstreamPower> } {
+    const powerCalc = this.calculateDownstreamPower(node, project);
+    const maxConsumption = 100; // Fixed limit: 100 kVA
     
-    if (downstreamPower > config.maxPowerConsumption_kVA) {
+    if (powerCalc.totalPower_kVA > maxConsumption) {
       return {
         canApply: false,
-        reason: `Downstream power (${downstreamPower.toFixed(1)} kVA) exceeds limit (${config.maxPowerConsumption_kVA} kVA)`
+        reason: `Downstream power (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxConsumption} kVA)`,
+        powerCalc
       };
     }
 
-    return { canApply: true };
+    return { canApply: true, powerCalc };
   }
 
   /** Apply SRG2 regulation to a node */
@@ -123,8 +145,11 @@ export class SRG2Regulator {
   ): SRG2Result {
     console.log(`🔧 SRG2: Evaluating node ${node.id}`);
 
+    // Derive network type from project voltage system
+    const networkType: '230V' | '400V' = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+
     // Check if SRG2 can be applied
-    const powerCheck = this.canApplySRG2(node, project, config);
+    const powerCheck = this.canApplySRG2(node, project);
     if (!powerCheck.canApply) {
       console.log(`⚠️ SRG2: Cannot apply - ${powerCheck.reason}`);
       return {
@@ -133,7 +158,11 @@ export class SRG2Regulator {
         regulatedVoltage: node.tensionCible || project.transformerConfig?.nominalVoltage_V || 230,
         state: 'DISABLED',
         ratio: 1.0,
-        powerDownstream_kVA: this.calculateDownstreamPower(node, project),
+        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
+        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
+        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
+        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
+        networkType,
         isActive: false,
         limitReason: powerCheck.reason
       };
@@ -144,7 +173,7 @@ export class SRG2Regulator {
     const lastSwitch = this.lastSwitchTimes.get(node.id) ?? 0;
 
     // Compute new state
-    const { state, ratio } = this.computeState(feedVoltage, config.networkType, currentState);
+    const { state, ratio } = this.computeState(feedVoltage, networkType, currentState);
     
     // Trace détaillée des valeurs critiques
     console.log(`[SRG2] Node ${node.id} → feed=${feedVoltage}V | state=${state} | ratio=${ratio}`);
@@ -158,7 +187,11 @@ export class SRG2Regulator {
         regulatedVoltage: feedVoltage,
         state: 'WAIT',
         ratio: 1.0,
-        powerDownstream_kVA: this.calculateDownstreamPower(node, project),
+        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
+        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
+        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
+        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
+        networkType,
         isActive: false
       };
     }
@@ -178,7 +211,7 @@ export class SRG2Regulator {
     const regulatedVoltage = feedVoltage * ratio;
 
     // For 400V systems, calculate per-phase ratios (simplified - same ratio for all phases)
-    const phaseRatios = config.networkType === '400V' 
+    const phaseRatios = networkType === '400V' 
       ? { A: ratio, B: ratio, C: ratio }
       : undefined;
 
@@ -191,7 +224,11 @@ export class SRG2Regulator {
       state,
       ratio,
       phaseRatios,
-      powerDownstream_kVA: this.calculateDownstreamPower(node, project),
+      powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
+      diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
+      diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
+      netPower_kVA: powerCheck.powerCalc.netPower_kVA,
+      networkType,
       isActive: true
     };
   }

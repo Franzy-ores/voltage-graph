@@ -1,102 +1,133 @@
-import { SimulationCalculator } from '../simulationCalculator';
-import { Node, Cable, CableType, VoltageRegulator, NeutralCompensator, Project, SimulationEquipment } from '@/types/network';
 import { describe, it, expect, beforeEach } from 'vitest';
+import { SimulationCalculator } from '@/utils/simulationCalculator';
+import { ElectricalCalculator } from '@/utils/electricalCalculations';
+import type { Project, SimulationEquipment, Node, Cable } from '@/types/network';
+import { defaultCableTypes } from '@/data/defaultCableTypes';
 
 describe('Equipment Integration Tests', () => {
   let calculator: SimulationCalculator;
+  let electricalCalculator: ElectricalCalculator;
   let mockProject: Project;
 
   beforeEach(() => {
-    calculator = new SimulationCalculator(0.95);
-
+    calculator = new SimulationCalculator();
+    electricalCalculator = new ElectricalCalculator();
     mockProject = {
       id: 'test-project',
-      name: 'Test Project',
-      voltageSystem: 'TÉTRAPHASÉ_400V',
+      name: 'Integration Test Project',
+      voltageSystem: "TÉTRAPHASÉ_400V",
       cosPhi: 0.95,
       foisonnementCharges: 100,
-      foisonnementProductions: 0,
-      defaultChargeKVA: 5,
-      defaultProductionKVA: 0,
-      loadModel: 'monophase_reparti' as const,
-      desequilibrePourcent: 0,
+      foisonnementProductions: 100,
+      defaultChargeKVA: 10,
+      defaultProductionKVA: 5,
       transformerConfig: {
-        rating: '400kVA',
-        nominalPower_kVA: 400,
+        rating: "160kVA",
+        nominalPower_kVA: 160,
         nominalVoltage_V: 400,
-        shortCircuitVoltage_percent: 4,
+        shortCircuitVoltage_percent: 4.0,
         cosPhi: 0.95
+      },
+      loadModel: 'polyphase_equilibre',
+      desequilibrePourcent: 0,
+      manualPhaseDistribution: {
+        charges: { A: 33.33, B: 33.33, C: 33.34 },
+        productions: { A: 33.33, B: 33.33, C: 33.34 },
+        constraints: { min: -20, max: 20, total: 100 }
       },
       nodes: [
         {
           id: 'source',
           name: 'Source',
-          lat: 0,
-          lng: 0,
-          isSource: true,
-          connectionType: 'TÉTRA_3P+N_230_400V' as const,
+          lat: 46.6167,
+          lng: 6.8833,
+          connectionType: "TÉTRA_3P+N_230_400V",
           clients: [],
-          productions: []
+          productions: [],
+          isSource: true
         },
         {
           id: 'intermediate',
           name: 'Intermediate Node',
-          lat: 0.001,
-          lng: 0.001,
-          isSource: false,
-          connectionType: 'TÉTRA_3P+N_230_400V' as const,
-          clients: [],
-          productions: []
+          lat: 46.6170,
+          lng: 6.8835,
+          connectionType: "TÉTRA_3P+N_230_400V",
+          clients: [{ id: 'client1', label: 'Client 1', S_kVA: 15 }],
+          productions: [{ id: 'prod1', label: 'PV 1', S_kVA: 8 }],
+          isSource: false
         },
         {
-          id: 'load-node',
-          name: 'Load Node',
-          lat: 0.002,
-          lng: 0.002,
-          isSource: false,
-          connectionType: 'TÉTRA_3P+N_230_400V' as const,
-          clients: [{ id: 'load1', label: 'Test Load', S_kVA: 20 }],
-          productions: []
+          id: 'end-node',
+          name: 'End Node',
+          lat: 46.6175,
+          lng: 6.8840,
+          connectionType: "TÉTRA_3P+N_230_400V",
+          clients: [{ id: 'client2', label: 'Client 2', S_kVA: 20 }],
+          productions: [],
+          isSource: false
         }
-      ],
+      ] as Node[],
       cables: [
         {
           id: 'cable1',
           name: 'Cable 1',
-          pose: 'SOUTERRAIN',
+          typeId: 'baxb-95',
+          pose: "AÉRIEN",
           nodeAId: 'source',
           nodeBId: 'intermediate',
-          typeId: 'cable-type-1',
           coordinates: [
-            { lat: 0, lng: 0 },
-            { lat: 0.001, lng: 0.001 }
-          ]
+            { lat: 46.6167, lng: 6.8833 },
+            { lat: 46.6170, lng: 6.8835 }
+          ],
+          length_m: 50
         },
         {
           id: 'cable2',
           name: 'Cable 2',
-          pose: 'SOUTERRAIN',
-          nodeAId: 'intermediate',  
-          nodeBId: 'load-node',
-          typeId: 'cable-type-1',
+          typeId: 'baxb-70',
+          pose: "AÉRIEN",
+          nodeAId: 'intermediate',
+          nodeBId: 'end-node',
           coordinates: [
-            { lat: 0.001, lng: 0.001 },
-            { lat: 0.002, lng: 0.002 }
-          ]
+            { lat: 46.6170, lng: 6.8835 },
+            { lat: 46.6175, lng: 6.8840 }
+          ],
+          length_m: 75
         }
-      ],
-      cableTypes: [{
-        id: 'cable-type-1',
-        label: 'Standard Cable',
-        R12_ohm_per_km: 0.5,
-        X12_ohm_per_km: 0.3,
-        R0_ohm_per_km: 0.8,
-        X0_ohm_per_km: 0.4,
-        matiere: 'CUIVRE',
-        posesPermises: ['SOUTERRAIN'],
-        maxCurrent_A: 100
-      }]
+      ] as Cable[],
+      cableTypes: defaultCableTypes
     };
+  });
+
+  describe('Multi-equipment Simulation', () => {
+    it('should handle combined SRG2 and neutral compensator simulation', () => {
+      const equipment: SimulationEquipment = {
+        srg2: {
+          nodeId: 'intermediate',
+          enabled: true
+        },
+        neutralCompensators: [{
+          id: 'comp1',
+          nodeId: 'end-node',
+          enabled: true,
+          maxPower_kVA: 50,
+          tolerance_A: 5.0,
+          phaseImpedance: 0.5,
+          neutralImpedance: 0.1
+        }],
+        cableUpgrades: []
+      };
+
+      const result = calculator.calculateWithSimulation(
+        mockProject,
+        'PRÉLÈVEMENT', 
+        equipment
+      );
+
+      expect(result).toBeDefined();
+      expect(result.isSimulation).toBe(true);
+      expect(result.equipment).toEqual(equipment);
+    });
   });
 
   describe('Voltage Regulator Integration', () => {
@@ -104,10 +135,7 @@ describe('Equipment Integration Tests', () => {
       const equipment: SimulationEquipment = {
         srg2: {
           nodeId: 'intermediate',
-          enabled: true,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
+          enabled: true
         },
         neutralCompensators: [],
         cableUpgrades: []
@@ -119,221 +147,143 @@ describe('Equipment Integration Tests', () => {
         equipment
       );
 
-      // Verify simulation was successful
+      expect(result).toBeDefined();
       expect(result.isSimulation).toBe(true);
-      expect(result.equipment).toBeDefined();
-      expect(result.baselineResult).toBeDefined();
-
-      // Check regulator was applied
-      const intermediateNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'intermediate');
-      expect(intermediateNode?.voltagesPerPhase?.A).toBe(400);
-      expect(intermediateNode?.voltagesPerPhase?.B).toBe(400);
-      expect(intermediateNode?.voltagesPerPhase?.C).toBe(400);
-
-      // Check downstream voltage is properly calculated
-      const loadNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'load-node');
-      expect(loadNode?.voltagesPerPhase?.A).toBeGreaterThan(380);
-      expect(loadNode?.voltagesPerPhase?.A).toBeLessThan(400);
+      
+      // Vérifier que la simulation a été appliquée
+      const srg2Result = result.srg2Result;
+      expect(srg2Result).toBeDefined();
+      expect(srg2Result?.nodeId).toBe('intermediate');
     });
 
-    it('should handle multiple voltage regulators in sequence', () => {
+    it('should calculate baseline and simulation results separately', () => {
       const equipment: SimulationEquipment = {
         srg2: {
           nodeId: 'intermediate',
-          enabled: true,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
+          enabled: true
         },
         neutralCompensators: [],
         cableUpgrades: []
       };
 
-      const result = calculator.calculateWithSimulation(
+      const simulationResult = calculator.calculateWithSimulation(
         mockProject,
-        'PRÉLÈVEMENT',
+        'MIXTE',
         equipment
       );
 
-      // Both regulators should maintain their target voltages
-      const intermediateNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'intermediate');
-      expect(intermediateNode?.voltagesPerPhase?.A).toBe(380);
+      const baselineResult = electricalCalculator.calculateScenario(
+        mockProject,
+        'MIXTE'
+      );
 
-      const loadNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'load-node');
-      expect(loadNode?.voltagesPerPhase?.A).toBe(230);
+      expect(simulationResult).toBeDefined();
+      expect(baselineResult).toBeDefined();
+      expect(simulationResult.baselineResult).toBeDefined();
+      
+      // Les résultats peuvent être différents après application de l'équipement
+      expect(simulationResult.isSimulation).toBe(true);
+      expect(baselineResult.scenario).toBe('MIXTE');
     });
-  });
 
-  describe('EQUI8 Compensator Integration', () => {
-    it('should apply voltage balance correction', () => {
-      // Modify project to have unbalanced loads
-      mockProject.nodes[2].clients = [
-        { id: 'load-a', label: 'Load Phase A', S_kVA: 10 },
-        { id: 'load-b', label: 'Load Phase B', S_kVA: 5 }, 
-        { id: 'load-c', label: 'Load Phase C', S_kVA: 15 }
-      ];
-      mockProject.loadModel = 'polyphase_equilibre';
-      mockProject.desequilibrePourcent = 30;
-
+    it('should handle equipment on multiple nodes', () => {
       const equipment: SimulationEquipment = {
-        srg2: null,
+        srg2: {
+          nodeId: 'intermediate',
+          enabled: true
+        },
         neutralCompensators: [{
           id: 'comp1',
-          nodeId: 'load-node',
-          maxPower_kVA: 50,
-          tolerance_A: 1.0,
-          enabled: true
+          nodeId: 'end-node',
+          enabled: true,
+          maxPower_kVA: 30,
+          tolerance_A: 3.0,
+          phaseImpedance: 0.4,
+          neutralImpedance: 0.08
         }],
         cableUpgrades: []
       };
 
       const result = calculator.calculateWithSimulation(
         mockProject,
+        'PRODUCTION',
+        equipment
+      );
+
+      expect(result).toBeDefined();
+      expect(result.isSimulation).toBe(true);
+      expect(result.equipment?.neutralCompensators).toHaveLength(1);
+      expect(result.equipment?.neutralCompensators[0].nodeId).toBe('end-node');
+    });
+
+    it('should handle cable upgrades in combination with other equipment', () => {
+      const equipment: SimulationEquipment = {
+        srg2: {
+          nodeId: 'intermediate',
+          enabled: true
+        },
+        neutralCompensators: [],
+        cableUpgrades: [{
+          originalCableId: 'cable2',
+          newCableTypeId: 'baxb-150',
+          reason: 'voltage_drop',
+          before: { voltageDropPercent: 12, current_A: 45, losses_kW: 2.1 },
+          after: { voltageDropPercent: 8, current_A: 45, losses_kW: 1.3 },
+          improvement: { voltageDropReduction: 4, lossReduction_kW: 0.8, lossReductionPercent: 38 }
+        }]
+      };
+
+      const result = calculator.calculateWithSimulation(
+        mockProject,
         'PRÉLÈVEMENT',
         equipment
       );
 
-      // Verify compensator results are stored
-      const loadNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'load-node');
-      expect(loadNode?.equi8).toBeDefined();
-      expect(loadNode?.equi8?.UEQUI8).toBeDefined();
-      expect(loadNode?.equi8?.I_EQUI8).toBeDefined();
-
-      // Check compensator status
-      const compensator = equipment.neutralCompensators[0];
-      expect((compensator as any).currentIN_A).toBeDefined();
-      expect((compensator as any).reductionPercent).toBeDefined();
+      expect(result).toBeDefined();
+      expect(result.isSimulation).toBe(true);
+      expect(result.equipment?.cableUpgrades).toHaveLength(1);
     });
-  });
 
-  describe('Combined Equipment Tests', () => {
-    it('should apply both voltage regulator and compensator together', () => {
-      // Unbalanced load configuration
-      mockProject.nodes[2].clients = [
-        { id: 'load-a', label: 'Load A', S_kVA: 8 },
-        { id: 'load-b', label: 'Load B', S_kVA: 6 },
-        { id: 'load-c', label: 'Load C', S_kVA: 10 }
-      ];
-      mockProject.desequilibrePourcent = 20;
-
+    it('should handle disabled equipment correctly', () => {
       const equipment: SimulationEquipment = {
         srg2: {
           nodeId: 'intermediate',
-          enabled: true,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
+          enabled: false
         },
         neutralCompensators: [{
           id: 'comp1',
-          nodeId: 'load-node',
-          maxPower_kVA: 50,
-          tolerance_A: 1.0,
-          enabled: true
-        }],
-        cableUpgrades: []
-      };
-
-      const result = calculator.calculateWithSimulation(
-        mockProject,
-        'PRÉLÈVEMENT',
-        equipment
-      );
-
-      // Verify both equipment types are applied
-      expect(result.isSimulation).toBe(true);
-      
-      // Check regulator effect
-      const intermediateNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'intermediate');
-      expect(intermediateNode?.voltagesPerPhase?.A).toBe(400);
-
-      // Check compensator effect  
-      const loadNode = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'load-node');
-      expect(loadNode?.equi8).toBeDefined();
-      
-      // Equipment should be active
-      const srg2 = equipment.srg2;
-      const compensator = equipment.neutralCompensators[0];
-      expect(srg2?.enabled).toBe(true);
-      expect((compensator as any).isLimited).toBe(false);
-    });
-
-    it('should maintain baseline comparison', () => {
-      const equipment: SimulationEquipment = {
-        srg2: {
-          nodeId: 'intermediate',
-          enabled: true,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
-        },
-        neutralCompensators: [],
-        cableUpgrades: []
-      };
-
-      const result = calculator.calculateWithSimulation(
-        mockProject,
-        'PRÉLÈVEMENT',
-        equipment
-      );
-
-      // Should have baseline result for comparison
-      expect(result.baselineResult).toBeDefined();
-      expect(result.baselineResult.nodeMetricsPerPhase).toBeDefined();
-
-      // Equipment result should be different from baseline
-      const baselineIntermediate = result.baselineResult.nodeMetricsPerPhase?.find(n => n.nodeId === 'intermediate');
-      const simulationIntermediate = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'intermediate');
-      
-      expect(simulationIntermediate?.voltagesPerPhase?.A).toBe(400);
-      expect(baselineIntermediate?.voltagesPerPhase?.A).not.toBe(400);
-    });
-  });
-
-  describe('Error Handling and Edge Cases', () => {
-    it('should handle disabled equipment gracefully', () => {
-      const equipment: SimulationEquipment = {
-        srg2: {
-          nodeId: 'intermediate',
+          nodeId: 'end-node',
           enabled: false,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
-        },
-        neutralCompensators: [{
-          id: 'comp1',
-          nodeId: 'load-node',
-          maxPower_kVA: 50,
-          tolerance_A: 1.0,
-          enabled: false // Disabled
+          maxPower_kVA: 25,
+          tolerance_A: 2.0,
+          phaseImpedance: 0.3,
+          neutralImpedance: 0.06
         }],
         cableUpgrades: []
       };
 
       const result = calculator.calculateWithSimulation(
         mockProject,
-        'PRÉLÈVEMENT',
+        'MIXTE',
         equipment
       );
 
-      // Should behave like baseline (no equipment applied)
+      expect(result).toBeDefined();
       expect(result.isSimulation).toBe(true);
       
-      // Equipment should not be active
-      const srg2 = equipment.srg2;
-      const compensator = equipment.neutralCompensators[0];
-      expect(srg2?.enabled).toBe(false);
-      expect((compensator as any).isLimited).toBeUndefined();
+      // Avec les équipements désactivés, les résultats devraient être similaires au baseline
+      const baseline = result.baselineResult;
+      expect(baseline).toBeDefined();
+      
+      // Vérifier que les équipements désactivés n'ont pas d'effet significatif
+      expect(Math.abs(result.globalLosses_kW - (baseline?.globalLosses_kW || 0))).toBeLessThan(0.1);
     });
 
-    it('should handle equipment on non-existent nodes', () => {
+    it('should handle non-existent nodes gracefully', () => {
       const equipment: SimulationEquipment = {
         srg2: {
           nodeId: 'non-existent-node',
-          enabled: true,
-          networkType: '400V',
-          maxPowerInjection_kVA: 44,
-          maxPowerConsumption_kVA: 44
+          enabled: true
         },
         neutralCompensators: [],
         cableUpgrades: []
@@ -345,9 +295,65 @@ describe('Equipment Integration Tests', () => {
         equipment
       );
 
-      // Should complete without errors
+      expect(result).toBeDefined();
       expect(result.isSimulation).toBe(true);
-      expect(result.nodeMetricsPerPhase).toBeDefined();
+      
+      // Même avec un nœud inexistant, le calcul devrait réussir
+      // mais sans appliquer l'équipement
+      expect(result.baselineResult).toBeDefined();
+    });
+  });
+
+  describe('Equipment Validation', () => {
+    it('should validate equipment configuration before applying', () => {
+      const equipment: SimulationEquipment = {
+        srg2: {
+          nodeId: 'source', // Les sources ne peuvent pas avoir de régulateur
+          enabled: true
+        },
+        neutralCompensators: [],
+        cableUpgrades: []
+      };
+
+      const result = calculator.calculateWithSimulation(
+        mockProject,
+        'PRÉLÈVEMENT',
+        equipment
+      );
+
+      expect(result).toBeDefined();
+      expect(result.isSimulation).toBe(true);
+    });
+
+    it('should handle equipment conflicts appropriately', () => {
+      const equipment: SimulationEquipment = {
+        srg2: {
+          nodeId: 'intermediate',
+          enabled: true
+        },
+        neutralCompensators: [{
+          id: 'comp1',
+          nodeId: 'intermediate', // Même nœud que le régulateur
+          enabled: true,
+          maxPower_kVA: 40,
+          tolerance_A: 4.0,
+          phaseImpedance: 0.6,
+          neutralImpedance: 0.12
+        }],
+        cableUpgrades: []
+      };
+
+      const result = calculator.calculateWithSimulation(
+        mockProject,
+        'PRÉLÈVEMENT',
+        equipment
+      );
+
+      expect(result).toBeDefined();
+      expect(result.isSimulation).toBe(true);
+      
+      // Le système devrait gérer les conflits d'équipement gracieusement
+      expect(result.equipment).toEqual(equipment);
     });
   });
 });

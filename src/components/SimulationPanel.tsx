@@ -59,6 +59,13 @@ export const SimulationPanel = () => {
     const node = currentProject.nodes.find(n => n.id === srg2Config.nodeId);
     const srg2Result = currentResult?.srg2Result;
     
+    // Derive network type from project voltage system
+    const networkType = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+    
+    // Fixed power limits
+    const maxInjectionPower = 85; // kVA
+    const maxConsumptionPower = 100; // kVA
+    
     return (
       <Card className="mb-4">
         <CardHeader className="pb-3">
@@ -93,23 +100,12 @@ export const SimulationPanel = () => {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="networkType" className="text-xs text-muted-foreground">
+                <Label className="text-xs text-muted-foreground">
                   Type de réseau
                 </Label>
-                <Select
-                  value={srg2Config.networkType}
-                  onValueChange={(value: '230V' | '400V') => {
-                    updateSRG2Config({ networkType: value });
-                  }}
-                >
-                  <SelectTrigger className="h-8">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="230V">230V</SelectItem>
-                    <SelectItem value="400V">400V</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
+                  {networkType}
+                </div>
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
@@ -130,44 +126,54 @@ export const SimulationPanel = () => {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="maxInjection" className="text-xs text-muted-foreground">
+                <Label className="text-xs text-muted-foreground">
                   Puissance max injection (kVA)
                 </Label>
-                <Input
-                  id="maxInjection"
-                  type="number"
-                  value={srg2Config.maxPowerInjection_kVA}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value);
-                    if (!isNaN(value) && value >= 0) {
-                      updateSRG2Config({ maxPowerInjection_kVA: value });
-                    }
-                  }}
-                  className="h-8"
-                  min="0"
-                  step="1"
-                />
+                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
+                  {maxInjectionPower}
+                </div>
               </div>
               <div>
-                <Label htmlFor="maxConsumption" className="text-xs text-muted-foreground">
+                <Label className="text-xs text-muted-foreground">
                   Puissance max consommation (kVA)
                 </Label>
-                <Input
-                  id="maxConsumption"
-                  type="number"
-                  value={srg2Config.maxPowerConsumption_kVA}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value);
-                    if (!isNaN(value) && value >= 0) {
-                      updateSRG2Config({ maxPowerConsumption_kVA: value });
-                    }
-                  }}
-                  className="h-8"
-                  min="0"
-                  step="1"
-                />
+                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
+                  {maxConsumptionPower}
+                </div>
               </div>
             </div>
+
+            {srg2Result && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground">
+                    Charge foisonnée (kVA)
+                  </Label>
+                  <div className="text-sm font-mono mt-1 p-2 bg-blue-50 rounded">
+                    {srg2Result.diversifiedLoad_kVA?.toFixed(1) || '0.0'}
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">
+                    Production foisonnée (kVA)
+                  </Label>
+                  <div className="text-sm font-mono mt-1 p-2 bg-green-50 rounded">
+                    {srg2Result.diversifiedProduction_kVA?.toFixed(1) || '0.0'}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {srg2Result && (
+              <div>
+                <Label className="text-xs text-muted-foreground">
+                  Puissance nette downstream (kVA)
+                </Label>
+                <div className="text-sm font-mono mt-1 p-2 bg-orange-50 rounded">
+                  {srg2Result.netPower_kVA?.toFixed(1) || '0.0'}
+                </div>
+              </div>
+            )}
 
             {srg2Result && srg2Config.enabled && (
               <div className="mt-3 p-3 bg-muted/50 rounded-md">

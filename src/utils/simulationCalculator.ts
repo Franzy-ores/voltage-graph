@@ -97,10 +97,9 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
 
     // Vérification de la cohérence du type de réseau
-    const expectedVoltage = project.transformerConfig?.nominalVoltage_V ?? 230;
-    const expectedNetworkType = expectedVoltage > 300 ? '400V' : '230V';
-    if (simulationEquipment.srg2.networkType !== expectedNetworkType) {
-      console.warn(`⚠️ SRG2: Network type mismatch - config: ${simulationEquipment.srg2.networkType}, expected: ${expectedNetworkType} (${expectedVoltage}V)`);
+    // Check if it's an SRG2 node (no network type checking needed)
+    if (!simulationEquipment.srg2?.enabled || simulationEquipment.srg2.nodeId !== simulationEquipment.srg2.nodeId) {
+      return { nodes, result: baseResult };
     }
 
     const targetNode = nodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
@@ -227,15 +226,10 @@ export class SimulationCalculator extends ElectricalCalculator {
   /**
    * Crée une configuration SRG2 par défaut pour un nœud
    */
-  createDefaultSRG2Config(nodeId: string, voltageSystem: string): SRG2Config {
-    const networkType = voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V';
-    
+  createDefaultSRG2Config(nodeId: string): SRG2Config {
     return {
       nodeId,
-      enabled: false,
-      networkType: networkType as '230V' | '400V',
-      maxPowerInjection_kVA: 85,
-      maxPowerConsumption_kVA: 100
+      enabled: false
     };
   }
 
