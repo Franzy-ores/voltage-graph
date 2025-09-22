@@ -1,7 +1,10 @@
 import { ElectricalCalculator } from './electricalCalculations';
-import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node } from '@/types/network';
+import { SRG2Regulator } from './SRG2Regulator';
+import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node, SRG2Config, SRG2Result } from '@/types/network';
 
 export class SimulationCalculator extends ElectricalCalculator {
+  private srg2Regulator = new SRG2Regulator();
+
   constructor(cosPhi: number = 0.95) {
     super(cosPhi);
   }
@@ -46,7 +49,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       isSimulation: true,
       baselineResult: baseResult,
       equipment: simulationEquipment,
-      convergenceStatus: 'converged' as const
+      convergenceStatus: 'converged' as const,
+      srg2Result: (simulationResult as any).srg2Result
     };
   }
 
@@ -63,17 +67,58 @@ export class SimulationCalculator extends ElectricalCalculator {
     scenario: CalculationScenario
   ): CalculationResult {
     let result = { ...baseResult };
+    let modifiedNodes = [...nodes];
 
-    // Application des compensateurs de neutre (EQUI8)
+    // Application du régulateur SRG2 (PRIORITÉ 1 - avant tous les autres équipements)
+    let srg2Result: SRG2Result | undefined;
+    if (simulationEquipment.srg2 && simulationEquipment.srg2.enabled) {
+      console.log('🔧 Applying SRG2 voltage regulator...');
+      
+      const targetNode = modifiedNodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
+      if (targetNode) {
+        srg2Result = this.srg2Regulator.apply(
+          simulationEquipment.srg2,
+          targetNode,
+          project
+        );
+
+        // Apply regulation to network if active
+        if (srg2Result.isActive) {
+          modifiedNodes = this.srg2Regulator.applyRegulationToNetwork(
+            srg2Result,
+            modifiedNodes,
+            cables
+          );
+
+          // Recalculate the scenario with SRG2-modified nodes
+          console.log('🔄 Recalculating scenario with SRG2 regulation...');
+          result = this.calculateScenario(
+            modifiedNodes,
+            project.cables,
+            project.cableTypes,
+            scenario,
+            project.foisonnementCharges || 100,
+            project.foisonnementProductions || 100,
+            project.transformerConfig,
+            project.loadModel || 'polyphase_equilibre',
+            project.desequilibrePourcent || 0
+          );
+        }
+      } else {
+        console.warn(`⚠️ SRG2: Node ${simulationEquipment.srg2.nodeId} not found`);
+      }
+    }
+
+    // Application des compensateurs de neutre (ÉQUI8)
     if (simulationEquipment.neutralCompensators && simulationEquipment.neutralCompensators.length > 0) {
       const activeCompensators = simulationEquipment.neutralCompensators.filter(c => c.enabled);
       if (activeCompensators.length > 0) {
         console.log(`🔧 Applying ${activeCompensators.length} neutral compensators...`);
-        result = this.applyNeutralCompensation(nodes, cables, activeCompensators, result, cableTypes);
+        result = this.applyNeutralCompensation(modifiedNodes, cables, activeCompensators, result, cableTypes);
       }
     }
 
-    // Application des régulateurs de tension
+    // Application des régulateurs de tension classiques (après SRG2)
     if (simulationEquipment.regulators && simulationEquipment.regulators.length > 0) {
       const activeRegulators = simulationEquipment.regulators.filter(r => r.enabled);
       if (activeRegulators.length > 0) {
@@ -81,7 +126,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         
         // Utiliser le système unifié pour appliquer tous les régulateurs
         result = this.applyAllVoltageRegulators(
-          nodes, // Nodes originaux NON modifiés
+          modifiedNodes, // Utiliser les nœuds modifiés par SRG2
           project.cables,
           activeRegulators,
           result,
@@ -90,6 +135,11 @@ export class SimulationCalculator extends ElectricalCalculator {
           scenario
         );
       }
+    }
+
+    // Store SRG2 result in the final result
+    if (srg2Result) {
+      (result as any).srg2Result = srg2Result;
     }
 
     return result;

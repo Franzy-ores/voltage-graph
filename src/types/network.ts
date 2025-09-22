@@ -86,6 +86,10 @@ export interface Node {
   isVoltageRegulator?: boolean; // Marqueur pour les nœuds régulateurs
   regulatorTargetVoltages?: { A: number; B: number; C: number }; // Tensions cibles par phase pour SRG2
   regulatorTransformationRatios?: { A: number; B: number; C: number }; // Ratios de transformation par phase pour SRG2
+  // SRG2 regulation properties
+  srg2Applied?: boolean;
+  srg2State?: string;
+  srg2Ratio?: number;
 }
 
 export interface Cable {
@@ -226,10 +230,32 @@ export interface CableUpgrade {
   };
 }
 
+// SRG2 Regulator types
+export interface SRG2Config {
+  nodeId: string;
+  enabled: boolean;
+  networkType: '230V' | '400V';
+  maxPowerInjection_kVA: number;
+  maxPowerConsumption_kVA: number;
+}
+
+export interface SRG2Result {
+  nodeId: string;
+  originalVoltage: number;
+  regulatedVoltage: number;
+  state: string;
+  ratio: number;
+  phaseRatios?: { A: number; B: number; C: number };
+  powerDownstream_kVA: number;
+  isActive: boolean;
+  limitReason?: string;
+}
+
 export interface SimulationEquipment {
   regulators: VoltageRegulator[];
   neutralCompensators: NeutralCompensator[];
   cableUpgrades: CableUpgrade[];
+  srg2?: SRG2Config; // Optional SRG2 configuration
 }
 
 export interface SimulationResult extends CalculationResult {
@@ -237,6 +263,7 @@ export interface SimulationResult extends CalculationResult {
   equipment?: SimulationEquipment;
   baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
   convergenceStatus?: 'converged' | 'not_converged';
+  srg2Result?: SRG2Result; // SRG2 regulation result
 }
 
 export interface CalculationResult {
