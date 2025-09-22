@@ -580,6 +580,9 @@ export const MapView = () => {
       const activeCompensator = simulationEquipment.neutralCompensators.find(c => c.nodeId === node.id && c.enabled);
       const activeSRG2 = simulationEquipment.srg2?.nodeId === node.id && simulationEquipment.srg2?.enabled;
       
+      // Ensure no old regulator references exist
+      console.log('🔍 Equipment check for node:', node.id, { activeCompensator: !!activeCompensator, activeSRG2 });
+      
       // Determine equipment status
       let equipmentIndicator = '';
       let equipmentStatus = '';
