@@ -459,6 +459,53 @@ export class SRG2Regulator {
   }
 
   /**
+   * Utility function: Get all descendant nodes in topological order
+   */
+  getDescendants(nodeId: string, nodes: Node[], cables: Cable[]): string[] {
+    const visited = new Set<string>([nodeId]);
+    const queue = [nodeId];
+    const descendants: string[] = [];
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      
+      // Find cables where currentId is upstream (nodeA → nodeB)
+      const downstreamCables = cables.filter(c => c.nodeAId === currentId && !visited.has(c.nodeBId));
+      
+      for (const cable of downstreamCables) {
+        visited.add(cable.nodeBId);
+        descendants.push(cable.nodeBId);
+        queue.push(cable.nodeBId);
+      }
+    }
+    
+    return descendants;
+  }
+
+  /**
+   * Utility function: Propagate voltage to descendant nodes
+   */
+  propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
+    const parent = nodes.find(n => n.id === nodeId);
+    if (!parent) return;
+
+    const descendants = this.getDescendants(nodeId, nodes, cables);
+    
+    for (const childId of descendants) {
+      const child = nodes.find(n => n.id === childId);
+      if (child) {
+        // Apply the SRG2 ratio to descendant nodes
+        const currentVoltage = child.tensionCible ?? parent.tensionCible ?? 400; // Default fallback
+        child.tensionCible = currentVoltage * ratio;
+        child.srg2Applied = true;
+        child.srg2Ratio = ratio;
+        
+        console.log(`🔧 [SRG2-DESCENDANT] Node ${childId}: ${currentVoltage.toFixed(1)}V → ${child.tensionCible.toFixed(1)}V (ratio: ${ratio.toFixed(3)})`);
+      }
+    }
+  }
+
+  /**
    * Applique la régulation SRG2 à l'ensemble du réseau.
    * - Met à jour le nœud ciblé.
    * - Propage le ratio de tension en aval (et optionnellement en amont).
@@ -507,7 +554,16 @@ export class SRG2Regulator {
       console.log(`📊 [SRG2-PROPAGATION] Individual regulated voltages: A=${result.regulatedVoltages.A.toFixed(1)}V, B=${result.regulatedVoltages.B.toFixed(1)}V, C=${result.regulatedVoltages.C.toFixed(1)}V`);
     }
 
-    // AMÉLIORER LA LOGIQUE DE PROPAGATION TOPOLOGIQUE
+    // -----------------------------------------------------------------
+    // 3️⃣  Propagation optimisée vers les descendants
+    // -----------------------------------------------------------------
+    if (direction === 'downstream' || direction === 'both') {
+      this.propagateVoltageToChildren(result.nodeId, clonedNodes, cables, result.ratio);
+      console.log(`🔧 [SRG2-PROPAGATION] Applied optimized propagation to descendants of node ${result.nodeId}`);
+    }
+
+    // ANCIENNE LOGIQUE DE PROPAGATION TOPOLOGIQUE (conservée pour référence)
+    /*
     const getDownstreamNodes = (startNodeId: string): string[] => {
       const visited = new Set<string>([startNodeId]);
       const queue = [startNodeId];
@@ -610,5 +666,10 @@ export class SRG2Regulator {
     }
 
     return clonedNodes;
+    */
+
+    // -----------------------------------------------------------------
+    // 4️⃣  Propagation avancée (logique existante - pour support multi-SRG2)
+    // -----------------------------------------------------------------
   }
 }
