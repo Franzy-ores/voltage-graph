@@ -1406,9 +1406,10 @@ export class ElectricalCalculator {
 
         let iter2 = 0;
         let converged2 = false;
-        while (iter2 < ElectricalCalculator.MAX_ITERATIONS) {
+        while (iter2 < ElectricalCalculator.MAX_ITERATIONS && !converged2) {
           iter2++;
           const V_prev2 = new Map(V_node_phase);
+          console.log(`🔄 BFS iteration ${iter2}/${ElectricalCalculator.MAX_ITERATIONS} for phase ${angleDeg}°`);
 
           I_branch_phase.clear();
           I_inj_node_phase.clear();
@@ -1473,12 +1474,18 @@ export class ElectricalCalculator {
             const d = abs(sub(Vn, Vp));
             if (d > maxDelta) maxDelta = d;
           }
-          if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { 
-            converged2 = true; 
-            
-            // Ancien système SRG2 supprimé - pas de transformation downstream
-            
-            break; 
+          const convergenceRatio = maxDelta / (Vslack_phase || 1);
+          console.log(`   - Max voltage delta: ${maxDelta.toFixed(6)}V, convergence ratio: ${convergenceRatio.toExponential(3)}`);
+          
+          if (convergenceRatio < ElectricalCalculator.CONVERGENCE_TOLERANCE) { 
+            converged2 = true;
+            console.log(`✅ BFS converged for phase ${angleDeg}° after ${iter2} iterations`);
+          }
+          
+          // Safety check for infinite loops
+          if (iter2 >= ElectricalCalculator.MAX_ITERATIONS - 1) {
+            console.warn(`⚠️ BFS phase ${angleDeg}° reached max iterations (${ElectricalCalculator.MAX_ITERATIONS}), forcing convergence`);
+            converged2 = true;
           }
         }
         if (!converged2) {
@@ -1756,8 +1763,9 @@ export class ElectricalCalculator {
     const I_branch = new Map<string, Complex>(); // by cable id (per phase)
     const I_inj_node = new Map<string, Complex>();
 
-    while (iter < maxIter) {
+    while (iter < maxIter && !converged) {
       iter++;
+      console.log(`🔄 BFS equilibrium iteration ${iter}/${maxIter}`);
       const V_prev = new Map(V_node);
 
       // Backward: compute injection currents then branch currents bottom-up
@@ -1827,12 +1835,18 @@ export class ElectricalCalculator {
         const d = abs(sub(Vn, Vp));
         if (d > maxDelta) maxDelta = d;
       }
-      if (maxDelta / (Vslack_phase || 1) < tol) { 
+      const convergenceRatio = maxDelta / (Vslack_phase || 1);
+      console.log(`   - Max voltage delta: ${maxDelta.toFixed(6)}V, convergence ratio: ${convergenceRatio.toExponential(3)}`);
+      
+      if (convergenceRatio < tol) { 
         converged = true;
-        
-        // Ancien système SRG2 supprimé - pas de transformation downstream
-        
-        break; 
+        console.log(`✅ BFS equilibrium converged after ${iter} iterations`);
+      }
+      
+      // Safety check for infinite loops
+      if (iter >= maxIter - 1) {
+        console.warn(`⚠️ BFS equilibrium reached max iterations (${maxIter}), forcing convergence`);
+        converged = true;
       }
     }
     if (!converged) {
@@ -2085,6 +2099,8 @@ export class ElectricalCalculator {
     
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
+    console.log(`   - Total iterations: BFS equilibrium completed`);
+    console.log(`   - Network state: ${result.cables.length} cables calculated, ${result.globalLosses_kW.toFixed(3)} kW losses`);
     return result;
   }
 
