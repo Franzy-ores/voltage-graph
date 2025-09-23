@@ -176,26 +176,97 @@ export const SimulationPanel = () => {
             )}
 
             {srg2Result && srg2Config.enabled && (
-              <div className="mt-3 p-3 bg-muted/50 rounded-md">
-                <div className="text-xs font-medium mb-2">Résultats SRG2:</div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {srg2Result.ratio && (
-                    <div>
-                      <span className="text-muted-foreground">Ratio:</span>
-                      <span className="ml-1 font-mono">{srg2Result.ratio.toFixed(3)}</span>
+              <div className="mt-4 space-y-3">
+                <Separator />
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4 text-blue-500" />
+                  Détails de la régulation SRG2
+                </div>
+                
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="p-3 bg-blue-50 rounded-md border">
+                    <Label className="text-xs font-medium text-blue-700">
+                      Tension mesurée au nœud
+                    </Label>
+                    <div className="text-lg font-mono font-bold text-blue-900 mt-1">
+                      {srg2Result.originalVoltage?.toFixed(1)} V
                     </div>
-                  )}
-                  {srg2Result.regulatedVoltage && (
-                      <div>
-                        <span className="text-muted-foreground">Tensions:</span>
-                        <div className="ml-1 font-mono text-xs">
-                          Originale: {srg2Result.originalVoltage?.toFixed(1)}V<br/>
-                          Régulée: {srg2Result.regulatedVoltage?.toFixed(1)}V<br/>
-                          Ratio: {srg2Result.ratio?.toFixed(3)}
+                  </div>
+
+                  <div className="p-3 bg-green-50 rounded-md border">
+                    <Label className="text-xs font-medium text-green-700">
+                      Tension corrigée (régulée)
+                    </Label>
+                    <div className="text-lg font-mono font-bold text-green-900 mt-1">
+                      {srg2Result.regulatedVoltage?.toFixed(1)} V
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-orange-50 rounded-md border">
+                    <Label className="text-xs font-medium text-orange-700">
+                      Coefficient appliqué (ratio)
+                    </Label>
+                    <div className="text-lg font-mono font-bold text-orange-900 mt-1">
+                      {srg2Result.ratio?.toFixed(3)}
+                    </div>
+                  </div>
+                </div>
+
+                {srg2Result.regulatedVoltages && (
+                  <div className="mt-3">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Tensions par phase (régulées)
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="p-2 bg-red-50 rounded text-center">
+                        <div className="text-xs text-red-700 font-medium">Phase A</div>
+                        <div className="text-sm font-mono font-bold text-red-900">
+                          {srg2Result.regulatedVoltages.A?.toFixed(1)} V
                         </div>
                       </div>
-                  )}
-                </div>
+                      <div className="p-2 bg-yellow-50 rounded text-center">
+                        <div className="text-xs text-yellow-700 font-medium">Phase B</div>
+                        <div className="text-sm font-mono font-bold text-yellow-900">
+                          {srg2Result.regulatedVoltages.B?.toFixed(1)} V
+                        </div>
+                      </div>
+                      <div className="p-2 bg-blue-50 rounded text-center">
+                        <div className="text-xs text-blue-700 font-medium">Phase C</div>
+                        <div className="text-sm font-mono font-bold text-blue-900">
+                          {srg2Result.regulatedVoltages.C?.toFixed(1)} V
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {srg2Result.phaseRatios && (
+                  <div className="mt-3">
+                    <Label className="text-xs font-medium text-muted-foreground">
+                      Coefficients par phase
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2 mt-2">
+                      <div className="p-2 bg-gray-50 rounded text-center">
+                        <div className="text-xs text-gray-700 font-medium">Ratio A</div>
+                        <div className="text-sm font-mono font-bold text-gray-900">
+                          {srg2Result.phaseRatios.A?.toFixed(3)}
+                        </div>
+                      </div>
+                      <div className="p-2 bg-gray-50 rounded text-center">
+                        <div className="text-xs text-gray-700 font-medium">Ratio B</div>
+                        <div className="text-sm font-mono font-bold text-gray-900">
+                          {srg2Result.phaseRatios.B?.toFixed(3)}
+                        </div>
+                      </div>
+                      <div className="p-2 bg-gray-50 rounded text-center">
+                        <div className="text-xs text-gray-700 font-medium">Ratio C</div>
+                        <div className="text-sm font-mono font-bold text-gray-900">
+                          {srg2Result.phaseRatios.C?.toFixed(3)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
