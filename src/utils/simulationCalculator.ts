@@ -1,6 +1,6 @@
 import { ElectricalCalculator } from './electricalCalculations';
 import { SRG2Regulator } from './SRG2Regulator';
-import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node, SRG2Config, SRG2Result } from '@/types/network';
+import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node, SRG2Config, SRG2Result, LoadModel } from '@/types/network';
 
 export class SimulationCalculator extends ElectricalCalculator {
   private srg2Regulator = new SRG2Regulator();
@@ -226,7 +226,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       'downstream'
     );
 
-    console.log(`🔄 [SRG2-RECALC] Starting recalculation with ${updatedNodes.length} nodes after SRG2 regulation...`);
+    console.log(`🔄 [SRG2-RECALC] Starting downstream-only recalculation after SRG2 regulation on node ${srg2Result.nodeId}...`);
     
     // Log node voltages before recalculation
     updatedNodes.forEach(n => {
@@ -235,7 +235,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     });
     
-    const newResult = this.calculateScenario(
+    // Recalculer seulement les nœuds aval pour optimiser les performances
+    const newResult = this.recalculateDownstreamOnly(
       updatedNodes,
       project.cables,
       project.cableTypes,
@@ -244,7 +245,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.foisonnementProductions ?? 100,
       project.transformerConfig,
       project.loadModel ?? 'polyphase_equilibre',
-      project.desequilibrePourcent ?? 0
+      project.desequilibrePourcent ?? 0,
+      srg2Result.nodeId,
+      baseResult
     );
     
     // Log final results
@@ -256,6 +259,143 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
 
     return { nodes: updatedNodes, result: newResult, srg2Result };
+  }
+
+  /**
+   * Identifie tous les nœuds situés en aval d'un nœud donné
+   */
+  private getDownstreamNodes(regulatedNodeId: string, nodes: Node[], cables: Cable[]): Set<string> {
+    const downstreamNodes = new Set<string>();
+    const visited = new Set<string>();
+    
+    // Fonction récursive pour parcourir en aval
+    const traverseDownstream = (currentNodeId: string) => {
+      if (visited.has(currentNodeId)) return;
+      visited.add(currentNodeId);
+      
+      // Trouver tous les câbles connectés à ce nœud
+      const connectedCables = cables.filter(cable => 
+        cable.nodeAId === currentNodeId || cable.nodeBId === currentNodeId
+      );
+      
+      connectedCables.forEach(cable => {
+        const otherNodeId = cable.nodeAId === currentNodeId ? cable.nodeBId : cable.nodeAId;
+        
+        // Ne pas remonter vers les sources
+        const otherNode = nodes.find(n => n.id === otherNodeId);
+        if (!otherNode?.isSource && otherNodeId !== regulatedNodeId) {
+          downstreamNodes.add(otherNodeId);
+          traverseDownstream(otherNodeId);
+        }
+      });
+    };
+    
+    traverseDownstream(regulatedNodeId);
+    return downstreamNodes;
+  }
+
+  /**
+   * Recalcule seulement les nœuds aval d'un nœud régulé SRG2
+   * Optimisation pour éviter le recalcul complet du réseau
+   */
+  private recalculateDownstreamOnly(
+    nodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[],
+    scenario: CalculationScenario,
+    foisonnementCharges: number,
+    foisonnementProductions: number,
+    transformerConfig: any,
+    loadModel: LoadModel,
+    desequilibrePourcent: number,
+    regulatedNodeId: string,
+    baseResult: CalculationResult
+  ): CalculationResult {
+    // Identifier les nœuds aval
+    const downstreamNodes = this.getDownstreamNodes(regulatedNodeId, nodes, cables);
+    
+    console.log(`📍 [DOWNSTREAM] Found ${downstreamNodes.size} downstream nodes from regulated node ${regulatedNodeId}:`, Array.from(downstreamNodes));
+    
+    if (downstreamNodes.size === 0) {
+      console.log(`✅ [DOWNSTREAM] No downstream nodes to recalculate, using base result`);
+      return baseResult;
+    }
+    
+    // Créer un sous-réseau avec le nœud régulé + nœuds aval
+    const relevantNodeIds = new Set([regulatedNodeId, ...downstreamNodes]);
+    const subNodes = nodes.filter(n => relevantNodeIds.has(n.id));
+    const subCables = cables.filter(c => 
+      relevantNodeIds.has(c.nodeAId) && relevantNodeIds.has(c.nodeBId)
+    );
+    
+    console.log(`🔄 [DOWNSTREAM] Recalculating sub-network: ${subNodes.length} nodes, ${subCables.length} cables`);
+    
+    // Effectuer un calcul partiel avec le nœud régulé comme nouvelle référence
+    const partialResult = this.calculateScenario(
+      subNodes,
+      subCables,
+      cableTypes,
+      scenario,
+      foisonnementCharges,
+      foisonnementProductions,
+      transformerConfig,
+      loadModel,
+      desequilibrePourcent
+    );
+    
+    // Fusionner les résultats: conserver l'amont, mettre à jour l'aval
+    const mergedResult = this.mergeCalculationResults(baseResult, partialResult, downstreamNodes, regulatedNodeId);
+    
+    console.log(`✅ [DOWNSTREAM] Recalculation completed, merged results`);
+    return mergedResult;
+  }
+
+  /**
+   * Fusionne les résultats de calcul: conserve l'amont, met à jour l'aval
+   */
+  private mergeCalculationResults(
+    baseResult: CalculationResult,
+    partialResult: CalculationResult,
+    updatedNodeIds: Set<string>,
+    regulatedNodeId: string
+  ): CalculationResult {
+    const mergedResult = { ...baseResult };
+    
+    // Mettre à jour les métriques par nœud
+    if (mergedResult.nodeMetrics && partialResult.nodeMetrics) {
+      mergedResult.nodeMetrics = mergedResult.nodeMetrics.map(baseMetric => {
+        if (updatedNodeIds.has(baseMetric.nodeId) || baseMetric.nodeId === regulatedNodeId) {
+          const updatedMetric = partialResult.nodeMetrics?.find(m => m.nodeId === baseMetric.nodeId);
+          return updatedMetric || baseMetric;
+        }
+        return baseMetric;
+      });
+    }
+    
+    // Mettre à jour les métriques par phase
+    if (mergedResult.nodeMetricsPerPhase && partialResult.nodeMetricsPerPhase) {
+      mergedResult.nodeMetricsPerPhase = mergedResult.nodeMetricsPerPhase.map(baseMetric => {
+        if (updatedNodeIds.has(baseMetric.nodeId) || baseMetric.nodeId === regulatedNodeId) {
+          const updatedMetric = partialResult.nodeMetricsPerPhase?.find(m => m.nodeId === baseMetric.nodeId);
+          return updatedMetric || baseMetric;
+        }
+        return baseMetric;
+      });
+    }
+    
+    // Mettre à jour les chutes de tension des nœuds concernés
+    if (mergedResult.nodeVoltageDrops && partialResult.nodeVoltageDrops) {
+      mergedResult.nodeVoltageDrops = mergedResult.nodeVoltageDrops.map(baseDrop => {
+        if (updatedNodeIds.has(baseDrop.nodeId) || baseDrop.nodeId === regulatedNodeId) {
+          const updatedDrop = partialResult.nodeVoltageDrops?.find(d => d.nodeId === baseDrop.nodeId);
+          return updatedDrop || baseDrop;
+        }
+        return baseDrop;
+      });
+    }
+    
+    console.log(`🔀 [MERGE] Results merged: updated ${updatedNodeIds.size} downstream nodes + regulated node ${regulatedNodeId}`);
+    return mergedResult;
   }
 
   /**
