@@ -159,24 +159,23 @@ describe('SRG2 Unified System Validation', () => {
 
     expect(result).toBeDefined();
     
-    // Check for SRG2 nodes with stored ratios
+    // Check for SRG2 nodes with applied regulation
     const srg2Nodes = testProject.nodes.filter(node => 
-      node.isVoltageRegulator && node.regulatorTransformationRatios
+      node.isVoltageRegulator && node.srg2Applied
     );
     
-    console.log(`Found ${srg2Nodes.length} SRG2 nodes with transformation ratios`);
+    console.log(`Found ${srg2Nodes.length} SRG2 nodes with applied regulation`);
     
-    // If SRG2 is active, should have transformation ratios
+    // If SRG2 is active, should have regulation properties
     srg2Nodes.forEach(node => {
-      expect(node.regulatorTransformationRatios).toBeDefined();
-      expect(node.regulatorTransformationRatios?.A).toBeGreaterThan(0);
-      expect(node.regulatorTransformationRatios?.B).toBeGreaterThan(0);
-      expect(node.regulatorTransformationRatios?.C).toBeGreaterThan(0);
+      expect(node.srg2Applied).toBe(true);
+      expect(node.srg2Ratio).toBeGreaterThan(0);
+      expect(node.srg2State).toBeDefined();
       
-      console.log(`Node ${node.id} ratios: A=${node.regulatorTransformationRatios?.A}, B=${node.regulatorTransformationRatios?.B}, C=${node.regulatorTransformationRatios?.C}`);
+      console.log(`Node ${node.id} SRG2: state=${node.srg2State}, ratio=${node.srg2Ratio}`);
     });
 
-    console.log('✅ Transformation ratios storage test passed');
+    console.log('✅ SRG2 regulation storage test passed');
   });
 
   test('should disable old SRG2 system and use unified system', () => {

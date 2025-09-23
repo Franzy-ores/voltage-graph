@@ -1232,20 +1232,6 @@ export class ElectricalCalculator {
           U_line_base = transformerConfig.nominalVoltage_V;
         }
       }
-    } else if (source.isVoltageRegulator && source.regulatorTargetVoltages) {
-      // ANCIEN CODE SRG2 RÉSIDUEL - NE PLUS UTILISER
-      console.error(`🚨 [INTERFERENCE-ERROR] Residual SRG2 code detected! source.regulatorTargetVoltages should not be used anymore.`);
-      console.error(`   Node ${source.id} has regulatorTargetVoltages but srg2Applied=false - this indicates old/residual SRG2 code.`);
-      console.error(`   Values: A=${source.regulatorTargetVoltages.A.toFixed(3)}, B=${source.regulatorTargetVoltages.B.toFixed(3)}, C=${source.regulatorTargetVoltages.C.toFixed(3)}`);
-      
-      // Fallback sécurisé : utiliser tensionCible si disponible, sinon tension nominale
-      if (source.tensionCible) {
-        U_line_base = source.tensionCible;
-        console.log(`🔧 [FALLBACK] Using tensionCible instead: ${U_line_base.toFixed(1)}V`);
-      } else if (transformerConfig?.nominalVoltage_V) {
-        U_line_base = transformerConfig.nominalVoltage_V;
-        console.log(`🔧 [FALLBACK] Using transformer nominal voltage: ${U_line_base.toFixed(1)}V`);
-      }
     } else if (source.tensionCible) {
       U_line_base = source.tensionCible;
       console.log(`✅ [CLASSICAL] Using classical tensionCible: ${U_line_base.toFixed(1)}V for node ${source.id}`);

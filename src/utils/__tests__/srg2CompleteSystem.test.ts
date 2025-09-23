@@ -121,9 +121,13 @@ describe('SRG2 Complete System Integration', () => {
       foisonnementProductions: 100,
       loadModel: 'polyphase_equilibre',
       desequilibrePourcent: 0,
-      tensionHT_V: 20000,
-      diversityFactorCharge: 1,
-      diversityFactorProduction: 0.8
+      defaultChargeKVA: 5,
+      defaultProductionKVA: 5,
+      htVoltageConfig: {
+        nominalVoltageHT_V: 20000,
+        nominalVoltageBT_V: 400,
+        measuredVoltageHT_V: 20000
+      }
     };
   }
 
