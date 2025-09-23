@@ -28,6 +28,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Phase 1: Initialize node voltages - clean slate for new simulation
     const initialNodes: Node[] = project.nodes.map(node => ({
       ...node,
+      clients: node.clients ? [...node.clients] : [],
+      productions: node.productions ? [...node.productions] : [],
       tensionCible: undefined,
       srg2Applied: false,
       srg2State: undefined,
@@ -36,7 +38,10 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     let currentProjectState = {
       ...project,
-      nodes: initialNodes
+      nodes: initialNodes,
+      cables: project.cables ? [...project.cables] : [],
+      cableTypes: project.cableTypes ? [...project.cableTypes] : [],
+      transformerConfig: project.transformerConfig ? { ...project.transformerConfig } : undefined
     };
     
     console.log('🔄 Starting iterative simulation with convergence loop...');
@@ -338,6 +343,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.cables,
       'downstream'
     );
+
+    console.log("[SRG2] updatedNodes count:", updatedNodes.length);
+    console.log("[SRG2] updated node example:", updatedNodes.find(n => n.id === srg2Result.nodeId));
 
     console.log(`🔄 [SRG2-RECALC] Starting full network recalculation after SRG2 regulation on node ${srg2Result.nodeId}...`);
     

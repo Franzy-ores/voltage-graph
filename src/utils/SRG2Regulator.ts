@@ -479,9 +479,15 @@ export class SRG2Regulator {
     }
 
     // -----------------------------------------------------------------
-    // 1️⃣  Copie profonde (on clone uniquement les propriétés primitives)
+    // 1️⃣  Copie profonde avec clonage des propriétés imbriquées
     // -----------------------------------------------------------------
-    const clonedNodes: Node[] = nodes.map(n => ({ ...n }));
+    const clonedNodes: Node[] = nodes.map(n => ({
+      ...n,
+      clients: n.clients ? [...n.clients] : [],
+      productions: n.productions ? [...n.productions] : []
+    }));
+
+    console.log("[SRG2] cloned node sample:", clonedNodes.find(n => n.id === result.nodeId));
 
     // -----------------------------------------------------------------
     // 2️⃣  Met à jour le nœud régulé
