@@ -1801,58 +1801,21 @@ export class ElectricalCalculator {
       const V_source_bus = Ztr_phase ? sub(Vslack, mul(Ztr_phase, I_source_net)) : Vslack;
       V_node.set(source.id, V_source_bus);
 
-      // Detect all SRG2 regulated nodes BEFORE forward propagation
-      const srg2Nodes = new Map<string, Complex>();
-      for (const node of nodes) {
-        if (node.srg2Applied && node.srg2Ratio !== undefined) {
-          // Calculate regulated voltage from node's connection type and ratio
-          const { isThreePhase, U_base } = this.getVoltage(node.connectionType);
-          
-          // Calculate regulated voltage from base voltage and SRG2 ratio
-          const regulatedVoltage_V = U_base * (1 + node.srg2Ratio / 100);
-          
-          // Convert to phase voltage for calculations based on connection type
-          let V_phase: number;
-          if (node.connectionType === 'MONO_230V_PP') {
-            // Phase-to-phase connection: regulated voltage is phase-to-phase, convert to phase
-            V_phase = regulatedVoltage_V / Math.sqrt(3);
-          } else if (node.connectionType === 'MONO_230V_PN') {
-            // Phase-to-neutral connection: regulated voltage is already phase voltage
-            V_phase = regulatedVoltage_V;
-          } else {
-            // Threephase connections: apply standard conversion
-            V_phase = regulatedVoltage_V / (isThreePhase ? Math.sqrt(3) : 1);
-          }
-          const V_regulated = C(V_phase, 0);
-          
-          srg2Nodes.set(node.id, V_regulated);
-          console.log(`🔧 SRG2 Node ${node.id}: Fixed voltage at ${V_phase.toFixed(1)}V phase (${regulatedVoltage_V.toFixed(1)}V line, ratio: ${node.srg2Ratio.toFixed(1)}%)`);
-        }
-      }
-
-      // Forward propagation with SRG2 voltage fixing
       const stack2 = [source.id];
       while (stack2.length) {
         const u = stack2.pop()!;
         for (const v of children.get(u) || []) {
           const cab = parentCableOfChild.get(v);
           if (!cab) continue;
+          const Z = cableZ_phase.get(cab.id) || C(0, 0);
+          const Iuv = I_branch.get(cab.id) || C(0, 0);
+          const Vu = V_node.get(u) || Vslack;
+          let Vv = sub(Vu, mul(Z, Iuv));
           
-          // Check if this is an SRG2 regulated node
-          if (srg2Nodes.has(v)) {
-            // Use fixed SRG2 voltage instead of calculating
-            const V_regulated = srg2Nodes.get(v)!;
-            V_node.set(v, V_regulated);
-            console.log(`⚡ SRG2 Node ${v}: Applied fixed voltage ${abs(V_regulated).toFixed(1)}V phase`);
-          } else {
-            // Normal voltage calculation
-            const Z = cableZ_phase.get(cab.id) || C(0, 0);
-            const Iuv = I_branch.get(cab.id) || C(0, 0);
-            const Vu = V_node.get(u) || Vslack;
-            const Vv = sub(Vu, mul(Z, Iuv));
-            V_node.set(v, Vv);
-          }
+          // SRG2 FIX: Do not apply transformation to SRG2 node itself
+          // The SRG2 node voltage is the measurement point and should remain unchanged
           
+          V_node.set(v, Vv);
           stack2.push(v);
         }
       }
