@@ -1298,7 +1298,24 @@ export class ElectricalCalculator {
     }
 
     const V_node = new Map<string, Complex>();
-    for (const n of nodes) V_node.set(n.id, Vslack);
+    // CORRECTION SRG2: Initialiser les tensions avec SRG2 si applicable
+    for (const n of nodes) {
+      let nodeVoltage = Vslack;
+      
+      // Si le nœud a une régulation SRG2 active, utiliser sa tension régulée
+      if (n.srg2Applied && n.tensionCible) {
+        // Conversion ligne/phase pour mode équilibré
+        const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
+        const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
+          ? n.tensionCible // Pas de conversion pour TRI_230V_3F
+          : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
+        
+        nodeVoltage = C(phaseVoltage, 0);
+        console.log(`🔧 [SRG2-EQUILIBRIUM] Node ${n.id} initialized with regulated voltage: ${phaseVoltage.toFixed(1)}V`);
+      }
+      
+      V_node.set(n.id, nodeVoltage);
+    }
 
     // Sécurité: cosΦ dans [0,1]
     const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
@@ -1402,7 +1419,24 @@ export class ElectricalCalculator {
         const I_inj_node_phase = new Map<string, Complex>();
 
         const Vslack_phase_ph = fromPolar(Vslack_phase, this.deg2rad(angleDeg));
-        for (const n of nodes) V_node_phase.set(n.id, Vslack_phase_ph);
+        // CORRECTION SRG2: Initialiser les tensions avec SRG2 si applicable
+        for (const n of nodes) {
+          let nodeVoltage = Vslack_phase_ph;
+          
+          // Si le nœud a une régulation SRG2 active, utiliser sa tension régulée
+          if (n.srg2Applied && n.tensionCible) {
+            // Conversion ligne/phase pour polyphasé
+            const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
+            const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
+              ? n.tensionCible // Pas de conversion pour TRI_230V_3F
+              : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
+            
+            nodeVoltage = C(phaseVoltage, angleDeg * Math.PI / 180);
+            console.log(`🔧 [SRG2-POLYPHASE] Node ${n.id} initialized with regulated voltage: ${phaseVoltage.toFixed(1)}V (phase ${angleDeg}°)`);
+          }
+          
+          V_node_phase.set(n.id, nodeVoltage);
+        }
 
         let iter2 = 0;
         let converged2 = false;
