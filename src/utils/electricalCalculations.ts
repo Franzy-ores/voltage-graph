@@ -1811,8 +1811,18 @@ export class ElectricalCalculator {
           // Calculate regulated voltage from base voltage and SRG2 ratio
           const regulatedVoltage_V = U_base * (1 + node.srg2Ratio / 100);
           
-          // Convert to phase voltage for calculations
-          const V_phase = regulatedVoltage_V / (isThreePhase ? Math.sqrt(3) : 1);
+          // Convert to phase voltage for calculations based on connection type
+          let V_phase: number;
+          if (node.connectionType === 'MONO_230V_PP') {
+            // Phase-to-phase connection: regulated voltage is phase-to-phase, convert to phase
+            V_phase = regulatedVoltage_V / Math.sqrt(3);
+          } else if (node.connectionType === 'MONO_230V_PN') {
+            // Phase-to-neutral connection: regulated voltage is already phase voltage
+            V_phase = regulatedVoltage_V;
+          } else {
+            // Threephase connections: apply standard conversion
+            V_phase = regulatedVoltage_V / (isThreePhase ? Math.sqrt(3) : 1);
+          }
           const V_regulated = C(V_phase, 0);
           
           srg2Nodes.set(node.id, V_regulated);
