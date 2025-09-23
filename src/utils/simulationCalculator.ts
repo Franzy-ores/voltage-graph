@@ -18,55 +18,168 @@ export class SimulationCalculator extends ElectricalCalculator {
     simulationEquipment: SimulationEquipment,
     forcedModeConfig?: any
   ): SimulationResult {
+    // Constants for convergence loop
+    const MAX_ITERATIONS = 10;
+    const CONVERGENCE_TOLERANCE = 0.5; // volts
+    
     // Réinitialiser les états SRG2 entre les simulations
     this.resetAllSrg2();
     
-    // Phase 1: Ne pas forcer l'initialisation des tensions - laisser le calcul électrique les déterminer naturellement
-    // Préserver uniquement les tensions déjà ajustées par SRG2 si disponibles
-    project.nodes.forEach(node => {
-      // Seulement préserver les tensions si elles ont été explicitement définies par SRG2
-      if (node.srg2Applied && node.tensionCible != null) {
-        console.log(`📌 [VOLTAGE-PRESERVE] Preserving SRG2-adjusted voltage for node ${node.id}: ${node.tensionCible}V`);
-      } else {
-        // Laisser tensionCible undefined pour permettre au calcul électrique de déterminer les tensions naturellement
-        node.tensionCible = undefined;
-      }
-    });
+    // Phase 1: Initialize node voltages - clean slate for new simulation
+    const initialNodes: Node[] = project.nodes.map(node => ({
+      ...node,
+      tensionCible: undefined,
+      srg2Applied: false,
+      srg2State: undefined,
+      srg2Ratio: undefined
+    }));
     
-    console.log('🔄 Starting simulation calculation...');
-    
-    // Calcul de base
-    const baseResult = this.calculateScenario(
-      project.nodes,
-      project.cables,
-      project.cableTypes,
-      scenario,
-      project.foisonnementCharges || 100,
-      project.foisonnementProductions || 100,
-      project.transformerConfig,
-      project.loadModel || 'polyphase_equilibre',
-      project.desequilibrePourcent || 0
-    );
-
-    // Application des équipements de simulation
-    const simulationResult = this.calculateScenarioWithEquipment(
-      project.nodes,
-      project.cables,
-      project.cableTypes,
-      simulationEquipment,
-      baseResult,
-      project,
-      scenario
-    );
-
-    return {
-      ...simulationResult,
-      isSimulation: true,
-      baselineResult: baseResult,
-      equipment: simulationEquipment,
-      convergenceStatus: 'converged' as const,
-      srg2Result: (simulationResult as any).srg2Result
+    let currentProjectState = {
+      ...project,
+      nodes: initialNodes
     };
+    
+    console.log('🔄 Starting iterative simulation with convergence loop...');
+    console.log(`📋 Configuration: MAX_ITERATIONS=${MAX_ITERATIONS}, TOLERANCE=${CONVERGENCE_TOLERANCE}V`);
+    
+    // Phase 2: Convergence loop
+    let hasConverged = false;
+    let iterations = 0;
+    let previousVoltages = new Map<string, number>();
+    let finalResult: CalculationResult | undefined;
+    let finalSrg2Result: SRG2Result | undefined;
+
+    while (!hasConverged && iterations < MAX_ITERATIONS) {
+      iterations++;
+      console.log(`\n🔄 === SIMULATION ITERATION ${iterations}/${MAX_ITERATIONS} ===`);
+      
+      // Step 1: Calculate network state with current node voltages
+      const calculationResult = this.calculateScenario(
+        currentProjectState.nodes,
+        currentProjectState.cables,
+        currentProjectState.cableTypes,
+        scenario,
+        currentProjectState.foisonnementCharges || 100,
+        currentProjectState.foisonnementProductions || 100,
+        currentProjectState.transformerConfig,
+        currentProjectState.loadModel || 'polyphase_equilibre',
+        currentProjectState.desequilibrePourcent || 0
+      );
+      
+      console.log(`📊 Network calculation complete - ${calculationResult.nodeMetrics?.length || 0} nodes processed`);
+      
+      // Store current voltages for convergence check
+      const currentVoltages = new Map<string, number>();
+      calculationResult.nodeMetrics?.forEach(nm => {
+        currentVoltages.set(nm.nodeId, nm.V_phase_V);
+      });
+      
+      // Step 2: Apply SRG2 regulation if enabled
+      let voltageChanged = false;
+      let srg2Result: SRG2Result | undefined;
+      
+      if (simulationEquipment.srg2?.enabled) {
+        const targetNodeId = simulationEquipment.srg2.nodeId;
+        const { nodes: afterSrg2Nodes, result: afterSrg2Result, srg2Result: appliedSrg2 } =
+          this.applySrg2IfNeeded(
+            simulationEquipment,
+            currentProjectState.nodes,
+            currentProjectState,
+            scenario,
+            calculationResult
+          );
+        
+        // Update state with SRG2 results
+        currentProjectState = {
+          ...currentProjectState,
+          nodes: afterSrg2Nodes as Node[]
+        };
+        finalResult = afterSrg2Result;
+        srg2Result = appliedSrg2;
+        finalSrg2Result = appliedSrg2;
+        
+        // Check if SRG2 actually changed voltages
+        if (appliedSrg2?.isActive) {
+          console.log(`✅ SRG2 applied on node ${targetNodeId}: ${appliedSrg2.originalVoltage.toFixed(1)}V → ${appliedSrg2.regulatedVoltage.toFixed(1)}V (ratio: ${appliedSrg2.ratio.toFixed(3)})`);
+          voltageChanged = true;
+        } else {
+          console.log(`ℹ️ SRG2 configured but not active (voltage within acceptable range)`);
+        }
+      } else {
+        // No SRG2 configured
+        finalResult = calculationResult;
+        console.log(`ℹ️ No SRG2 regulation configured`);
+      }
+      
+      // Apply other equipment (neutral compensators, etc.)
+      if (simulationEquipment.neutralCompensators?.length > 0) {
+        const activeCompensators = simulationEquipment.neutralCompensators.filter(c => c.enabled);
+        if (activeCompensators.length > 0) {
+          console.log(`🔧 Applying ${activeCompensators.length} neutral compensators...`);
+          finalResult = this.applyNeutralCompensation(
+            currentProjectState.nodes, 
+            currentProjectState.cables, 
+            activeCompensators, 
+            finalResult!, 
+            currentProjectState.cableTypes
+          );
+        }
+      }
+      
+      // Step 3: Check convergence
+      if (iterations === 1) {
+        // First iteration - store voltages and continue
+        previousVoltages = new Map(currentVoltages);
+        console.log(`📈 First iteration - storing baseline voltages for convergence check`);
+      } else {
+        // Check voltage differences between iterations
+        let maxVoltageChange = 0;
+        let maxChangeNode = '';
+        
+        for (const [nodeId, currentV] of currentVoltages) {
+          const previousV = previousVoltages.get(nodeId) || 0;
+          const change = Math.abs(currentV - previousV);
+          if (change > maxVoltageChange) {
+            maxVoltageChange = change;
+            maxChangeNode = nodeId;
+          }
+        }
+        
+        console.log(`🎯 Convergence check: max voltage change = ${maxVoltageChange.toFixed(2)}V on node ${maxChangeNode}`);
+        
+        if (maxVoltageChange <= CONVERGENCE_TOLERANCE) {
+          hasConverged = true;
+          console.log(`✅ CONVERGED! Voltage changes below ${CONVERGENCE_TOLERANCE}V tolerance`);
+        } else {
+          console.log(`🔄 Not converged - continuing iteration (change: ${maxVoltageChange.toFixed(2)}V > ${CONVERGENCE_TOLERANCE}V)`);
+          previousVoltages = new Map(currentVoltages);
+        }
+      }
+      
+      // Safety: if no voltage changed and no regulation was applied, converge immediately
+      if (!voltageChanged && iterations > 1) {
+        hasConverged = true;
+        console.log(`✅ CONVERGED! No voltage regulation applied, network is stable`);
+      }
+    }
+    
+    // Phase 3: Finalize results
+    if (!hasConverged) {
+      console.warn(`⚠️ Did not converge after ${MAX_ITERATIONS} iterations - using last result`);
+    }
+    
+    console.log(`\n🏁 Simulation complete: ${iterations} iterations, converged: ${hasConverged}`);
+    
+    // Return final simulation result
+    return {
+      ...finalResult!,
+      isSimulation: true,
+      baselineResult: finalResult!,
+      equipment: simulationEquipment,
+      convergenceStatus: hasConverged ? 'converged' : 'max_iterations',
+      iterations,
+      srg2Result: finalSrg2Result
+    } as SimulationResult;
   }
 
   /**
