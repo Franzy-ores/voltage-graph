@@ -424,7 +424,7 @@ export class SRG2Regulator {
 
     return {
       nodeId: node.id,
-      originalVoltage: feedVoltage,
+      originalVoltage: feedVoltage, // Moyenne des 3 phases pour monophasé réparti, tension unique pour polyphasé
       regulatedVoltage,
       regulatedVoltages,  // NOUVEAU: tensions individuelles régulées
       state,

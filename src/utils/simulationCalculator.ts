@@ -361,6 +361,33 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.desequilibrePourcent ?? 0
     );
     
+    // CORRECTION CRITIQUE: Forcer les tensions régulées dans les résultats de calcul
+    if (srg2Result.isActive && srg2Result.regulatedVoltages && newResult.nodeMetricsPerPhase) {
+      const srg2NodeMetrics = newResult.nodeMetricsPerPhase.find(n => n.nodeId === srg2Result.nodeId);
+      if (srg2NodeMetrics) {
+        // Forcer les bonnes tensions régulées dans les résultats d'affichage
+        srg2NodeMetrics.voltagesPerPhase = {
+          A: srg2Result.regulatedVoltages.A,
+          B: srg2Result.regulatedVoltages.B,
+          C: srg2Result.regulatedVoltages.C
+        };
+        
+        // CRITIQUE: Forcer aussi les tensions calculées pour les calculs aval
+        if (srg2NodeMetrics.calculatedVoltagesPerPhase) {
+          srg2NodeMetrics.calculatedVoltagesPerPhase = {
+            A: srg2Result.regulatedVoltages.A,
+            B: srg2Result.regulatedVoltages.B,
+            C: srg2Result.regulatedVoltages.C
+          };
+        }
+        
+        console.log(`🔧 [SRG2-FIX] Forced regulated voltages in calculation results:`, {
+          nodeId: srg2Result.nodeId,
+          regulated: `A=${srg2Result.regulatedVoltages.A.toFixed(1)}V, B=${srg2Result.regulatedVoltages.B.toFixed(1)}V, C=${srg2Result.regulatedVoltages.C.toFixed(1)}V`
+        });
+      }
+    }
+    
     // Log final results
     if (newResult.nodeMetricsPerPhase) {
       const srg2NodeMetrics = newResult.nodeMetricsPerPhase.find(n => n.nodeId === srg2Result.nodeId);

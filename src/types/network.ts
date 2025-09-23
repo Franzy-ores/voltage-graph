@@ -242,6 +242,7 @@ export interface SRG2Result {
   nodeId: string;
   originalVoltage: number;
   regulatedVoltage: number;
+  regulatedVoltages?: { A: number; B: number; C: number }; // Tensions par phase régulées
   state: string;
   ratio: number;
   phaseRatios?: { A: number; B: number; C: number };
