@@ -28,6 +28,7 @@ export interface SRG2Result {
   nodeId: string;
   originalVoltage: number;
   regulatedVoltage: number;
+  regulatedVoltages?: { A: number; B: number; C: number }; // NOUVEAU: tensions individuelles régulées
   state: string;
   ratio: number;
   phaseRatios?: { A: number; B: number; C: number };
@@ -48,8 +49,9 @@ export class SRG2Regulator {
 
   /** Thresholds for voltage regulation */
   private getThresholds(network: '230V' | '400V') {
+    // CORRECTION: Réseau 400V utilise la référence 230V (phase-neutre) selon spécifications
     return network === '400V'
-      ? { UL: 416, LO1: 408, BO1: 392, UB: 384, nominal: 400 }
+      ? { UL: 246, LO1: 238, BO1: 222, UB: 214, nominal: 230 }  // 400V utilise les mêmes seuils que 230V (phase-neutre)
       : { UL: 246, LO1: 238, BO1: 222, UB: 214, nominal: 230 };
   }
 
@@ -282,18 +284,26 @@ export class SRG2Regulator {
     let feedVoltage: number;
     
     if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
-      // Sélection de tension selon le modèle de charge du projet
-      const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
-                                (!project.loadModel && node.clients.length > 0);
+    // Sélection de tension selon le modèle de charge du projet
+    const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
+                              (!project.loadModel && node.clients.length > 0);
+    
+    console.log(`🔍 [SRG2-LOAD-MODEL] Load model detection:`, {
+      projectLoadModel: project.loadModel,
+      nodeClients: node.clients.length,
+      isMonophaseReparti,
+      decision: isMonophaseReparti ? 'MONOPHASE_REPARTI (use average of 3 voltages)' : 'POLYPHASE_EQUILIBRE (use average voltage)'
+    });
       
       if (isMonophaseReparti) {
-        // Mode monophasé: Prendre la tension la plus élevée (si déséquilibre)
-        feedVoltage = Math.max(actualVoltages.A, actualVoltages.B, actualVoltages.C);
-        console.log(`✅ [SRG2-REGULATION] MONOPHASE MODE: ${feedVoltage.toFixed(1)}V (max of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+        // CORRECTION: Mode monophasé réparti utilise la MOYENNE des 3 tensions pour le calcul du ratio SRG2
+        feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
+        console.log(`✅ [SRG2-REGULATION] MONOPHASE REPARTI MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+        console.log(`📊 [SRG2-REGULATION] Individual tensions will receive ratio based on this average: ${feedVoltage.toFixed(1)}V`);
       } else {
         // Mode polyphasé: Utiliser la tension moyenne globale
         feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
-        console.log(`✅ [SRG2-REGULATION] POLYPHASE MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
+        console.log(`✅ [SRG2-REGULATION] POLYPHASE EQUILIBRE MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
       }
     } else {
       // ERREUR CRITIQUE: Pas de tension calculée - utilisation de valeurs par défaut
@@ -365,17 +375,58 @@ export class SRG2Regulator {
 
     const regulatedVoltage = feedVoltage * ratio;
 
+    // NOUVEAU: Application détaillée du ratio selon le mode de charge
+    let regulatedVoltages = { A: 0, B: 0, C: 0 };
+    if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
+      const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
+                                (!project.loadModel && node.clients.length > 0);
+                                
+      if (isMonophaseReparti) {
+        // Mode monophasé réparti: Appliquer le ratio à chaque tension individuellement
+        regulatedVoltages = {
+          A: actualVoltages.A * ratio,
+          B: actualVoltages.B * ratio,
+          C: actualVoltages.C * ratio
+        };
+        console.log(`🔧 [SRG2-RATIO-APPLICATION] MONOPHASE REPARTI - Individual application:`, {
+          ratioSource: `Average ${feedVoltage.toFixed(1)}V → ratio ${ratio.toFixed(3)}`,
+          phaseA: `${actualVoltages.A.toFixed(1)}V → ${regulatedVoltages.A.toFixed(1)}V`,
+          phaseB: `${actualVoltages.B.toFixed(1)}V → ${regulatedVoltages.B.toFixed(1)}V`,
+          phaseC: `${actualVoltages.C.toFixed(1)}V → ${regulatedVoltages.C.toFixed(1)}V`
+        });
+      } else {
+        // Mode polyphasé: Même tension régulée sur toutes les phases
+        const singleRegulated = regulatedVoltage;
+        regulatedVoltages = {
+          A: singleRegulated,
+          B: singleRegulated,
+          C: singleRegulated
+        };
+        console.log(`🔧 [SRG2-RATIO-APPLICATION] POLYPHASE EQUILIBRE - Uniform application: ${singleRegulated.toFixed(1)}V on all phases`);
+      }
+    } else {
+      // Fallback: utiliser la tension régulée globale
+      regulatedVoltages = { A: regulatedVoltage, B: regulatedVoltage, C: regulatedVoltage };
+      console.warn(`⚠️ [SRG2-RATIO-APPLICATION] FALLBACK: Using global regulated voltage ${regulatedVoltage.toFixed(1)}V`);
+    }
+
     // For 400V systems, calculate per-phase ratios (simplified - same ratio for all phases)
     const phaseRatios = networkType === '400V' 
       ? { A: ratio, B: ratio, C: ratio }
       : undefined;
 
     console.log(`✅ SRG2: Applied on ${node.id}: ${feedVoltage}V → ${regulatedVoltage.toFixed(1)}V (${state})`);
+    console.log(`📊 [SRG2-RESULT] Regulated tensions per phase:`, {
+      networkType,
+      loadModel: project.loadModel,
+      regulated: `A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`
+    });
 
     return {
       nodeId: node.id,
       originalVoltage: feedVoltage,
       regulatedVoltage,
+      regulatedVoltages,  // NOUVEAU: tensions individuelles régulées
       state,
       ratio,
       phaseRatios,
@@ -444,6 +495,11 @@ export class SRG2Regulator {
     regNode.srg2Ratio = result.ratio;
 
     console.log(`🔧 SRG2: Updated node ${result.nodeId} voltage to ${result.regulatedVoltage.toFixed(1)}V`);
+    
+    // NOUVEAU: Log des tensions individuelles si disponibles
+    if (result.regulatedVoltages) {
+      console.log(`📊 [SRG2-PROPAGATION] Individual regulated voltages: A=${result.regulatedVoltages.A.toFixed(1)}V, B=${result.regulatedVoltages.B.toFixed(1)}V, C=${result.regulatedVoltages.C.toFixed(1)}V`);
+    }
 
     // -----------------------------------------------------------------
     // 3️⃣  Fonction utilitaire de propagation
