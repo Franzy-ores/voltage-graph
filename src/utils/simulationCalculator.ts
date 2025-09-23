@@ -106,54 +106,6 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Recalcule complètement le réseau en traitant le nœud régulé comme source locale
-   * Processus itératif pour gérer la rétroaction amont-aval
-   */
-  private recalculateNetworkWithRegulatedNode(
-    project: Project, 
-    scenario: CalculationScenario, 
-    nodes: Node[], 
-    srg2Result: SRG2Result
-  ): CalculationResult {
-    console.log(`🔄 [SRG2-RECALC] Starting iterative recalculation with regulated node ${srg2Result.nodeId}`);
-    
-    // Marquer le nœud régulé comme ayant une tension fixe
-    const modifiedNodes = nodes.map(node => {
-      if (node.id === srg2Result.nodeId) {
-        return {
-          ...node,
-          tensionCible: srg2Result.regulatedVoltage, // Tension régulée comme nouvelle cible
-          srg2Applied: true,
-          srg2State: srg2Result.state,
-          srg2Ratio: srg2Result.ratio,
-          // Marquer ce nœud comme source locale régulée
-          isSource: true  // Le traiter comme une nouvelle source
-        };
-      }
-      return node;
-    });
-    
-    // Créer un projet modifié avec les nœuds mis à jour
-    const modifiedProject = {
-      ...project,
-      nodes: modifiedNodes
-    };
-    
-    // Recalcul complet du réseau avec la nouvelle contrainte de tension
-    const recalculatedResult = this.calculateScenario(
-      modifiedProject.nodes,
-      modifiedProject.cables,
-      modifiedProject.cableTypes,
-      scenario,
-      100 // foisonnementCharges par défaut
-    );
-    
-    console.log(`✅ [SRG2-RECALC] Complete network recalculation completed`);
-    
-    return recalculatedResult;
-  }
-
-  /**
    * Fonction centrale pour appliquer le régulateur SRG2 - point d'entrée unique
    * Toute application du SRG2 doit passer par cette fonction pour éviter les calculs multiples
    */
@@ -266,15 +218,15 @@ export class SimulationCalculator extends ElectricalCalculator {
       return { nodes, result: baseResult, srg2Result };
     }
 
-    // Propagation bidirectionnelle pour effet de rétroaction amont-aval
+    // Propagation uniquement en aval (typique)
     const updatedNodes = this.srg2Regulator.applyRegulationToNetwork(
       srg2Result,
       nodes,
       project.cables,
-      'both' // CORRECTION: Propagation bidirectionnelle au lieu de 'downstream' seulement
+      'downstream'
     );
 
-    console.log(`🔄 [SRG2-RECALC] Starting iterative recalculation with regulated node ${srg2Result.nodeId} as local source...`);
+    console.log(`🔄 [SRG2-RECALC] Starting recalculation with ${updatedNodes.length} nodes after SRG2 regulation...`);
     
     // Log node voltages before recalculation
     updatedNodes.forEach(n => {
@@ -283,9 +235,16 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
     });
     
-    // NOUVEAU: Utiliser le recalcul complet avec rétroaction au lieu du calcul simple
-    const newResult = this.recalculateNetworkWithRegulatedNode(
-      project, scenario, updatedNodes, srg2Result
+    const newResult = this.calculateScenario(
+      updatedNodes,
+      project.cables,
+      project.cableTypes,
+      scenario,
+      project.foisonnementCharges ?? 100,
+      project.foisonnementProductions ?? 100,
+      project.transformerConfig,
+      project.loadModel ?? 'polyphase_equilibre',
+      project.desequilibrePourcent ?? 0
     );
     
     // Log final results
