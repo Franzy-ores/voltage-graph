@@ -1302,16 +1302,15 @@ export class ElectricalCalculator {
     for (const n of nodes) {
       let nodeVoltage = Vslack;
       
-      // Si le nœud a une régulation SRG2 active, utiliser sa tension régulée
-      if (n.srg2Applied && n.tensionCible) {
-        // Conversion ligne/phase pour mode équilibré
+      // ÉTENDRE LA RECONNAISSANCE DES NŒUDS À TENSION FORCÉE
+      if (n.tensionCible && n.tensionCible > 0) {
         const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
         const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
-          ? n.tensionCible // Pas de conversion pour TRI_230V_3F
+          ? n.tensionCible 
           : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
         
         nodeVoltage = C(phaseVoltage, 0);
-        console.log(`🔧 [SRG2-EQUILIBRIUM] Node ${n.id} initialized with regulated voltage: ${phaseVoltage.toFixed(1)}V`);
+        console.log(`🔧 [TENSION-FORCEE] Node ${n.id} voltage forced to ${n.tensionCible.toFixed(1)}V (${n.srg2Applied ? 'SRG2' : 'MANUAL'})`);
       }
       
       V_node.set(n.id, nodeVoltage);
@@ -1423,16 +1422,15 @@ export class ElectricalCalculator {
         for (const n of nodes) {
           let nodeVoltage = Vslack_phase_ph;
           
-          // Si le nœud a une régulation SRG2 active, utiliser sa tension régulée
-          if (n.srg2Applied && n.tensionCible) {
-            // Conversion ligne/phase pour polyphasé
+          // ÉTENDRE LA RECONNAISSANCE DES NŒUDS À TENSION FORCÉE
+          if (n.tensionCible && n.tensionCible > 0) {
             const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
             const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
-              ? n.tensionCible // Pas de conversion pour TRI_230V_3F
+              ? n.tensionCible 
               : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
             
-            nodeVoltage = C(phaseVoltage, angleDeg * Math.PI / 180);
-            console.log(`🔧 [SRG2-POLYPHASE] Node ${n.id} initialized with regulated voltage: ${phaseVoltage.toFixed(1)}V (phase ${angleDeg}°)`);
+            nodeVoltage = fromPolar(phaseVoltage, this.deg2rad(angleDeg));
+            console.log(`🔧 [TENSION-FORCEE] Node ${n.id} voltage forced to ${n.tensionCible.toFixed(1)}V (${n.srg2Applied ? 'SRG2' : 'MANUAL'})`);
           }
           
           V_node_phase.set(n.id, nodeVoltage);

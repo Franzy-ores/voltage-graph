@@ -360,6 +360,39 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.loadModel ?? 'polyphase_equilibre',
       project.desequilibrePourcent ?? 0
     );
+
+    // SYNCHRONISER LES RÉSULTATS APRÈS RÉGULATION SRG2
+    if (srg2Result.isActive && newResult.nodeMetrics) {
+      const affectedNodes = updatedNodes.filter(n => n.tensionCible && n.tensionCible > 0);
+      
+      for (const node of affectedNodes) {
+        const nodeMetric = newResult.nodeMetrics.find(nm => nm.nodeId === node.id);
+        if (nodeMetric && node.tensionCible) {
+          // Synchroniser tension calculée avec tension cible
+          const isThreePhase = ['TÉTRA_3P+N_230_400V', 'TRI_400V_3F'].includes(node.connectionType);
+          const expectedPhaseVoltage = isThreePhase 
+            ? node.tensionCible / Math.sqrt(3) 
+            : node.tensionCible;
+          
+          nodeMetric.V_phase_V = expectedPhaseVoltage;
+          console.log(`🔧 [SRG2-SYNC] Node ${node.id} synchronized: ${node.tensionCible.toFixed(1)}V line`);
+        }
+      }
+    }
+
+    // MÊME CHOSE pour nodeMetricsPerPhase si disponible
+    if (srg2Result.isActive && newResult.nodeMetricsPerPhase) {
+      const affectedNodes = updatedNodes.filter(n => n.tensionCible && n.tensionCible > 0);
+      
+      for (const node of affectedNodes) {
+        const nodeMetric = newResult.nodeMetricsPerPhase.find(nm => nm.nodeId === node.id);
+        if (nodeMetric && node.tensionCible && srg2Result.regulatedVoltages) {
+          // Utiliser les tensions SRG2 par phase si disponibles
+          nodeMetric.voltagesPerPhase = srg2Result.regulatedVoltages;
+          console.log(`🔧 [SRG2-SYNC-PHASES] Node ${node.id} per-phase: A=${srg2Result.regulatedVoltages.A.toFixed(1)}V, B=${srg2Result.regulatedVoltages.B.toFixed(1)}V, C=${srg2Result.regulatedVoltages.C.toFixed(1)}V`);
+        }
+      }
+    }
     
     // CORRECTION CRITIQUE: Propager les tensions régulées SRG2 dans le projet
     if (srg2Result.isActive) {

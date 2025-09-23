@@ -501,9 +501,45 @@ export class SRG2Regulator {
       console.log(`📊 [SRG2-PROPAGATION] Individual regulated voltages: A=${result.regulatedVoltages.A.toFixed(1)}V, B=${result.regulatedVoltages.B.toFixed(1)}V, C=${result.regulatedVoltages.C.toFixed(1)}V`);
     }
 
-    // -----------------------------------------------------------------
-    // 3️⃣  Fonction utilitaire de propagation
-    // -----------------------------------------------------------------
+    // AMÉLIORER LA LOGIQUE DE PROPAGATION TOPOLOGIQUE
+    const getDownstreamNodes = (startNodeId: string): string[] => {
+      const visited = new Set<string>([startNodeId]);
+      const queue = [startNodeId];
+      const downstream: string[] = [];
+      
+      while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        
+        // Trouver les câbles où currentId est en amont (nodeA → nodeB)
+        const downstreamCables = cables.filter(c => c.nodeAId === currentId && !visited.has(c.nodeBId));
+        
+        for (const cable of downstreamCables) {
+          visited.add(cable.nodeBId);
+          downstream.push(cable.nodeBId);
+          queue.push(cable.nodeBId);
+          
+          // Appliquer le ratio au nœud aval
+          const downstreamNode = clonedNodes.find(n => n.id === cable.nodeBId);
+          if (downstreamNode) {
+            const currentVoltage = downstreamNode.tensionCible ?? result.originalVoltage;
+            const newVoltage = currentVoltage * result.ratio;
+            
+            downstreamNode.tensionCible = newVoltage;
+            downstreamNode.srg2Applied = true;
+            downstreamNode.srg2Ratio = result.ratio;
+            
+            console.log(`🔧 [SRG2-DOWNSTREAM] Node ${cable.nodeBId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V`);
+          }
+        }
+      }
+      
+      return downstream;
+    };
+
+    // Appliquer la propagation
+    const downstreamNodes = getDownstreamNodes(result.nodeId);
+    console.log(`🔧 [SRG2-PROPAGATION] Applied to ${downstreamNodes.length} downstream nodes: ${downstreamNodes.join(', ')}`);
+
     const propagate = (
       startIds: string[],
       allowedDirection: 'downstream' | 'upstream'
