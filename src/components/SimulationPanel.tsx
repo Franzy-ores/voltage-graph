@@ -74,6 +74,9 @@ export const SimulationPanel = () => {
     // Vérifier si le résultat SRG2 correspond à ce nœud
     const isCorrectNode = srg2Result?.nodeId === srg2Config.nodeId;
     const actualSrg2Result = isCorrectNode ? srg2Result : null;
+    
+    // Toujours afficher les informations de base si le SRG2 est configuré
+    const shouldShowBasicInfo = srg2Config.enabled !== undefined;
 
     // Mappage des états SRG2 vers des couleurs et descriptions
     const getStateInfo = (state: string | undefined) => {
@@ -172,7 +175,7 @@ export const SimulationPanel = () => {
               </div>
             </div>
 
-            {actualSrg2Result && (
+            {shouldShowBasicInfo && actualSrg2Result && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">
@@ -193,7 +196,7 @@ export const SimulationPanel = () => {
               </div>
             )}
 
-            {actualSrg2Result && (
+            {shouldShowBasicInfo && actualSrg2Result && (
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Puissance nette downstream (kVA)
@@ -204,6 +207,18 @@ export const SimulationPanel = () => {
               </div>
             )}
 
+            {/* Afficher un message d'état si pas de résultat mais SRG2 configuré */}
+            {shouldShowBasicInfo && !actualSrg2Result && (
+              <div className="mt-4 p-3 bg-muted/50 rounded-md">
+                <div className="text-sm text-muted-foreground">
+                  {srg2Config.enabled ? 
+                    "Régulateur configuré - En attente des résultats de simulation..." : 
+                    "Régulateur configuré mais désactivé"
+                  }
+                </div>
+              </div>
+            )}
+            
             {actualSrg2Result && srg2Config.enabled && (
               <div className="mt-4 space-y-3">
                 <Separator />

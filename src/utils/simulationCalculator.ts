@@ -101,15 +101,36 @@ export class SimulationCalculator extends ElectricalCalculator {
         };
         finalResult = afterSrg2Result;
         srg2Result = appliedSrg2;
-        finalSrg2Result = appliedSrg2;
+        finalSrg2Result = appliedSrg2; // Always set when SRG2 is configured
         
         // Check if SRG2 actually changed voltages
         if (appliedSrg2?.isActive) {
           console.log(`✅ SRG2 applied on node ${targetNodeId}: ${appliedSrg2.originalVoltage.toFixed(1)}V → ${appliedSrg2.regulatedVoltage.toFixed(1)}V (ratio: ${appliedSrg2.ratio.toFixed(3)})`);
           voltageChanged = true;
         } else {
-          console.log(`ℹ️ SRG2 configured but not active (voltage within acceptable range)`);
+          console.log(`ℹ️ SRG2 configured but not active (state: ${appliedSrg2?.state || 'unknown'})`);
         }
+      } else if (simulationEquipment.srg2) {
+        // SRG2 configured but disabled - create a default result for display
+        const targetNode = currentProjectState.nodes.find(n => n.id === simulationEquipment.srg2!.nodeId);
+        const networkType = currentProjectState.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+        const defaultVoltage = currentProjectState.transformerConfig?.nominalVoltage_V || 230;
+        
+        finalSrg2Result = {
+          nodeId: simulationEquipment.srg2.nodeId,
+          originalVoltage: defaultVoltage,
+          regulatedVoltage: defaultVoltage,
+          state: 'OFF',
+          ratio: 1.0,
+          powerDownstream_kVA: 0,
+          diversifiedLoad_kVA: 0,
+          diversifiedProduction_kVA: 0,
+          netPower_kVA: 0,
+          networkType,
+          isActive: false
+        };
+        finalResult = calculationResult;
+        console.log(`ℹ️ SRG2 configured but disabled - created default result for display`);
       } else {
         // No SRG2 configured
         finalResult = calculationResult;
@@ -235,11 +256,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     baseResult: CalculationResult
   ): { nodes: Node[]; result: CalculationResult; srg2Result?: SRG2Result } {
     if (!simulationEquipment.srg2?.enabled) {
-      return { nodes, result: baseResult };
-    }
-
-    // Check if it's an SRG2 node
-    if (!simulationEquipment.srg2?.enabled) {
+      console.log(`⚠️ SRG2: Not enabled, returning base result without SRG2`);
       return { nodes, result: baseResult };
     }
 
