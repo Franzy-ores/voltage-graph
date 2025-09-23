@@ -65,6 +65,30 @@ export const SimulationPanel = () => {
     // Fixed power limits
     const maxInjectionPower = 85; // kVA
     const maxConsumptionPower = 100; // kVA
+
+    // Debug info - vérifier si on a les bonnes données
+    console.log('🔍 [SRG2-DEBUG] Current srg2Result:', srg2Result);
+    console.log('🔍 [SRG2-DEBUG] SRG2 Config nodeId:', srg2Config.nodeId);
+    console.log('🔍 [SRG2-DEBUG] SRG2 Result nodeId:', srg2Result?.nodeId);
+
+    // Vérifier si le résultat SRG2 correspond à ce nœud
+    const isCorrectNode = srg2Result?.nodeId === srg2Config.nodeId;
+    const actualSrg2Result = isCorrectNode ? srg2Result : null;
+
+    // Mappage des états SRG2 vers des couleurs et descriptions
+    const getStateInfo = (state: string | undefined) => {
+      switch (state) {
+        case 'LO1': return { color: 'bg-orange-100 text-orange-800 border-orange-300', label: 'LO1 (Abaissement faible)', description: 'Tension légèrement abaissée' };
+        case 'LO2': return { color: 'bg-red-100 text-red-800 border-red-300', label: 'LO2 (Abaissement fort)', description: 'Tension fortement abaissée' };
+        case 'BO1': return { color: 'bg-blue-100 text-blue-800 border-blue-300', label: 'BO1 (Élévation faible)', description: 'Tension légèrement élevée' };
+        case 'BO2': return { color: 'bg-purple-100 text-purple-800 border-purple-300', label: 'BO2 (Élévation forte)', description: 'Tension fortement élevée' };
+        case 'BYP': return { color: 'bg-green-100 text-green-800 border-green-300', label: 'BYP (Bypass)', description: 'Régulation en bypass (normale)' };
+        case 'WAIT': return { color: 'bg-yellow-100 text-yellow-800 border-yellow-300', label: 'WAIT (Attente)', description: 'Régulateur en attente' };
+        default: return { color: 'bg-gray-100 text-gray-800 border-gray-300', label: 'OFF', description: 'Régulateur inactif' };
+      }
+    };
+
+    const stateInfo = getStateInfo(actualSrg2Result?.state);
     
     return (
       <Card className="mb-4">
@@ -109,16 +133,21 @@ export const SimulationPanel = () => {
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">
-                  État
+                  État du régulateur
                 </Label>
-                <div className="flex gap-1 mt-1">
-                  {srg2Result && (
-                    <Badge 
-                      variant={srg2Result.isActive ? "default" : "secondary"}
-                      className="text-xs"
-                    >
-                      {srg2Result.state || 'OFF'}
-                    </Badge>
+                <div className="mt-1">
+                  <div className={`inline-flex px-2 py-1 rounded-md text-xs font-medium border ${stateInfo.color}`}>
+                    {stateInfo.label}
+                  </div>
+                  {actualSrg2Result?.isActive && (
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {stateInfo.description}
+                    </div>
+                  )}
+                  {!isCorrectNode && srg2Result && (
+                    <div className="text-xs text-orange-600 mt-1">
+                      ⚠️ Résultat pour un autre nœud ({srg2Result.nodeId})
+                    </div>
                   )}
                 </div>
               </div>
@@ -143,14 +172,14 @@ export const SimulationPanel = () => {
               </div>
             </div>
 
-            {srg2Result && (
+            {actualSrg2Result && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">
                     Charge foisonnée (kVA)
                   </Label>
                   <div className="text-sm font-mono mt-1 p-2 bg-blue-50 rounded">
-                    {srg2Result.diversifiedLoad_kVA?.toFixed(1) || '0.0'}
+                    {actualSrg2Result.diversifiedLoad_kVA?.toFixed(1) || '0.0'}
                   </div>
                 </div>
                 <div>
@@ -158,24 +187,24 @@ export const SimulationPanel = () => {
                     Production foisonnée (kVA)
                   </Label>
                   <div className="text-sm font-mono mt-1 p-2 bg-green-50 rounded">
-                    {srg2Result.diversifiedProduction_kVA?.toFixed(1) || '0.0'}
+                    {actualSrg2Result.diversifiedProduction_kVA?.toFixed(1) || '0.0'}
                   </div>
                 </div>
               </div>
             )}
 
-            {srg2Result && (
+            {actualSrg2Result && (
               <div>
                 <Label className="text-xs text-muted-foreground">
                   Puissance nette downstream (kVA)
                 </Label>
                 <div className="text-sm font-mono mt-1 p-2 bg-orange-50 rounded">
-                  {srg2Result.netPower_kVA?.toFixed(1) || '0.0'}
+                  {actualSrg2Result.netPower_kVA?.toFixed(1) || '0.0'}
                 </div>
               </div>
             )}
 
-            {srg2Result && srg2Config.enabled && (
+            {actualSrg2Result && srg2Config.enabled && (
               <div className="mt-4 space-y-3">
                 <Separator />
                 <div className="text-sm font-medium flex items-center gap-2">
@@ -189,7 +218,7 @@ export const SimulationPanel = () => {
                       Tension mesurée au nœud
                     </Label>
                     <div className="text-lg font-mono font-bold text-blue-900 mt-1">
-                      {srg2Result.originalVoltage?.toFixed(1)} V
+                      {actualSrg2Result.originalVoltage?.toFixed(1)} V
                     </div>
                   </div>
 
@@ -198,7 +227,7 @@ export const SimulationPanel = () => {
                       Tension corrigée (régulée)
                     </Label>
                     <div className="text-lg font-mono font-bold text-green-900 mt-1">
-                      {srg2Result.regulatedVoltage?.toFixed(1)} V
+                      {actualSrg2Result.regulatedVoltage?.toFixed(1)} V
                     </div>
                   </div>
 
@@ -207,12 +236,12 @@ export const SimulationPanel = () => {
                       Coefficient appliqué (ratio)
                     </Label>
                     <div className="text-lg font-mono font-bold text-orange-900 mt-1">
-                      {srg2Result.ratio?.toFixed(3)}
+                      {actualSrg2Result.ratio?.toFixed(3)}
                     </div>
                   </div>
                 </div>
 
-                {srg2Result.regulatedVoltages && (
+                {actualSrg2Result.regulatedVoltages && (
                   <div className="mt-3">
                     <Label className="text-xs font-medium text-muted-foreground">
                       Tensions par phase (régulées)
@@ -221,26 +250,26 @@ export const SimulationPanel = () => {
                       <div className="p-2 bg-red-50 rounded text-center">
                         <div className="text-xs text-red-700 font-medium">Phase A</div>
                         <div className="text-sm font-mono font-bold text-red-900">
-                          {srg2Result.regulatedVoltages.A?.toFixed(1)} V
+                          {actualSrg2Result.regulatedVoltages.A?.toFixed(1)} V
                         </div>
                       </div>
                       <div className="p-2 bg-yellow-50 rounded text-center">
                         <div className="text-xs text-yellow-700 font-medium">Phase B</div>
                         <div className="text-sm font-mono font-bold text-yellow-900">
-                          {srg2Result.regulatedVoltages.B?.toFixed(1)} V
+                          {actualSrg2Result.regulatedVoltages.B?.toFixed(1)} V
                         </div>
                       </div>
                       <div className="p-2 bg-blue-50 rounded text-center">
                         <div className="text-xs text-blue-700 font-medium">Phase C</div>
                         <div className="text-sm font-mono font-bold text-blue-900">
-                          {srg2Result.regulatedVoltages.C?.toFixed(1)} V
+                          {actualSrg2Result.regulatedVoltages.C?.toFixed(1)} V
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {srg2Result.phaseRatios && (
+                {actualSrg2Result.phaseRatios && (
                   <div className="mt-3">
                     <Label className="text-xs font-medium text-muted-foreground">
                       Coefficients par phase
@@ -249,19 +278,19 @@ export const SimulationPanel = () => {
                       <div className="p-2 bg-gray-50 rounded text-center">
                         <div className="text-xs text-gray-700 font-medium">Ratio A</div>
                         <div className="text-sm font-mono font-bold text-gray-900">
-                          {srg2Result.phaseRatios.A?.toFixed(3)}
+                          {actualSrg2Result.phaseRatios.A?.toFixed(3)}
                         </div>
                       </div>
                       <div className="p-2 bg-gray-50 rounded text-center">
                         <div className="text-xs text-gray-700 font-medium">Ratio B</div>
                         <div className="text-sm font-mono font-bold text-gray-900">
-                          {srg2Result.phaseRatios.B?.toFixed(3)}
+                          {actualSrg2Result.phaseRatios.B?.toFixed(3)}
                         </div>
                       </div>
                       <div className="p-2 bg-gray-50 rounded text-center">
                         <div className="text-xs text-gray-700 font-medium">Ratio C</div>
                         <div className="text-sm font-mono font-bold text-gray-900">
-                          {srg2Result.phaseRatios.C?.toFixed(3)}
+                          {actualSrg2Result.phaseRatios.C?.toFixed(3)}
                         </div>
                       </div>
                     </div>
