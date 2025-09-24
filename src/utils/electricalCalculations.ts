@@ -645,7 +645,9 @@ export class ElectricalCalculator {
       100, // foisonnementProductions par défaut
       project.transformerConfig,
       project.loadModel ?? 'polyphase_equilibre',
-      project.desequilibrePourcent ?? 0
+      project.desequilibrePourcent ?? 0,
+      undefined, // manualPhaseDistribution
+      true // skipSRG2Integration
     );
 
     console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
@@ -945,7 +947,8 @@ export class ElectricalCalculator {
       project.transformerConfig,
       project.loadModel ?? 'polyphase_equilibre',
       project.desequilibrePourcent ?? 0,
-      manualPhaseDistribution
+      manualPhaseDistribution,
+      false // skipSRG2Integration
     );
   }
   calculateScenario(
