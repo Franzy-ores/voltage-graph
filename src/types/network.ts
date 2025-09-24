@@ -248,7 +248,7 @@ export interface SRG2Result {
   diversifiedLoad_kVA?: number;        // Charge foisonnée
   diversifiedProduction_kVA?: number;  // Production foisonnée  
   netPower_kVA?: number;              // Puissance nette downstream
-  networkType?: '230V' | '400V';      // Type réseau dérivé
+  networkType?: string;               // Type réseau dérivé (flexible string)
   isActive: boolean;
   limitReason?: string;
   errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner

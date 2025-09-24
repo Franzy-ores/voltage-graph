@@ -656,10 +656,17 @@ export const MapView = () => {
                 }
                 
                 if (phaseMetrics) {
-                  const vA = phaseMetrics.voltagesPerPhase.A.toFixed(1);
-                  const vB = phaseMetrics.voltagesPerPhase.B.toFixed(1);
-                  const vC = phaseMetrics.voltagesPerPhase.C.toFixed(1);
-                  return `<span class="text-black">A:${vA}V</span><br><span class="text-black">B:${vB}V</span><br><span class="text-black">C:${vC}V</span>`;
+                  // Use calculatedVoltagesPerPhase if available (from SRG2), otherwise voltagesPerPhase
+                  const voltages = phaseMetrics.calculatedVoltagesPerPhase || phaseMetrics.voltagesPerPhase;
+                  const vA = voltages.A.toFixed(1);
+                  const vB = voltages.B.toFixed(1);
+                  const vC = voltages.C.toFixed(1);
+                  
+                  // Add SRG2 indicator if regulated
+                  const isRegulated = !!phaseMetrics.calculatedVoltagesPerPhase;
+                  const regulatedIndicator = isRegulated ? '★' : '';
+                  
+                  return `<span class="text-black">A:${vA}V${regulatedIndicator}</span><br><span class="text-black">B:${vB}V${regulatedIndicator}</span><br><span class="text-black">C:${vC}V${regulatedIndicator}</span>`;
                 } else {
                   return `A:${nodeVoltage.toFixed(0)}V<br>B:${nodeVoltage.toFixed(0)}V<br>C:${nodeVoltage.toFixed(0)}V`;
                 }
@@ -669,6 +676,18 @@ export const MapView = () => {
                 // CORRECTION: Pour les sources monophasées en réseau 400V, afficher aussi phase-neutre
                 let displayVoltage = nodeVoltage;
                 let voltageLabel = 'V';
+                let isRegulated = false;
+                
+                // Check for SRG2 regulated voltage for single phase display
+                const results = resultsToUse[selectedScenario];
+                if (results?.nodeMetricsPerPhase) {
+                  const phaseMetrics = results.nodeMetricsPerPhase.find(n => n.nodeId === node.id);
+                  if (phaseMetrics?.calculatedVoltagesPerPhase) {
+                    // Use the A-phase voltage from SRG2 regulation
+                    displayVoltage = phaseMetrics.calculatedVoltagesPerPhase.A;
+                    isRegulated = true;
+                  }
+                }
                 
                 const shouldDisplayPhaseNeutral = (
                   // Cas 1: Mode polyphasé équilibré avec système 400V (comportement existant)
@@ -678,13 +697,14 @@ export const MapView = () => {
                    (connectionType === 'MONO_230V_PN' || connectionType === 'MONO_230V_PP'))
                 );
                 
-                if (shouldDisplayPhaseNeutral) {
+                if (shouldDisplayPhaseNeutral && !isRegulated) {
                   // Convertir de phase-phase vers phase-neutre pour l'affichage
                   displayVoltage = nodeVoltage / Math.sqrt(3);
                   voltageLabel = 'V (PN)';
                 }
                 
-                let displayText = `${displayVoltage.toFixed(0)}${voltageLabel}`;
+                const regulatedIndicator = isRegulated ? '★' : '';
+                let displayText = `${displayVoltage.toFixed(0)}${voltageLabel}${regulatedIndicator}`;
                 if (hasDisplayableLoad) {
                   displayText += `<br>${(totalCharge * (currentProject.foisonnementCharges / 100)).toFixed(1)}kVA`;
                 }

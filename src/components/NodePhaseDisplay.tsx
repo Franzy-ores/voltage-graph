@@ -36,7 +36,9 @@ export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
     return null;
   }
 
-  const { voltagesPerPhase, voltageDropsPerPhase } = nodeMetrics;
+  // Use calculatedVoltagesPerPhase if available (from SRG2 regulation), otherwise use voltagesPerPhase
+  const voltages = nodeMetrics.calculatedVoltagesPerPhase || nodeMetrics.voltagesPerPhase;
+  const { voltageDropsPerPhase } = nodeMetrics;
 
   return (
     <div className="text-xs bg-background/90 border rounded px-2 py-1 space-y-1">
@@ -44,17 +46,17 @@ export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
       <div className="grid grid-cols-3 gap-2 text-xs">
         <div className="text-center">
           <div className="font-medium text-blue-600">Phase A</div>
-          <div>{voltagesPerPhase.A.toFixed(1)}V</div>
+          <div>{voltages.A.toFixed(1)}V</div>
           <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.A.toFixed(1)}V</div>
         </div>
         <div className="text-center">
           <div className="font-medium text-green-600">Phase B</div>
-          <div>{voltagesPerPhase.B.toFixed(1)}V</div>
+          <div>{voltages.B.toFixed(1)}V</div>
           <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.B.toFixed(1)}V</div>
         </div>
         <div className="text-center">
           <div className="font-medium text-red-600">Phase C</div>
-          <div>{voltagesPerPhase.C.toFixed(1)}V</div>
+          <div>{voltages.C.toFixed(1)}V</div>
           <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.C.toFixed(1)}V</div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { SRG2Config, SRG2Result, Project, CalculationResult, Node, Cable } from '@/types/network';
+import { SRG2Config, SRG2Result, Project, CalculationResult, Node, Cable, LoadModel } from '@/types/network';
 
 /**
  * SRG2 Voltage Regulator - Simplified and focused implementation
@@ -17,17 +17,25 @@ export class SRG2Regulator {
   ): SRG2Result {
     console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
     
-    // Derive network type from project voltage system
-    const networkType = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+    // Determine network type from project configuration
+    const networkType = this.determineNetworkType(project);
     const thresholds = this.getVoltageThresholds(networkType);
+    
+    console.log(`🔧 SRG2 Network Type: ${networkType}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
+    console.log(`🔧 SRG2 Thresholds:`, thresholds);
     
     // Determine regulation state based on voltage
     const { state, ratio } = this.calculateRegulation(originalVoltage, thresholds);
     
-    const regulatedVoltage = originalVoltage * ratio;
+    // Calculate regulated voltages per phase based on network type and load model
+    const { regulatedVoltages, phaseRatios } = this.calculateRegulatedVoltages(
+      originalVoltage, ratio, networkType, project.loadModel || 'polyphase_equilibre'
+    );
+    
     const isActive = state !== 'BYP' && ratio !== 1.0;
     
     console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
+    console.log(`📊 SRG2 Regulated Voltages: A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`);
     
     return {
       nodeId: config.nodeId,
@@ -35,18 +43,10 @@ export class SRG2Regulator {
       ratio,
       isActive,
       originalVoltage,
-      regulatedVoltage,
+      regulatedVoltage: regulatedVoltages.A, // Primary voltage for backward compatibility
       powerDownstream_kVA: this.calculateDownstreamPower(config.nodeId, project, baselineResult),
-      regulatedVoltages: {
-        A: regulatedVoltage,
-        B: regulatedVoltage, 
-        C: regulatedVoltage
-      },
-      phaseRatios: {
-        A: ratio,
-        B: ratio,
-        C: ratio
-      },
+      regulatedVoltages,
+      phaseRatios,
       diversifiedLoad_kVA: this.calculateDiversifiedLoad(config.nodeId, project, baselineResult),
       diversifiedProduction_kVA: this.calculateDiversifiedProduction(config.nodeId, project, baselineResult),
       netPower_kVA: this.calculateNetPower(config.nodeId, project, baselineResult),
@@ -58,9 +58,14 @@ export class SRG2Regulator {
    * Get voltage thresholds for different network types
    */
   private getVoltageThresholds(networkType: string) {
-    if (networkType === '230V') {
+    // All thresholds are in phase-neutral voltages
+    // For 230V polyphase: direct phase-neutral (230V between phases)
+    // For 400V systems: phase-neutral is ~230V, phase-phase is 400V
+    // For monophase systems: depends on connection type
+    
+    if (networkType === '230V_MONO' || networkType === '230V_POLY') {
       return {
-        // 230V system thresholds
+        // 230V system thresholds (phase-neutral for polyphase, phase-phase for monophase)
         BO2_threshold: 210,  // Strong boost needed
         BO1_threshold: 220,  // Light boost needed  
         BYP_low: 225,        // Normal range low
@@ -68,9 +73,19 @@ export class SRG2Regulator {
         LO1_threshold: 240,  // Light reduction needed
         LO2_threshold: 250   // Strong reduction needed
       };
+    } else if (networkType === '400V_MONO') {
+      return {
+        // 400V monophase thresholds (phase-phase voltage)
+        BO2_threshold: 365,  // Strong boost needed (400V * 0.9125) 
+        BO1_threshold: 380,  // Light boost needed (400V * 0.95)
+        BYP_low: 390,        // Normal range low (400V * 0.975)
+        BYP_high: 410,       // Normal range high (400V * 1.025)
+        LO1_threshold: 420,  // Light reduction needed (400V * 1.05)
+        LO2_threshold: 440   // Strong reduction needed (400V * 1.1)
+      };
     } else {
       return {
-        // 400V system thresholds (phase-neutral ~230V)
+        // 400V polyphase thresholds (phase-neutral ~230V)
         BO2_threshold: 210,  
         BO1_threshold: 220,
         BYP_low: 225,
@@ -126,6 +141,65 @@ export class SRG2Regulator {
     }
     
     return descendants;
+  }
+
+  /**
+   * Determine network type from project configuration
+   */
+  private determineNetworkType(project: Project): string {
+    const voltageSystem = project.voltageSystem;
+    const loadModel = project.loadModel || 'polyphase_equilibre';
+    
+    if (voltageSystem === 'TRIPHASÉ_230V') {
+      return loadModel === 'monophase_reparti' ? '230V_MONO' : '230V_POLY';
+    } else if (voltageSystem === 'TÉTRAPHASÉ_400V') {
+      return loadModel === 'monophase_reparti' ? '400V_MONO' : '400V_POLY';
+    }
+    
+    // Default fallback
+    return '400V_POLY';
+  }
+
+  /**
+   * Calculate regulated voltages per phase based on network type
+   */
+  private calculateRegulatedVoltages(
+    originalVoltage: number, 
+    ratio: number, 
+    networkType: string, 
+    loadModel: LoadModel
+  ): { regulatedVoltages: { A: number; B: number; C: number }; phaseRatios: { A: number; B: number; C: number } } {
+    
+    if (loadModel === 'monophase_reparti') {
+      // For distributed monophase systems, apply regulation individually per phase
+      return {
+        regulatedVoltages: {
+          A: originalVoltage * ratio,
+          B: originalVoltage * ratio,
+          C: originalVoltage * ratio
+        },
+        phaseRatios: {
+          A: ratio,
+          B: ratio, 
+          C: ratio
+        }
+      };
+    } else {
+      // For balanced polyphase systems, apply uniform regulation
+      const regulatedVoltage = originalVoltage * ratio;
+      return {
+        regulatedVoltages: {
+          A: regulatedVoltage,
+          B: regulatedVoltage,
+          C: regulatedVoltage
+        },
+        phaseRatios: {
+          A: ratio,
+          B: ratio,
+          C: ratio
+        }
+      };
+    }
   }
 
   /**

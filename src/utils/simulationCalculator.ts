@@ -103,6 +103,14 @@ export class SimulationCalculator extends ElectricalCalculator {
             })
           };
           
+          // Propagate voltage changes to downstream nodes
+          this.srg2Regulator.propagateVoltageToChildren(
+            srg2NodeId, 
+            regulatedProject.nodes, 
+            regulatedProject.cables, 
+            srg2Result.ratio
+          );
+          
           console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
         }
       }
@@ -124,6 +132,21 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.desequilibrePourcent || 0,
         project.manualPhaseDistribution
       );
+    
+    // Inject SRG2 regulated voltages into final result if SRG2 was applied
+    if (srg2Result?.isActive && finalResult.nodeMetricsPerPhase) {
+      finalResult.nodeMetricsPerPhase = finalResult.nodeMetricsPerPhase.map(nodeMetric => {
+        if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
+          return {
+            ...nodeMetric,
+            calculatedVoltagesPerPhase: srg2Result.regulatedVoltages
+          };
+        }
+        return nodeMetric;
+      });
+      
+      console.log(`🔧 SRG2 voltages injected into final result for node ${srg2Result.nodeId}:`, srg2Result.regulatedVoltages);
+    }
     
     console.log('✅ Simulation completed successfully');
     
