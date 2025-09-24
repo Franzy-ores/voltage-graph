@@ -293,6 +293,27 @@ export class SimulationCalculator extends ElectricalCalculator {
     console.log(`  - Total nodeMetricsPerPhase entries: ${baseResult.nodeMetricsPerPhase?.length || 0}`);
     console.log(`  - Total nodeMetrics entries: ${baseResult.nodeMetrics?.length || 0}`);
     
+    // SRG2 FIX: Enhanced connectivity diagnosis
+    if (!nodeMetrics && !simpleNodeMetrics) {
+      console.error(`❌ [SRG2-CONNECTIVITY] Node ${targetNode.id} NOT FOUND in calculation results!`);
+      console.error(`   - This indicates the node was excluded from electrical calculations`);
+      console.error(`   - Node properties: isSource=${targetNode.isSource}, connectionType=${targetNode.connectionType}`);
+      console.error(`   - Node SRG2 state: srg2Applied=${targetNode.srg2Applied}, tensionCible=${targetNode.tensionCible}`);
+      
+      // Check if node exists in project nodes
+      const nodeInProject = nodes.find(n => n.id === targetNode.id);
+      console.error(`   - Node exists in project: ${!!nodeInProject}`);
+      
+      // Check cable connections
+      const connectedCables = project.cables.filter(c => c.nodeAId === targetNode.id || c.nodeBId === targetNode.id);
+      console.error(`   - Connected cables: ${connectedCables.length} [${connectedCables.map(c => c.id).join(', ')}]`);
+      
+      if (connectedCables.length === 0) {
+        console.error(`   - ROOT CAUSE: Node ${targetNode.id} has no cable connections - ISOLATED NODE`);
+      } else {
+        console.error(`   - NODE IS CONNECTED but excluded from calculations - this is the BFS connectivity bug`);
+      }
+    }
     console.log(`📊 Available data for node ${targetNode.id}:`, {
       nodeMetricsPerPhase: nodeMetrics ? {
         nodeId: nodeMetrics.nodeId,
@@ -367,6 +388,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.error(`❌ This means the node was not included in electrical calculations or has invalid data`);
       console.error(`❌ Possible causes: node not connected, calculation error, or network topology issue`);
       console.error(`❌ SRG2 regulation cannot proceed without real voltage data`);
+      console.error(`❌ This is likely caused by the BFS connectivity bug where SRG2 nodes are excluded from calculations`);
 
       // Créer un SRG2Result inactif avec message d'erreur explicite
       const fallbackVoltage = targetNode.tensionCible || project.transformerConfig?.nominalVoltage_V || 230;
@@ -382,7 +404,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         netPower_kVA: 0,
         networkType: networkType,
         isActive: false,
-        errorMessage: `Impossible de lire les tensions calculées du nœud ${targetNode.id}. Vérifiez la connectivité réseau et les calculs électriques.`
+        errorMessage: `Données de tension manquantes - Le nœud ${targetNode.id} n'est pas inclus dans les calculs électriques. Vérifiez que le nœud est bien connecté au réseau et relancez la simulation.`
       };
       
       return { nodes, result: baseResult, srg2Result: inactiveSrg2Result };

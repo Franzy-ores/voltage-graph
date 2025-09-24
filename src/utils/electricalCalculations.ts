@@ -1310,12 +1310,24 @@ export class ElectricalCalculator {
           I_branch_phase.clear();
           I_inj_node_phase.clear();
 
+          // SRG2 FIX: Enhanced logging to trace node processing in BFS
+          console.log(`🔍 Processing ${nodes.length} nodes in BFS iteration ${iter2}`);
+          const srg2Nodes = nodes.filter(n => n.srg2Applied || n.tensionCible);
+          if (srg2Nodes.length > 0) {
+            console.log(`📊 SRG2 nodes detected: ${srg2Nodes.map(n => `${n.id}(${n.srg2Applied ? 'applied' : 'target:' + n.tensionCible})`).join(', ')}`);
+          }
+          
           for (const n of nodes) {
             const Vn = V_node_phase.get(n.id) || Vslack_phase_ph;
             const Sph = S_map.get(n.id) || C(0, 0);
             const Vsafe = abs(Vn) > ElectricalCalculator.MIN_VOLTAGE_SAFETY ? Vn : Vslack_phase_ph;
             const Iinj = conj(div(Sph, Vsafe));
             I_inj_node_phase.set(n.id, Iinj);
+            
+            // SRG2 FIX: Log voltage data for SRG2 nodes specifically
+            if (n.srg2Applied || n.tensionCible) {
+              console.log(`  ⚡ Node ${n.id}: V=${abs(Vn).toFixed(2)}V, S=${abs(Sph).toFixed(2)}VA, Iinj=${abs(Iinj).toFixed(3)}A`);
+            }
           }
 
           for (const u of postOrder) {
@@ -1344,22 +1356,48 @@ export class ElectricalCalculator {
           const V_source_bus = Ztr_phase ? sub(Vslack_phase_ph, mul(Ztr_phase, I_source_net)) : Vslack_phase_ph;
           V_node_phase.set(source.id, V_source_bus);
 
+          // SRG2 FIX: Enhanced BFS with proper SRG2 node handling
           const stack2 = [source.id];
+          const processedInBFS = new Set<string>();
+          
           while (stack2.length) {
             const u = stack2.pop()!;
+            processedInBFS.add(u);
+            
             for (const v of children.get(u) || []) {
               const cab = parentCableOfChild.get(v);
               if (!cab) continue;
+              
               const Z = cableZ_phase.get(cab.id) || C(0, 0);
               const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // SRG2 FIX: Do not apply transformation to SRG2 node itself
-              // The SRG2 node voltage is the measurement point and should remain unchanged
-              
+              // SRG2 FIX: Store calculated voltage for ALL nodes including SRG2
+              // SRG2 regulation will be applied later in simulation, not during BFS
               V_node_phase.set(v, Vv);
+              
+              // Debug logging for SRG2 nodes
+              const childNode = nodeById.get(v);
+              if (childNode && (childNode.srg2Applied || childNode.tensionCible)) {
+                console.log(`  🔄 BFS: Node ${v} calculated voltage: ${abs(Vv).toFixed(2)}V (parent: ${u})`);
+              }
+              
               stack2.push(v);
+            }
+          }
+          
+          // SRG2 FIX: Ensure all connected nodes are processed
+          const allConnectedNodes = [...connectedNodes];
+          const unprocessedNodes = allConnectedNodes.filter(nid => !processedInBFS.has(nid));
+          if (unprocessedNodes.length > 0) {
+            console.warn(`⚠️ BFS missed nodes: ${unprocessedNodes.join(', ')} - this could exclude SRG2 nodes`);
+            // Force-add missing voltages to prevent exclusion
+            for (const nid of unprocessedNodes) {
+              if (!V_node_phase.has(nid)) {
+                V_node_phase.set(nid, Vslack_phase_ph);
+                console.log(`🔧 Force-added voltage for missed node ${nid}: ${abs(Vslack_phase_ph).toFixed(2)}V`);
+              }
             }
           }
 
@@ -1541,11 +1579,23 @@ export class ElectricalCalculator {
         );
       }
 
-      // Métriques nodales par phase pour monophasé déséquilibré
-      const nodeMetricsPerPhase = nodes.map(n => {
-        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+      // SRG2 FIX: Enhanced node metrics with connectivity validation
+      console.log(`📊 Building nodeMetricsPerPhase for ${nodes.length} nodes`);
+      const connectedNodeIds = [...connectedNodes];
+      console.log(`🔗 Connected nodes: ${connectedNodeIds.length} - ${connectedNodeIds.join(', ')}`);
+      
+      // SRG2 FIX: Ensure ALL connected nodes (including SRG2) have voltage data
+      const nodeMetricsPerPhase = nodes
+        .filter(n => connectedNodes.has(n.id)) // Only include connected nodes
+        .map(n => {
+          const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+          const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+          const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+          
+          // SRG2 FIX: Log missing voltage data specifically for SRG2 nodes
+          if ((n.srg2Applied || n.tensionCible) && (!phaseA.V_node_phase.has(n.id) || !phaseB.V_node_phase.has(n.id) || !phaseC.V_node_phase.has(n.id))) {
+            console.warn(`⚠️ SRG2 Node ${n.id} missing phase voltages - using fallback values`);
+          }
         
         // Vraies tensions calculées phase-neutre (pour SRG2 et calculs techniques)
         const Va_calculated = abs(Va);
