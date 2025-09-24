@@ -198,9 +198,9 @@ describe('SRG2 Connectivity Fix - Validation Tests', () => {
     const { project } = createTestProjectWithSRG2();
     
     const thirdClient: ClientCharge = {
-      kVA: 8,
-      powerFactor: 0.95,
-      phases: ['A', 'B', 'C']
+      id: 'client3',
+      label: 'Load 3',
+      S_kVA: 8
     };
     
     // Add another SRG2 node
@@ -219,9 +219,11 @@ describe('SRG2 Connectivity Fix - Validation Tests', () => {
     
     const additionalCable: Cable = {
       id: 'CABLE_3',
+      name: 'Cable 3',
       nodeAId: 'DOWNSTREAM',
       nodeBId: 'SRG2_NODE_2',
       typeId: 'default',
+      pose: 'AÉRIEN',
       coordinates: [{ lat: 0, lng: 200 }, { lat: 0, lng: 300 }]
     };
     
