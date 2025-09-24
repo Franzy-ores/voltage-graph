@@ -239,13 +239,7 @@ export class ElectricalCalculator {
       X0: cableType.X0_ohm_per_km     // Réactance homopolaire (pour neutre)
     };
     
-    // Log de débogage détaillé pour la sélection R/X
-    console.log(`🔧 Sélection R/X [${connectionType}]:`);
-    console.log(`   - R_phase (R12) = ${result.R} Ω/km`);
-    console.log(`   - X_phase (X12) = ${result.X} Ω/km`);
-    console.log(`   - R_neutre (R0) = ${result.R0} Ω/km`);
-    console.log(`   - X_neutre (X0) = ${result.X0} Ω/km`);
-    console.log(`   - useR0 legacy flag = ${useR0} (deprecated, using R12 for phase drops)`);
+    // Logs désactivés pour éviter la redondance (6x le même log)
     
     return result;
   }
@@ -886,71 +880,7 @@ export class ElectricalCalculator {
     return result;
   }
 
-  /**
-   * Version étendue de calculateScenario avec support de la configuration HT
-   * @param project Projet contenant la configuration HT
-   * @param scenario Scénario de calcul
-   * @param foisonnementCharges Foisonnement des charges
-   * @param foisonnementProductions Foisonnement des productions
-   * @param manualPhaseDistribution Distribution manuelle des phases (optionnel)
-   */
-  calculateScenarioWithHTConfig(
-    project: Project,
-    scenario: CalculationScenario,
-    foisonnementCharges: number = 100,
-    foisonnementProductions: number = 100,
-    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
-  ): CalculationResult {
-    // Si configuration HT disponible, ajuster la tension de la source
-    let modifiedNodes = [...project.nodes];
-    
-    if (project.htVoltageConfig && project.transformerConfig) {
-      const {
-        nominalVoltageHT_V,
-        nominalVoltageBT_V,
-        measuredVoltageHT_V
-      } = project.htVoltageConfig;
-
-      const sourceNode = modifiedNodes.find(n => n.isSource);
-      if (sourceNode && !sourceNode.tensionCible) {
-        // Calculer la tension source réaliste
-        const realisticVoltage = this.calculateSourceVoltage(
-          project.transformerConfig,
-          measuredVoltageHT_V,
-          nominalVoltageHT_V,
-          nominalVoltageBT_V
-        );
-
-        // Créer une copie du nœud source avec la tension calculée
-        const modifiedSourceNode = {
-          ...sourceNode,
-          tensionCible: realisticVoltage
-        };
-
-        // Remplacer le nœud source dans la liste
-        modifiedNodes = modifiedNodes.map(n => 
-          n.id === sourceNode.id ? modifiedSourceNode : n
-        );
-
-        console.log(`🔌 Application tension source HT réaliste: ${realisticVoltage.toFixed(1)}V`);
-      }
-    }
-
-    // Appeler la méthode standard avec les nœuds modifiés
-    return this.calculateScenario(
-      modifiedNodes,
-      project.cables,
-      project.cableTypes,
-      scenario,
-      foisonnementCharges,
-      foisonnementProductions,
-      project.transformerConfig,
-      project.loadModel ?? 'polyphase_equilibre',
-      project.desequilibrePourcent ?? 0,
-      manualPhaseDistribution,
-      false // skipSRG2Integration
-    );
-  }
+  // SUPPRIMÉ: Méthode wrapper redondante - intégration HT directement dans calculateScenario
   calculateScenario(
     nodes: Node[],
     cables: Cable[],
