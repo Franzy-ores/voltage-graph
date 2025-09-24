@@ -1,3 +1,18 @@
+// ============= ARCHITECTURE NOTES =============
+// NETTOYAGE SRG2: Suppression du code obsolète qui interfère avec la régulation moderne
+// 
+// MÉTHODES SUPPRIMÉES:
+// - recalculateNetworkFromNode: Ancien système de recalcul partiel obsolète
+// - calculateScenarioWithEquipment: Duplication de la logique de calculateWithSimulation
+// 
+// LOGIQUE MODERNE:
+// - calculateWithSimulation(): Seule méthode avec boucle de convergence itérative
+// - SRG2Regulator.apply(): Régulation moderne via classe dédiée
+// - Pas de recalcul partiel - toujours recalcul complet du réseau
+// 
+// Cette architecture garantit la cohérence et évite les interférences
+// ============= END ARCHITECTURE NOTES =============
+
 import { ElectricalCalculator } from './electricalCalculations';
 import { SRG2Regulator } from './SRG2Regulator';
 import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node, SRG2Config, SRG2Result, LoadModel } from '@/types/network';
@@ -472,68 +487,9 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
 
-  /**
-   * Applique les équipements de simulation
-   */
-  private calculateScenarioWithEquipment(
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
-    simulationEquipment: SimulationEquipment,
-    baseResult: CalculationResult,
-    project: Project,
-    scenario: CalculationScenario
-  ): CalculationResult {
-    let result = { ...baseResult };
-    let modifiedNodes = [...nodes];
-
-    // Phase 2 - Validation avant application (détection de conflits)
-    // Note: Plus de conflits possibles car il n'y a plus que SRG2
-    if (simulationEquipment.srg2?.enabled) {
-      const srg2NodeId = simulationEquipment.srg2.nodeId;
-      console.log(`✅ [SRG2-INFO] SRG2 regulator configured on node ${srg2NodeId}`);
-    }
-
-    console.log(`[ORDER-TRACE] Starting equipment application in priority order: SRG2 → Compensators → Classical regulators`);
-
-    // Application du régulateur SRG2 (PRIORITÉ 1 - via fonction centralisée)
-    const { nodes: afterSrg2Nodes, result: afterSrg2Result, srg2Result } =
-      this.applySrg2IfNeeded(
-        simulationEquipment,
-        modifiedNodes,
-        project,
-        scenario,
-        baseResult
-      );
-
-    result = afterSrg2Result;
-    modifiedNodes = afterSrg2Nodes;
-
-    if (srg2Result) {
-      (result as any).srg2Result = srg2Result;
-      console.log(`✅ [ORDER-TRACE] SRG2 applied successfully - node ${srg2Result.nodeId} regulated with ratio ${srg2Result.ratio.toFixed(3)}`);
-    } else {
-      console.log(`ℹ️ [ORDER-TRACE] No SRG2 regulation applied`);
-    }
-
-    // Application des compensateurs de neutre (ÉQUI8)
-    if (simulationEquipment.neutralCompensators && simulationEquipment.neutralCompensators.length > 0) {
-      const activeCompensators = simulationEquipment.neutralCompensators.filter(c => c.enabled);
-      if (activeCompensators.length > 0) {
-        console.log(`🔧 Applying ${activeCompensators.length} neutral compensators...`);
-        result = this.applyNeutralCompensation(modifiedNodes, cables, activeCompensators, result, cableTypes);
-      }
-    }
-
-    // Application SRG2 seulement (plus de régulateurs classiques)
-    if (simulationEquipment.srg2?.enabled) {
-      console.log(`🔧 [SRG2] Applying SRG2 regulator...`);
-    }
-
-    // SRG2 result déjà stocké dans le bloc précédent
-
-    return result;
-  }
+  // SUPPRIMÉ: calculateScenarioWithEquipment - méthode obsolète
+  // Remplacée par la boucle de convergence dans calculateWithSimulation()
+  // Tous les équipements de simulation doivent passer par calculateWithSimulation()
 
   /**
    * Crée un régulateur par défaut pour un nœud

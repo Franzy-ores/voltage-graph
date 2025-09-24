@@ -1,3 +1,15 @@
+// ============= ARCHITECTURE NOTES =============
+// NETTOYAGE SRG2: Simplification des méthodes d'impédance
+// 
+// calculateNetworkImpedances(): Conservée uniquement pour EQUI8 avec valeurs par défaut
+// recalculateNetworkFromNode(): SUPPRIMÉE - Remplacée par la boucle de convergence
+// 
+// LOGIQUE MODERNE:
+// - Tous les calculs réseau passent par calculateScenario() complet
+// - SimulationCalculator gère la convergence itérative
+// - Pas de recalcul partiel pour éviter les incohérences
+// ============= END ARCHITECTURE NOTES =============
+
 import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel, NeutralCompensator, VoltageRegulator } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
 import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
@@ -425,11 +437,12 @@ export class ElectricalCalculator {
   }
 
   /**
-   * SRG2 FIX: Calculate network impedances - SOMME SUR TOUT LE CHEMIN SOURCE → NŒUD
-   * @param nodeId ID of the compensator node
-   * @param nodes List of network nodes
-   * @param cables List of network cables  
-   * @param cableTypes Available cable types
+   * Calcul d'impédance réseau simplifié pour EQUI8
+   * NOTE: Les calculs détaillés sont gérés par la boucle de convergence de SimulationCalculator
+   * @param nodeId ID du nœud compensateur
+   * @param nodes Liste des nœuds (non utilisée - implémentation simplifiée)
+   * @param cables Liste des câbles (non utilisée - implémentation simplifiée)
+   * @param cableTypes Types de câbles (non utilisée - implémentation simplifiée)
    */
   private calculateNetworkImpedances(
     nodeId: string,
@@ -437,149 +450,14 @@ export class ElectricalCalculator {
     cables: Cable[],
     cableTypes: CableType[]
   ): { Zph: number; Zn: number } {
-    // Utiliser une impédance par défaut simplifiée
-    // Le calcul détaillé est maintenant géré par d'autres méthodes
-    return { Zph: 0.2, Zn: 0.3 }; // Valeurs par défaut
+    // Valeurs d'impédance par défaut pour EQUI8 uniquement
+    // Le calcul réseau complet est géré par SimulationCalculator
+    return { Zph: 0.2, Zn: 0.3 };
   }
 
-  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
-
-  /**
-   * Recalcule le réseau en aval d'un nœud donné avec de nouvelles tensions
-   * @param nodeId ID du nœud à partir duquel recalculer
-   * @param newVoltages Nouvelles tensions au nœud (Phase-Neutre en V)
-   * @param nodes Liste des nœuds du réseau
-   * @param cables Liste des câbles du réseau  
-   * @param cableTypes Types de câbles disponibles
-   * @param baseResult Résultats de base pour récupérer la topologie
-   * @returns Résultats modifiés avec recalcul en aval
-   */
-  private recalculateNetworkFromNode(
-    nodeId: string,
-    newVoltages: { A: number; B: number; C: number },
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[],
-    baseResult: CalculationResult
-  ): CalculationResult {
-    console.log(`🔄 Recalculating network downstream from node ${nodeId} with new voltages:`, newVoltages);
-    
-    // Create a deep copy for modification
-    const result: CalculationResult = JSON.parse(JSON.stringify(baseResult));
-    
-    // Build network topology maps
-    const nodeById = new Map(nodes.map(n => [n.id, n]));
-    const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct]));
-    
-    // Build adjacency list
-    const adj = new Map<string, { cableId: string; neighborId: string }[]>();
-    for (const n of nodes) adj.set(n.id, []);
-    for (const cable of cables) {
-      if (!nodeById.has(cable.nodeAId) || !nodeById.has(cable.nodeBId)) continue;
-      adj.get(cable.nodeAId)!.push({ cableId: cable.id, neighborId: cable.nodeBId });
-      adj.get(cable.nodeBId)!.push({ cableId: cable.id, neighborId: cable.nodeAId });
-    }
-    
-    // Find all downstream nodes from the compensated node using BFS
-    const downstreamNodes = new Set<string>();
-    const visited = new Set<string>([nodeId]); // Start from compensated node
-    const queue = [nodeId];
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      for (const edge of adj.get(currentId) || []) {
-        if (!visited.has(edge.neighborId)) {
-          visited.add(edge.neighborId);
-          downstreamNodes.add(edge.neighborId);
-          queue.push(edge.neighborId);
-        }
-      }
-    }
-    
-    console.log(`🔄 Found ${downstreamNodes.size} downstream nodes to recalculate`);
-    
-    // Apply new voltages to the compensated node first
-    if (result.nodeMetricsPerPhase) {
-      const nodeIndex = result.nodeMetricsPerPhase.findIndex(n => n.nodeId === nodeId);
-      if (nodeIndex >= 0) {
-        result.nodeMetricsPerPhase[nodeIndex].voltagesPerPhase = { ...newVoltages };
-        console.log(`🔄 Applied new voltages to node ${nodeId}:`, newVoltages);
-      }
-    }
-    
-    // Recalculate cable flows and voltage drops for affected cables
-    const affectedCableIds = new Set<string>();
-    for (const cable of cables) {
-      if (visited.has(cable.nodeAId) || visited.has(cable.nodeBId)) {
-        affectedCableIds.add(cable.id);
-      }
-    }
-    
-    console.log(`🔄 Recalculating ${affectedCableIds.size} affected cables`);
-    
-    // For each affected cable, recalculate voltage drop based on new upstream voltage
-    for (const cable of cables) {
-      if (!affectedCableIds.has(cable.id)) continue;
-      
-      const cableType = cableTypeById.get(cable.typeId);
-      if (!cableType) continue;
-      
-      // Find which node is upstream (closer to source)  
-      const nodeA = nodeById.get(cable.nodeAId);
-      const nodeB = nodeById.get(cable.nodeBId);
-      if (!nodeA || !nodeB) continue;
-      
-      // Get current metrics for this cable from result
-      const cableIndex = result.cables.findIndex(c => c.id === cable.id);
-      if (cableIndex < 0) continue;
-      
-      const resultCable = result.cables[cableIndex];
-      const length_km = (resultCable.length_m || 0) / 1000;
-      
-      // Calculate per-phase impedance
-      const connectionType = nodeB.connectionType; // Use downstream node connection type
-      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(cableType, connectionType);
-      const Z_ohm = Math.sqrt((R_ohm_per_km * length_km) ** 2 + (X_ohm_per_km * length_km) ** 2);
-      
-      // Calculate new voltage drop based on current and impedance
-      const current_A = resultCable.current_A || 0;
-      const { isThreePhase } = this.getVoltage(connectionType);
-      const newVoltageDrop = current_A * Z_ohm;
-      const newVoltageDropLine = newVoltageDrop * (isThreePhase ? Math.sqrt(3) : 1);
-      
-      // Update cable voltage drop
-      result.cables[cableIndex].voltageDrop_V = newVoltageDropLine;
-      
-      // Calculate new downstream node voltage
-      const upstreamNodeId = cable.nodeAId;
-      const downstreamNodeId = cable.nodeBId;
-      
-      if (result.nodeMetricsPerPhase && downstreamNodes.has(downstreamNodeId)) {
-        const upstreamIndex = result.nodeMetricsPerPhase.findIndex(n => n.nodeId === upstreamNodeId);
-        const downstreamIndex = result.nodeMetricsPerPhase.findIndex(n => n.nodeId === downstreamNodeId);
-        
-        if (upstreamIndex >= 0 && downstreamIndex >= 0) {
-          const upstreamVoltages = result.nodeMetricsPerPhase[upstreamIndex].voltagesPerPhase;
-          if (upstreamVoltages) {
-            // Calculate new downstream voltages (simplified per-phase calculation)
-            const voltageDropPerPhase = newVoltageDrop;
-            
-            result.nodeMetricsPerPhase[downstreamIndex].voltagesPerPhase = {
-              A: Math.max(0, upstreamVoltages.A - voltageDropPerPhase),
-              B: Math.max(0, upstreamVoltages.B - voltageDropPerPhase), 
-              C: Math.max(0, upstreamVoltages.C - voltageDropPerPhase)
-            };
-            
-            console.log(`🔄 Updated downstream node ${downstreamNodeId} voltages:`, 
-              result.nodeMetricsPerPhase[downstreamIndex].voltagesPerPhase);
-          }
-        }
-      }
-    }
-    
-    console.log(`✅ Network recalculation complete for ${downstreamNodes.size} downstream nodes`);
-    return result;
-  }
+  // SUPPRIMÉ: recalculateNetworkFromNode - méthode obsolète
+  // Remplacée par la boucle de convergence de SimulationCalculator
+  // Les recalculs de réseau doivent passer par calculateWithSimulation()
 
   /**
    * Calcule la charge totale en aval d'un nœud pour validation SRG2
