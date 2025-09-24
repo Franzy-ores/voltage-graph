@@ -207,15 +207,81 @@ export const SimulationPanel = () => {
               </div>
             )}
 
-            {/* Afficher un message d'état si pas de résultat mais SRG2 configuré */}
-            {shouldShowBasicInfo && !actualSrg2Result && (
-              <div className="mt-4 p-3 bg-muted/50 rounded-md">
-                <div className="text-sm text-muted-foreground">
-                  {srg2Config.enabled ? 
-                    "Régulateur configuré - En attente des résultats de simulation..." : 
-                    "Régulateur configuré mais désactivé"
-                  }
+            {/* Afficher les tensions disponibles même si SRG2 n'est pas actif */}
+            {shouldShowBasicInfo && (
+              <div className="mt-4 space-y-3">
+                <Separator />
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Target className="h-4 w-4 text-blue-500" />
+                  Diagnostic des tensions du nœud
                 </div>
+                
+                {actualSrg2Result?.errorMessage && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                    <div className="flex items-center gap-2 text-red-700 text-sm font-medium mb-1">
+                      <AlertTriangle className="h-4 w-4" />
+                      Erreur de régulation
+                    </div>
+                    <div className="text-red-600 text-sm">
+                      {actualSrg2Result.errorMessage}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Afficher les tensions calculées si disponibles */}
+                {currentResult?.baselineResult?.nodeMetricsPerPhase?.[srg2Config.nodeId] && (
+                  <div className="p-3 bg-blue-50 rounded-md border">
+                    <Label className="text-xs font-medium text-blue-700 mb-2 block">
+                      Tensions calculées au nœud (avant correction SRG2)
+                    </Label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="text-center">
+                        <div className="text-xs text-blue-600 font-medium">Phase A</div>
+                        <div className="text-sm font-mono font-bold text-blue-900">
+                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].A?.toFixed(1)} V
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-blue-600 font-medium">Phase B</div>
+                        <div className="text-sm font-mono font-bold text-blue-900">
+                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].B?.toFixed(1)} V
+                        </div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xs text-blue-600 font-medium">Phase C</div>
+                        <div className="text-sm font-mono font-bold text-blue-900">
+                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].C?.toFixed(1)} V
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Message si pas de données de tension disponibles */}
+                {!currentResult?.baselineResult?.nodeMetricsPerPhase?.[srg2Config.nodeId] && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                    <div className="flex items-center gap-2 text-yellow-700 text-sm font-medium mb-1">
+                      <AlertTriangle className="h-4 w-4" />
+                      Données de tension manquantes
+                    </div>
+                    <div className="text-yellow-600 text-sm">
+                      Aucune tension calculée n'est disponible pour ce nœud. 
+                      Vérifiez que le nœud est bien connecté au réseau et lancez une simulation.
+                    </div>
+                  </div>
+                )}
+                
+                {/* Message d'état si pas de résultat SRG2 mais configuré */}
+                {!actualSrg2Result && (
+                  <div className="p-3 bg-muted/50 rounded-md">
+                    <div className="text-sm text-muted-foreground">
+                      {srg2Config.enabled ? 
+                        "Régulateur configuré - En attende des résultats de simulation..." : 
+                        "Régulateur configuré mais désactivé"
+                      }
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             

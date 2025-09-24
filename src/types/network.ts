@@ -251,6 +251,7 @@ export interface SRG2Result {
   networkType?: '230V' | '400V';      // Type réseau dérivé
   isActive: boolean;
   limitReason?: string;
+  errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner
 }
 
 export interface SimulationEquipment {

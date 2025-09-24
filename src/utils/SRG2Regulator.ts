@@ -34,11 +34,12 @@ export interface SRG2Result {
   phaseRatios?: { A: number; B: number; C: number };
   powerDownstream_kVA: number;
   diversifiedLoad_kVA?: number;        // Charge foisonnée
-  diversifiedProduction_kVA?: number;  // Production foisonnée
-  netPower_kVA?: number;              // Puissance nette downstream  
+  diversifiedProduction_kVA?: number;  // Production foisonnée  
+  netPower_kVA?: number;              // Puissance nette downstream
   networkType?: '230V' | '400V';      // Type réseau dérivé
   isActive: boolean;
   limitReason?: string;
+  errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner
 }
 
 export class SRG2Regulator {
@@ -306,22 +307,27 @@ export class SRG2Regulator {
         console.log(`✅ [SRG2-REGULATION] POLYPHASE EQUILIBRE MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
       }
     } else {
-      // ERREUR CRITIQUE: Pas de tension calculée - utilisation de valeurs par défaut
+      // ERREUR CRITIQUE: Pas de tension calculée - retourner un résultat inactif avec erreur
       console.error(`❌ [SRG2-REGULATION] CRITICAL ERROR: No calculated voltages available for node ${node.id}!`);
       console.error(`❌ actualVoltages received:`, actualVoltages);
-      console.error(`❌ SRG2 regulation will be INCORRECT - using fallback values`);
+      console.error(`❌ SRG2 cannot regulate without real voltage data - returning inactive result`);
       
-      // Utiliser les fallbacks mais avec des avertissements critiques
-      if (node.tensionCible && node.tensionCible > 50) {
-        feedVoltage = node.tensionCible;
-        console.error(`❌ FALLBACK: Using node.tensionCible = ${feedVoltage}V instead of REAL calculated voltage`);
-      } else if (project.transformerConfig?.nominalVoltage_V) {
-        feedVoltage = project.transformerConfig.nominalVoltage_V;
-        console.error(`❌ FALLBACK: Using transformer nominal = ${feedVoltage}V instead of REAL calculated voltage`);
-      } else {
-        feedVoltage = 230;
-        console.error(`❌ FALLBACK: Using hardcoded 230V - INVESTIGATION REQUIRED!`);
-      }
+      // Retourner un résultat SRG2 inactif avec message d'erreur explicite
+      const fallbackVoltage = node.tensionCible || project.transformerConfig?.nominalVoltage_V || 230;
+      return {
+        nodeId: node.id,
+        originalVoltage: fallbackVoltage,
+        regulatedVoltage: fallbackVoltage,
+        state: 'OFF',
+        ratio: 1.0,
+        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
+        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
+        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
+        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
+        networkType,
+        isActive: false,
+        errorMessage: `Impossible de lire les tensions calculées du nœud ${node.id}. Vérifiez la connectivité réseau et les calculs électriques.`
+      };
     }
     
     const currentState = this.currentStates.get(node.id);

@@ -285,12 +285,24 @@ export class SimulationCalculator extends ElectricalCalculator {
     const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === targetNode.id);
     const simpleNodeMetrics = baseResult.nodeMetrics?.find(n => n.nodeId === targetNode.id);
     
-    console.log(`🔍 [SRG2-VOLTAGE] Extracting real calculated voltages for node ${targetNode.id}:`);
-    console.log(`📊 Available data:`, {
+    // DIAGNOSTIC DÉTAILLÉ : Analyser les données disponibles
+    console.log(`🔍 [SRG2-DIAGNOSTIC] Analyzing voltage data for node ${targetNode.id}:`);
+    console.log(`  - Target node found: ${!!targetNode} (name: ${targetNode?.name})`);
+    console.log(`  - All available nodes in nodeMetricsPerPhase: [${baseResult.nodeMetricsPerPhase?.map(n => n.nodeId).join(', ') || 'NONE'}]`);
+    console.log(`  - All available nodes in nodeMetrics: [${baseResult.nodeMetrics?.map(n => n.nodeId).join(', ') || 'NONE'}]`);
+    console.log(`  - Total nodeMetricsPerPhase entries: ${baseResult.nodeMetricsPerPhase?.length || 0}`);
+    console.log(`  - Total nodeMetrics entries: ${baseResult.nodeMetrics?.length || 0}`);
+    
+    console.log(`📊 Available data for node ${targetNode.id}:`, {
       nodeMetricsPerPhase: nodeMetrics ? {
+        nodeId: nodeMetrics.nodeId,
+        hasCalculatedVoltagesPerPhase: !!nodeMetrics.calculatedVoltagesPerPhase,
+        hasCalculatedVoltagesComposed: !!nodeMetrics.calculatedVoltagesComposed,
+        hasVoltagesPerPhase: !!nodeMetrics.voltagesPerPhase,
         voltagesPerPhase: nodeMetrics.voltagesPerPhase
       } : 'NOT FOUND',
       nodeMetrics: simpleNodeMetrics ? {
+        nodeId: simpleNodeMetrics.nodeId,
         V_phase_V: simpleNodeMetrics.V_phase_V
       } : 'NOT FOUND'
     });
@@ -352,8 +364,28 @@ export class SimulationCalculator extends ElectricalCalculator {
     // ERREUR: Si aucune tension calculée n'est disponible
     if (!actualVoltages) {
       console.error(`❌ [SRG2-VOLTAGE] CRITICAL: No calculated voltages found for node ${targetNode.id}!`);
-      console.error(`❌ This means SRG2 will use default tension (${targetNode.tensionCible}V) instead of real calculated voltage!`);
-      console.error(`❌ Check why nodeMetricsPerPhase or nodeMetrics is missing voltage data.`);
+      console.error(`❌ This means the node was not included in electrical calculations or has invalid data`);
+      console.error(`❌ Possible causes: node not connected, calculation error, or network topology issue`);
+      console.error(`❌ SRG2 regulation cannot proceed without real voltage data`);
+
+      // Créer un SRG2Result inactif avec message d'erreur explicite
+      const fallbackVoltage = targetNode.tensionCible || project.transformerConfig?.nominalVoltage_V || 230;
+      const inactiveSrg2Result: SRG2Result = {
+        nodeId: targetNode.id,
+        originalVoltage: fallbackVoltage,
+        regulatedVoltage: fallbackVoltage,
+        state: 'OFF',
+        ratio: 1.0,
+        powerDownstream_kVA: 0,
+        diversifiedLoad_kVA: 0,
+        diversifiedProduction_kVA: 0,
+        netPower_kVA: 0,
+        networkType: networkType,
+        isActive: false,
+        errorMessage: `Impossible de lire les tensions calculées du nœud ${targetNode.id}. Vérifiez la connectivité réseau et les calculs électriques.`
+      };
+      
+      return { nodes, result: baseResult, srg2Result: inactiveSrg2Result };
     }
     
     console.log(`🔧 Applying SRG2 voltage regulator with actual voltages: ${actualVoltages ? `${actualVoltages.A.toFixed(1)}/${actualVoltages.B.toFixed(1)}/${actualVoltages.C.toFixed(1)}V` : 'unavailable'}`);
