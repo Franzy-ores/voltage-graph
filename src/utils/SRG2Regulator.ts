@@ -1,4 +1,4 @@
-import { SRG2Config, SRG2Result, Project, CalculationResult, Node } from '@/types/network';
+import { SRG2Config, SRG2Result, Project, CalculationResult, Node, Cable } from '@/types/network';
 
 /**
  * SRG2 Voltage Regulator - Simplified and focused implementation
@@ -98,6 +98,51 @@ export class SRG2Regulator {
     }
   }
   
+  /**
+   * Get descendants of a node in the network
+   */
+  getDescendants(nodeId: string, nodes: Node[], cables: Cable[]): string[] {
+    const descendants: string[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [nodeId];
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+      
+      // Find cables connected to this node
+      const connectedCables = cables.filter(cable => 
+        cable.nodeAId === currentId || cable.nodeBId === currentId
+      );
+      
+      for (const cable of connectedCables) {
+        const otherNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
+        if (!visited.has(otherNodeId) && otherNodeId !== nodeId) {
+          descendants.push(otherNodeId);
+          queue.push(otherNodeId);
+        }
+      }
+    }
+    
+    return descendants;
+  }
+
+  /**
+   * Propagate voltage changes to downstream nodes
+   */
+  propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
+    const descendants = this.getDescendants(nodeId, nodes, cables);
+    
+    for (const descendantId of descendants) {
+      const node = nodes.find(n => n.id === descendantId);
+      if (node && node.tensionCible) {
+        node.tensionCible = node.tensionCible * ratio;
+        console.log(`🔄 Propagated voltage to ${descendantId}: ${node.tensionCible.toFixed(1)}V`);
+      }
+    }
+  }
+
   /**
    * Reset internal state (for multi-iteration calculations)
    */

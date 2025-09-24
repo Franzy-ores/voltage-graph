@@ -139,7 +139,8 @@ export const ForcedModePanel = () => {
         convergenceStatus: 'converged',
         finalLoadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
         finalProductionDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-        calibratedFoisonnementCharges: currentProject.foisonnementCharges || 0.8
+        calibratedFoisonnementCharges: currentProject.foisonnementCharges || 0.8,
+        iterations: 5
       });
       
       // Mettre à jour le preview dans the store

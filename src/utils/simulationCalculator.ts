@@ -41,7 +41,13 @@ export class SimulationCalculator extends ElectricalCalculator {
       cleanProject.nodes, 
       cleanProject.cables, 
       cleanProject.cableTypes,
-      scenario
+      scenario,
+      project.foisonnementCharges || 100,
+      project.foisonnementProductions || 100,
+      project.transformerConfig,
+      project.loadModel || 'polyphase_equilibre',
+      project.desequilibrePourcent || 0,
+      project.manualPhaseDistribution
     );
     console.log('✅ Baseline calculation completed');
     
@@ -110,7 +116,13 @@ export class SimulationCalculator extends ElectricalCalculator {
         regulatedProject.nodes, 
         regulatedProject.cables, 
         regulatedProject.cableTypes,
-        scenario
+        scenario,
+        project.foisonnementCharges || 100,
+        project.foisonnementProductions || 100,
+        project.transformerConfig,
+        project.loadModel || 'polyphase_equilibre',
+        project.desequilibrePourcent || 0,
+        project.manualPhaseDistribution
       );
     
     console.log('✅ Simulation completed successfully');
@@ -123,7 +135,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       globalLosses_kW: baselineResult.globalLosses_kW,
       maxVoltageDropPercent: baselineResult.maxVoltageDropPercent,
       compliance: baselineResult.compliance,
-      nodeMetricsPerPhase: baselineResult.nodeMetricsPerPhase,
+      nodeMetricsPerPhase: finalResult.nodeMetricsPerPhase,
       baselineResult,
       srg2Result,
       cableUpgradeProposals: [],
@@ -216,7 +228,13 @@ export class SimulationCalculator extends ElectricalCalculator {
       modifiedProject.nodes, 
       modifiedProject.cables, 
       modifiedProject.cableTypes,
-      scenario
+      scenario,
+      project.foisonnementCharges || 100,
+      project.foisonnementProductions || 100,
+      project.transformerConfig,
+      project.loadModel || 'polyphase_equilibre',
+      project.desequilibrePourcent || 0,
+      project.manualPhaseDistribution
     );
   }
 
