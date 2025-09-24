@@ -1356,12 +1356,13 @@ export class ElectricalCalculator {
           const V_source_bus = Ztr_phase ? sub(Vslack_phase_ph, mul(Ztr_phase, I_source_net)) : Vslack_phase_ph;
           V_node_phase.set(source.id, V_source_bus);
 
-          // SRG2 FIX: Enhanced BFS with proper SRG2 node handling
+          // SRG2 FIX: Enhanced BFS with comprehensive node processing
           const stack2 = [source.id];
           const processedInBFS = new Set<string>();
           
           while (stack2.length) {
             const u = stack2.pop()!;
+            if (processedInBFS.has(u)) continue; // Avoid double processing
             processedInBFS.add(u);
             
             for (const v of children.get(u) || []) {
@@ -1374,7 +1375,6 @@ export class ElectricalCalculator {
               let Vv = sub(Vu, mul(Z, Iuv));
               
               // SRG2 FIX: Store calculated voltage for ALL nodes including SRG2
-              // SRG2 regulation will be applied later in simulation, not during BFS
               V_node_phase.set(v, Vv);
               
               // Debug logging for SRG2 nodes
@@ -1383,20 +1383,89 @@ export class ElectricalCalculator {
                 console.log(`  🔄 BFS: Node ${v} calculated voltage: ${abs(Vv).toFixed(2)}V (parent: ${u})`);
               }
               
-              stack2.push(v);
+              if (!processedInBFS.has(v)) {
+                stack2.push(v);
+              }
             }
           }
           
-          // SRG2 FIX: Ensure all connected nodes are processed
+          // SRG2 FIX: Critical connectivity validation and repair
           const allConnectedNodes = [...connectedNodes];
-          const unprocessedNodes = allConnectedNodes.filter(nid => !processedInBFS.has(nid));
+          const unprocessedNodes = allConnectedNodes.filter(nid => !processedInBFS.has(nid) && nid !== source.id);
+          
           if (unprocessedNodes.length > 0) {
-            console.warn(`⚠️ BFS missed nodes: ${unprocessedNodes.join(', ')} - this could exclude SRG2 nodes`);
-            // Force-add missing voltages to prevent exclusion
-            for (const nid of unprocessedNodes) {
-              if (!V_node_phase.has(nid)) {
-                V_node_phase.set(nid, Vslack_phase_ph);
-                console.log(`🔧 Force-added voltage for missed node ${nid}: ${abs(Vslack_phase_ph).toFixed(2)}V`);
+            console.warn(`⚠️ BFS missed ${unprocessedNodes.length} nodes: ${unprocessedNodes.join(', ')}`);
+            
+            // CRITICAL FIX: Process missed nodes using alternative traversal
+            const missingNodeQueue = [...unprocessedNodes];
+            let rescueAttempts = 0;
+            const maxRescueAttempts = 5;
+            
+            while (missingNodeQueue.length > 0 && rescueAttempts < maxRescueAttempts) {
+              rescueAttempts++;
+              console.log(`🚨 Rescue attempt ${rescueAttempts} for ${missingNodeQueue.length} missing nodes`);
+              
+              const rescuedThisRound = [];
+              
+              for (let i = missingNodeQueue.length - 1; i >= 0; i--) {
+                const missingNodeId = missingNodeQueue[i];
+                
+                // Find any cable connecting this node to a processed node
+                const connectingCable = cables.find(cable => {
+                  const nodeAProcessed = processedInBFS.has(cable.nodeAId);
+                  const nodeBProcessed = processedInBFS.has(cable.nodeBId);
+                  
+                  return (cable.nodeAId === missingNodeId && nodeBProcessed) || 
+                         (cable.nodeBId === missingNodeId && nodeAProcessed);
+                });
+                
+                if (connectingCable) {
+                  const parentNodeId = connectingCable.nodeAId === missingNodeId ? 
+                    connectingCable.nodeBId : connectingCable.nodeAId;
+                  
+                  const Z = cableZ_phase.get(connectingCable.id) || C(0, 0);
+                  const Iuv = I_branch_phase.get(connectingCable.id) || C(0, 0);
+                  const Vparent = V_node_phase.get(parentNodeId) || Vslack_phase_ph;
+                  
+                  // Calculate voltage considering cable direction
+                  let Vmissing;
+                  if (connectingCable.nodeAId === parentNodeId) {
+                    Vmissing = sub(Vparent, mul(Z, Iuv)); // Forward direction
+                  } else {
+                    Vmissing = add(Vparent, mul(Z, Iuv)); // Reverse direction
+                  }
+                  
+                  V_node_phase.set(missingNodeId, Vmissing);
+                  processedInBFS.add(missingNodeId);
+                  rescuedThisRound.push(missingNodeId);
+                  
+                  const rescuedNode = nodeById.get(missingNodeId);
+                  if (rescuedNode && (rescuedNode.srg2Applied || rescuedNode.tensionCible)) {
+                    console.log(`🔧 RESCUED SRG2 node ${missingNodeId}: V=${abs(Vmissing).toFixed(2)}V via cable ${connectingCable.id}`);
+                  } else {
+                    console.log(`🔧 Rescued node ${missingNodeId}: V=${abs(Vmissing).toFixed(2)}V`);
+                  }
+                  
+                  missingNodeQueue.splice(i, 1);
+                }
+              }
+              
+              if (rescuedThisRound.length === 0) {
+                console.warn(`⚠️ No nodes rescued in attempt ${rescueAttempts}, remaining: ${missingNodeQueue.join(', ')}`);
+                break;
+              }
+            }
+            
+            // Final fallback: assign source voltage to any remaining unprocessed nodes
+            for (const remainingNodeId of missingNodeQueue) {
+              if (!V_node_phase.has(remainingNodeId)) {
+                V_node_phase.set(remainingNodeId, Vslack_phase_ph);
+                console.warn(`🆘 FALLBACK: Assigned source voltage to node ${remainingNodeId}`);
+                
+                const fallbackNode = nodeById.get(remainingNodeId);
+                if (fallbackNode && (fallbackNode.srg2Applied || fallbackNode.tensionCible)) {
+                  console.error(`❌ CRITICAL: SRG2 node ${remainingNodeId} had to use fallback voltage - connectivity issue!`);
+                }
               }
             }
           }
@@ -1579,22 +1648,60 @@ export class ElectricalCalculator {
         );
       }
 
-      // SRG2 FIX: Enhanced node metrics with connectivity validation
+      // SRG2 FIX: Enhanced node metrics with comprehensive validation
       console.log(`📊 Building nodeMetricsPerPhase for ${nodes.length} nodes`);
       const connectedNodeIds = [...connectedNodes];
       console.log(`🔗 Connected nodes: ${connectedNodeIds.length} - ${connectedNodeIds.join(', ')}`);
       
-      // SRG2 FIX: Ensure ALL connected nodes (including SRG2) have voltage data
+      // SRG2 FIX: Validate voltage availability for all connected nodes
+      const nodesWithoutVoltage = [];
+      connectedNodeIds.forEach(nodeId => {
+        const hasPhaseA = phaseA.V_node_phase.has(nodeId);
+        const hasPhaseB = phaseB.V_node_phase.has(nodeId);
+        const hasPhaseC = phaseC.V_node_phase.has(nodeId);
+        
+        if (!hasPhaseA || !hasPhaseB || !hasPhaseC) {
+          nodesWithoutVoltage.push({
+            nodeId,
+            missing: {
+              A: !hasPhaseA,
+              B: !hasPhaseB,
+              C: !hasPhaseC
+            }
+          });
+        }
+      });
+      
+      if (nodesWithoutVoltage.length > 0) {
+        console.error(`❌ CRITICAL: ${nodesWithoutVoltage.length} connected nodes missing voltage data:`);
+        nodesWithoutVoltage.forEach(({nodeId, missing}) => {
+          const node = nodeById.get(nodeId);
+          const missingPhases = Object.entries(missing).filter(([_, isMissing]) => isMissing).map(([phase]) => phase);
+          console.error(`  - Node ${nodeId} missing phases: ${missingPhases.join(', ')} (SRG2: ${!!(node?.srg2Applied || node?.tensionCible)})`);
+        });
+      }
+      
+      // SRG2 FIX: Build nodeMetricsPerPhase with robust fallback handling
       const nodeMetricsPerPhase = nodes
         .filter(n => connectedNodes.has(n.id)) // Only include connected nodes
         .map(n => {
+          // Get voltage data with robust fallback
           const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
           const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
           const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
           
-          // SRG2 FIX: Log missing voltage data specifically for SRG2 nodes
-          if ((n.srg2Applied || n.tensionCible) && (!phaseA.V_node_phase.has(n.id) || !phaseB.V_node_phase.has(n.id) || !phaseC.V_node_phase.has(n.id))) {
-            console.warn(`⚠️ SRG2 Node ${n.id} missing phase voltages - using fallback values`);
+          // SRG2 FIX: Critical logging for SRG2 nodes  
+          if (n.srg2Applied || n.tensionCible) {
+            const hasDataA = phaseA.V_node_phase.has(n.id);
+            const hasDataB = phaseB.V_node_phase.has(n.id);
+            const hasDataC = phaseC.V_node_phase.has(n.id);
+            
+            if (!hasDataA || !hasDataB || !hasDataC) {
+              console.error(`❌ SRG2 Node ${n.id} missing voltage data: A=${hasDataA}, B=${hasDataB}, C=${hasDataC}`);
+              console.error(`   This will cause "Données de tension manquantes" error in UI`);
+            } else {
+              console.log(`✅ SRG2 Node ${n.id} has complete voltage data: A=${abs(Va).toFixed(1)}V, B=${abs(Vb).toFixed(1)}V, C=${abs(Vc).toFixed(1)}V`);
+            }
           }
         
         // Vraies tensions calculées phase-neutre (pour SRG2 et calculs techniques)
