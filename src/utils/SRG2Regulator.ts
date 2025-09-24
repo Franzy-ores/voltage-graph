@@ -36,7 +36,7 @@ export class SRG2Regulator {
       isActive,
       originalVoltage,
       regulatedVoltage,
-      powerDownstream_kVA: 0, // TODO: Calculate based on downstream analysis
+      powerDownstream_kVA: this.calculateDownstreamPower(config.nodeId, project, baselineResult),
       regulatedVoltages: {
         A: regulatedVoltage,
         B: regulatedVoltage, 
@@ -47,9 +47,9 @@ export class SRG2Regulator {
         B: ratio,
         C: ratio
       },
-      diversifiedLoad_kVA: 0, // Simplified - would need downstream calculation
-      diversifiedProduction_kVA: 0,
-      netPower_kVA: 0,
+      diversifiedLoad_kVA: this.calculateDiversifiedLoad(config.nodeId, project, baselineResult),
+      diversifiedProduction_kVA: this.calculateDiversifiedProduction(config.nodeId, project, baselineResult),
+      netPower_kVA: this.calculateNetPower(config.nodeId, project, baselineResult),
       networkType
     };
   }
@@ -144,10 +144,64 @@ export class SRG2Regulator {
   }
 
   /**
+   * Calculate downstream power consumption
+   */
+  private calculateDownstreamPower(nodeId: string, project: Project, baselineResult: CalculationResult): number {
+    const descendants = this.getDescendants(nodeId, project.nodes, project.cables);
+    let totalPower = 0;
+    
+    for (const descendantId of descendants) {
+      const descendantNode = project.nodes.find(n => n.id === descendantId);
+      if (descendantNode) {
+        // Use nominal power from node as approximation for load/production
+        const nominalPower = (descendantNode as any).puissanceNominale_kW || 0;
+        totalPower += nominalPower;
+      }
+    }
+    
+    return totalPower;
+  }
+
+  /**
+   * Calculate diversified load
+   */
+  private calculateDiversifiedLoad(nodeId: string, project: Project, baselineResult: CalculationResult): number {
+    const diversificationFactor = 0.8; // Standard diversification factor
+    return this.calculateDownstreamPower(nodeId, project, baselineResult) * diversificationFactor;
+  }
+
+  /**
+   * Calculate diversified production
+   */
+  private calculateDiversifiedProduction(nodeId: string, project: Project, baselineResult: CalculationResult): number {
+    const descendants = this.getDescendants(nodeId, project.nodes, project.cables);
+    let totalProduction = 0;
+    
+    for (const descendantId of descendants) {
+      const descendantNode = project.nodes.find(n => n.id === descendantId);
+      if (descendantNode) {
+        // Use nominal production power from node as approximation
+        const nominalProduction = (descendantNode as any).puissanceNominaleProduction_kW || 0;
+        totalProduction += nominalProduction;
+      }
+    }
+    
+    return totalProduction * 0.9; // Production diversification factor
+  }
+
+  /**
+   * Calculate net power (load - production)
+   */
+  private calculateNetPower(nodeId: string, project: Project, baselineResult: CalculationResult): number {
+    const load = this.calculateDiversifiedLoad(nodeId, project, baselineResult);
+    const production = this.calculateDiversifiedProduction(nodeId, project, baselineResult);
+    return load - production;
+  }
+
+  /**
    * Reset internal state (for multi-iteration calculations)
    */
   reset(): void {
-    // Nothing to reset in this simplified implementation
     console.log('🔄 SRG2 Regulator reset');
   }
 }

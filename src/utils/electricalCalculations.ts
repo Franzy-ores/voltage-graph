@@ -621,7 +621,7 @@ export class ElectricalCalculator {
       return baseResult;
     }
 
-    console.log('🔄 UNIFIED SYSTEM: Performing complete network recalculation with modified regulator nodes');
+    console.log('🔧 Recalculating network with modified regulators');
 
     // Créer un projet temporaire avec les nœuds modifiés
     const tempProject = {
@@ -898,12 +898,12 @@ export class ElectricalCalculator {
     if (!nodes?.length) throw new Error('Aucun nœud fourni');
     if (!cables?.length) throw new Error('Aucun câble fourni');
     
-    console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
+    console.log('⚡ Calculating scenario:', scenario);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
 
     const sources = nodes.filter(n => n.isSource);
-    console.log('🔄 Found sources:', sources.length);
+    console.log('📍 Sources found:', sources.length);
     if (sources.length !== 1) throw new Error('Le réseau doit avoir exactement une source.');
     const source = sources[0];
 
@@ -2074,7 +2074,7 @@ export class ElectricalCalculator {
 
     // Ancien système SRG2 supprimé - utilisation de SRG2Regulator uniquement
 
-    console.log('🔄 Creating result object...');
+    console.log('📊 Building results...');
     const result: CalculationResult = {
       scenario,
       cables: calculatedCables,
