@@ -1215,9 +1215,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     
     // Optimisation par circuit en un seul passage avec seuil paramétrable (par défaut 8%)
     const upgrades = calculator.proposeFullCircuitReinforcement(
-      currentProject.cables,
-      defaultCableTypes,
-      threshold ?? 8.0 // Seuil paramétrable pour la chute de tension
+      currentProject,
+      selectedScenario,
+      result
     );
 
     set({

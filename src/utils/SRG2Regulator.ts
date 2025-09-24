@@ -1,681 +1,108 @@
-import { Complex, mul, scale } from '@/utils/complex';
-import { Node, Cable, Project } from '@/types/network';
+import { SRG2Config, SRG2Result, Project, CalculationResult, Node } from '@/types/network';
 
 /**
- * SRG2Regulator - Régulateur de tension secondaire
- * 
- * IMPORTANT: Tout usage de ce régulateur doit passer exclusivement par
- * SimulationCalculator.applySrg2IfNeeded() pour éviter les calculs multiples.
- * 
- * Ne jamais appeler directement SRG2Regulator.apply() depuis d'autres parties du code.
+ * SRG2 Voltage Regulator - Simplified and focused implementation
+ * Handles voltage regulation based on measured node voltages
  */
-
-export interface SRG2State {
-  state: 'LO2' | 'LO1' | 'BYP' | 'BO1' | 'BO2' | 'WAIT';
-  ratio: number;
-  voltage: number;
-  timestamp: number;
-}
-
-export interface SRG2Config {
-  nodeId: string;
-  enabled: boolean;
-  // networkType is derived from project.voltageSystem, no longer configurable
-  // Fixed power limits: 85 kVA injection, 100 kVA consumption
-}
-
-export interface SRG2Result {
-  nodeId: string;
-  originalVoltage: number;
-  regulatedVoltage: number;
-  regulatedVoltages?: { A: number; B: number; C: number }; // NOUVEAU: tensions individuelles régulées
-  state: string;
-  ratio: number;
-  phaseRatios?: { A: number; B: number; C: number };
-  powerDownstream_kVA: number;
-  diversifiedLoad_kVA?: number;        // Charge foisonnée
-  diversifiedProduction_kVA?: number;  // Production foisonnée  
-  netPower_kVA?: number;              // Puissance nette downstream
-  networkType?: '230V' | '400V';      // Type réseau dérivé
-  isActive: boolean;
-  limitReason?: string;
-  errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner
-}
-
 export class SRG2Regulator {
-  private lastSwitchTimes = new Map<string, number>();
-  private currentStates = new Map<string, SRG2State>();
-  private readonly hysteresis = 2; // volts
-  private readonly switchDelay = 7_000; // ms (7 s)
-
-  /** Thresholds for voltage regulation */
-  private getThresholds(network: '230V' | '400V') {
-    // CORRECTION: Réseau 400V utilise la référence 230V (phase-neutre) selon spécifications
-    return network === '400V'
-      ? { UL: 246, LO1: 238, BO1: 222, UB: 214, nominal: 230 }  // 400V utilise les mêmes seuils que 230V (phase-neutre)
-      : { UL: 246, LO1: 238, BO1: 222, UB: 214, nominal: 230 };
-  }
-
-  /** Compute SRG2 state based on voltage and hysteresis */
-  private computeState(
-    voltage: number,
-    network: '230V' | '400V',
-    currentState?: SRG2State
-  ): { state: string; ratio: number } {
-    const thresholds = this.getThresholds(network);
-    
-    console.log(`🔧 [SRG2-COMPUTE] State computation for ${voltage.toFixed(1)}V (${network}):`, {
-      voltage: voltage.toFixed(1),
-      currentState: currentState?.state,
-      thresholds,
-      hasCurrentState: !!currentState
-    });
-    
-    // Apply hysteresis if we have a current state
-    const hysteresisAdjusted = currentState ? {
-      UL: thresholds.UL + (currentState.state === 'LO2' ? -this.hysteresis : this.hysteresis),
-      LO1: thresholds.LO1 + (currentState.state === 'LO1' ? -this.hysteresis : this.hysteresis),
-      BO1: thresholds.BO1 + (currentState.state === 'BO1' ? -this.hysteresis : this.hysteresis),
-      UB: thresholds.UB + (currentState.state === 'BO2' ? this.hysteresis : -this.hysteresis)
-    } : thresholds;
-
-    console.log(`🔧 [SRG2-COMPUTE] Hysteresis-adjusted thresholds:`, hysteresisAdjusted);
-
-    let result;
-    if (voltage >= hysteresisAdjusted.UL) {
-      result = { state: 'LO2', ratio: 0.93 };
-      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V >= ${hysteresisAdjusted.UL}V (UL) → LO2 (ratio: 0.93)`);
-    } else if (voltage >= hysteresisAdjusted.LO1) {
-      result = { state: 'LO1', ratio: 0.965 };
-      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V >= ${hysteresisAdjusted.LO1}V (LO1) → LO1 (ratio: 0.965)`);
-    } else if (voltage <= hysteresisAdjusted.UB) {
-      result = { state: 'BO2', ratio: 1.07 };
-      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V <= ${hysteresisAdjusted.UB}V (UB) → BO2 (ratio: 1.07)`);
-    } else if (voltage <= hysteresisAdjusted.BO1) {
-      result = { state: 'BO1', ratio: 1.035 };
-      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V <= ${hysteresisAdjusted.BO1}V (BO1) → BO1 (ratio: 1.035)`);
-    } else {
-      result = { state: 'BYP', ratio: 1.0 };
-      console.log(`✅ [SRG2-COMPUTE] ${voltage.toFixed(1)}V in BYP range [${hysteresisAdjusted.UB}V - ${hysteresisAdjusted.BO1}V] → BYP (ratio: 1.0)`);
-    }
-    
-    return result;
-  }
-
-  /** Calculate downstream power with diversity factors - Phase 1: Calcul complet du sous-arbre */
-  private calculateDownstreamPower(
-    node: Node,
-    project: Project
-  ): {
-    totalPower_kVA: number;
-    diversifiedLoad_kVA: number;
-    diversifiedProduction_kVA: number;
-    netPower_kVA: number;
-  } {
-    // Phase 1: Implémentation du calcul récursif du sous-arbre downstream
-    const { totalLoad, totalProduction } = this.calculateDownstreamSubtree(node, project.nodes, project.cables, new Set());
-    
-    console.log(`📊 [SRG2-POWER] Node ${node.id} downstream subtree:`, {
-      totalLoad: totalLoad.toFixed(2),
-      totalProduction: totalProduction.toFixed(2),
-      foisonnementCharges: project.foisonnementCharges,
-      foisonnementProductions: project.foisonnementProductions
-    });
-
-    // Apply diversity factors to the total subtree power
-    const diversifiedLoad = totalLoad * (project.foisonnementCharges / 100);
-    const diversifiedProduction = totalProduction * (project.foisonnementProductions / 100);
-    
-    // Net power (load - production) - negative means production exceeds consumption
-    const netPower = diversifiedLoad - diversifiedProduction;
-
-    return {
-      totalPower_kVA: Math.abs(netPower),
-      diversifiedLoad_kVA: diversifiedLoad,
-      diversifiedProduction_kVA: diversifiedProduction,
-      netPower_kVA: netPower
-    };
-  }
-
-  /** 
-   * Phase 1: Calcule récursivement toutes les charges et productions du sous-arbre downstream 
+  
+  /**
+   * Apply SRG2 regulation to a specific node
    */
-  private calculateDownstreamSubtree(
-    node: Node,
-    allNodes: Node[],
-    allCables: Cable[],
-    visited: Set<string>
-  ): { totalLoad: number; totalProduction: number } {
-    if (visited.has(node.id)) {
-      return { totalLoad: 0, totalProduction: 0 };
-    }
-    visited.add(node.id);
-
-    // Calculate direct power from this node
-    let totalLoad = 0;
-    let totalProduction = 0;
-
-    // Add direct loads from this node
-    if (node.clients) {
-      totalLoad = node.clients.reduce((sum, client) => sum + (client.S_kVA || 0), 0);
-    }
-
-    // Add direct productions from this node
-    if (node.productions) {
-      totalProduction = node.productions.reduce((sum, prod) => sum + (prod.S_kVA || 0), 0);
-    }
-
-    console.log(`🔍 [SRG2-SUBTREE] Node ${node.id} direct: load=${totalLoad.toFixed(2)}, production=${totalProduction.toFixed(2)}`);
-
-    // Find all cables where this node is the source (nodeA)
-    const downstreamCables = allCables.filter(cable => cable.nodeAId === node.id);
-    
-    // Recursively calculate power from downstream nodes
-    for (const cable of downstreamCables) {
-      const downstreamNode = allNodes.find(n => n.id === cable.nodeBId);
-      if (downstreamNode) {
-        const subtreeResult = this.calculateDownstreamSubtree(
-          downstreamNode,
-          allNodes,
-          allCables,
-          visited
-        );
-        totalLoad += subtreeResult.totalLoad;
-        totalProduction += subtreeResult.totalProduction;
-        
-        console.log(`📈 [SRG2-SUBTREE] Adding downstream ${downstreamNode.id}: +${subtreeResult.totalLoad.toFixed(2)} load, +${subtreeResult.totalProduction.toFixed(2)} production`);
-      }
-    }
-
-    return { totalLoad, totalProduction };
-  }
-
-  /** Check if SRG2 can be applied based on fixed power limits */
-  private canApplySRG2(
-    node: Node,
-    project: Project
-  ): { canApply: boolean; reason?: string; powerCalc: ReturnType<typeof this.calculateDownstreamPower> } {
-    // Phase 1: Utilise le nouveau calcul de sous-arbre complet
-    const powerCalc = this.calculateDownstreamPower(node, project);
-    const maxConsumption = 100; // Fixed limit: 100 kVA
-    const maxInjection = 85; // Fixed limit: 85 kVA injection
-    
-    console.log(`🔍 [SRG2-LIMITS] Node ${node.id} power check:`, {
-      totalPower: powerCalc.totalPower_kVA.toFixed(2),
-      netPower: powerCalc.netPower_kVA.toFixed(2),
-      diversifiedLoad: powerCalc.diversifiedLoad_kVA.toFixed(2),
-      diversifiedProduction: powerCalc.diversifiedProduction_kVA.toFixed(2),
-      maxConsumption,
-      maxInjection
-    });
-    
-    // Phase 2: Amélioration de la logique de vérification des limites - séparons consommation et injection
-    const isConsumption = powerCalc.netPower_kVA > 0;
-    const isInjection = powerCalc.netPower_kVA < 0;
-    
-    console.log(`🔍 [SRG2-LIMITS] Power analysis:`, {
-      netPower: powerCalc.netPower_kVA.toFixed(2),
-      totalPower: powerCalc.totalPower_kVA.toFixed(2),
-      isConsumption,
-      isInjection,
-      maxConsumption,
-      maxInjection
-    });
-    
-    // Check consumption limit (positive net power = consumption)
-    if (isConsumption && powerCalc.totalPower_kVA > maxConsumption) {
-      console.log(`❌ [SRG2-LIMITS] Consumption limit exceeded: ${powerCalc.totalPower_kVA.toFixed(1)} > ${maxConsumption} kVA`);
-      return {
-        canApply: false,
-        reason: `Downstream consumption (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxConsumption} kVA)`,
-        powerCalc
-      };
-    }
-    
-    // Check injection limit (negative net power = injection/production)
-    if (isInjection && powerCalc.totalPower_kVA > maxInjection) {
-      console.log(`❌ [SRG2-LIMITS] Injection limit exceeded: ${powerCalc.totalPower_kVA.toFixed(1)} > ${maxInjection} kVA`);
-      return {
-        canApply: false,
-        reason: `Downstream injection (${powerCalc.totalPower_kVA.toFixed(1)} kVA) exceeds limit (${maxInjection} kVA)`,
-        powerCalc
-      };
-    }
-    
-    console.log(`✅ [SRG2-LIMITS] Power limits OK - can apply SRG2`);
-    
-
-    return { canApply: true, powerCalc };
-  }
-
-  /** Apply SRG2 regulation to a node */
   apply(
     config: SRG2Config,
-    node: Node,
+    originalVoltage: number,
     project: Project,
-    actualVoltages?: { A: number; B: number; C: number },
-    now: number = Date.now()
+    baselineResult: CalculationResult
   ): SRG2Result {
-    console.log(`🔧 SRG2: Evaluating node ${node.id}`);
-
+    console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
+    
     // Derive network type from project voltage system
-    const networkType: '230V' | '400V' = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
-
-    // Check if SRG2 can be applied
-    const powerCheck = this.canApplySRG2(node, project);
-    if (!powerCheck.canApply) {
-      console.log(`⚠️ SRG2: Cannot apply - ${powerCheck.reason}`);
-      return {
-        nodeId: node.id,
-        originalVoltage: node.tensionCible || project.transformerConfig?.nominalVoltage_V || 230,
-        regulatedVoltage: node.tensionCible || project.transformerConfig?.nominalVoltage_V || 230,
-        state: 'DISABLED',
-        ratio: 1.0,
-        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
-        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
-        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
-        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
-        networkType,
-        isActive: false,
-        limitReason: powerCheck.reason
-      };
-    }
-
-    // Déterminer la tension d'alimentation selon le type de réseau et modèle de charge
-    let feedVoltage: number;
+    const networkType = project.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
+    const thresholds = this.getVoltageThresholds(networkType);
     
-    if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
-    // Sélection de tension selon le modèle de charge du projet
-    const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
-                              (!project.loadModel && node.clients.length > 0);
+    // Determine regulation state based on voltage
+    const { state, ratio } = this.calculateRegulation(originalVoltage, thresholds);
     
-    console.log(`🔍 [SRG2-LOAD-MODEL] Load model detection:`, {
-      projectLoadModel: project.loadModel,
-      nodeClients: node.clients.length,
-      isMonophaseReparti,
-      decision: isMonophaseReparti ? 'MONOPHASE_REPARTI (use average of 3 voltages)' : 'POLYPHASE_EQUILIBRE (use average voltage)'
-    });
-      
-      if (isMonophaseReparti) {
-        // CORRECTION: Mode monophasé réparti utilise la MOYENNE des 3 tensions pour le calcul du ratio SRG2
-        feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
-        console.log(`✅ [SRG2-REGULATION] MONOPHASE REPARTI MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
-        console.log(`📊 [SRG2-REGULATION] Individual tensions will receive ratio based on this average: ${feedVoltage.toFixed(1)}V`);
-      } else {
-        // Mode polyphasé: Utiliser la tension moyenne globale
-        feedVoltage = (actualVoltages.A + actualVoltages.B + actualVoltages.C) / 3;
-        console.log(`✅ [SRG2-REGULATION] POLYPHASE EQUILIBRE MODE: ${feedVoltage.toFixed(1)}V (avg of A=${actualVoltages.A.toFixed(1)}V, B=${actualVoltages.B.toFixed(1)}V, C=${actualVoltages.C.toFixed(1)}V)`);
-      }
-    } else {
-      // ERREUR CRITIQUE: Pas de tension calculée - retourner un résultat inactif avec erreur
-      console.error(`❌ [SRG2-REGULATION] CRITICAL ERROR: No calculated voltages available for node ${node.id}!`);
-      console.error(`❌ actualVoltages received:`, actualVoltages);
-      console.error(`❌ SRG2 cannot regulate without real voltage data - returning inactive result`);
-      
-      // Retourner un résultat SRG2 inactif avec message d'erreur explicite
-      const fallbackVoltage = node.tensionCible || project.transformerConfig?.nominalVoltage_V || 230;
-      return {
-        nodeId: node.id,
-        originalVoltage: fallbackVoltage,
-        regulatedVoltage: fallbackVoltage,
-        state: 'OFF',
-        ratio: 1.0,
-        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
-        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
-        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
-        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
-        networkType,
-        isActive: false,
-        errorMessage: `Impossible de lire les tensions calculées du nœud ${node.id}. Vérifiez la connectivité réseau et les calculs électriques.`
-      };
-    }
+    const regulatedVoltage = originalVoltage * ratio;
+    const isActive = state !== 'BYP' && ratio !== 1.0;
     
-    const currentState = this.currentStates.get(node.id);
-    const lastSwitch = this.lastSwitchTimes.get(node.id) ?? 0;
-
-    // Compute new state based on actual voltage
-    const { state, ratio } = this.computeState(feedVoltage, networkType, currentState);
+    console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
     
-    // Phase 3: Trace détaillée des valeurs critiques avec seuils
-    const thresholds = this.getThresholds(networkType);
-    console.log(`🔧 [SRG2-REGULATION] Node ${node.id} regulation analysis:`, {
-      networkType,
-      actualVoltages,
-      feedVoltage: feedVoltage.toFixed(1),
-      thresholds,
-      computedState: state,
-      computedRatio: ratio,
-      tensionCible: node.tensionCible,
-      powerLimits: `Load: ${powerCheck.powerCalc.diversifiedLoad_kVA.toFixed(1)}kVA, Prod: ${powerCheck.powerCalc.diversifiedProduction_kVA.toFixed(1)}kVA, Net: ${powerCheck.powerCalc.netPower_kVA.toFixed(1)}kVA`
-    });
-
-    // Check timing constraint
-    if (currentState && currentState.state !== state && (now - lastSwitch) < this.switchDelay) {
-      console.log(`⏳ SRG2: State change delayed (${((now - lastSwitch) / 1000).toFixed(1)}s < 7s)`);
-      return {
-        nodeId: node.id,
-        originalVoltage: feedVoltage,
-        regulatedVoltage: feedVoltage,
-        state: 'WAIT',
-        ratio: 1.0,
-        powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
-        diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
-        diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
-        netPower_kVA: powerCheck.powerCalc.netPower_kVA,
-        networkType,
-        isActive: false
-      };
-    }
-
-    // Update state if changed
-    if (!currentState || currentState.state !== state) {
-      this.lastSwitchTimes.set(node.id, now);
-      this.currentStates.set(node.id, {
-        state: state as any,
-        ratio,
-        voltage: feedVoltage,
-        timestamp: now
-      });
-      console.log(`🔄 SRG2: State change ${node.id}: ${currentState?.state || 'INIT'} → ${state} (ratio: ${ratio})`);
-    }
-
-    const regulatedVoltage = feedVoltage * ratio;
-
-    // NOUVEAU: Application détaillée du ratio selon le mode de charge
-    let regulatedVoltages = { A: 0, B: 0, C: 0 };
-    if (actualVoltages && actualVoltages.A > 0 && actualVoltages.B > 0 && actualVoltages.C > 0) {
-      const isMonophaseReparti = project.loadModel === 'monophase_reparti' || 
-                                (!project.loadModel && node.clients.length > 0);
-                                
-      if (isMonophaseReparti) {
-        // Mode monophasé réparti: Appliquer le ratio à chaque tension individuellement
-        regulatedVoltages = {
-          A: actualVoltages.A * ratio,
-          B: actualVoltages.B * ratio,
-          C: actualVoltages.C * ratio
-        };
-        console.log(`🔧 [SRG2-RATIO-APPLICATION] MONOPHASE REPARTI - Individual application:`, {
-          ratioSource: `Average ${feedVoltage.toFixed(1)}V → ratio ${ratio.toFixed(3)}`,
-          phaseA: `${actualVoltages.A.toFixed(1)}V → ${regulatedVoltages.A.toFixed(1)}V`,
-          phaseB: `${actualVoltages.B.toFixed(1)}V → ${regulatedVoltages.B.toFixed(1)}V`,
-          phaseC: `${actualVoltages.C.toFixed(1)}V → ${regulatedVoltages.C.toFixed(1)}V`
-        });
-      } else {
-        // Mode polyphasé: Même tension régulée sur toutes les phases
-        const singleRegulated = regulatedVoltage;
-        regulatedVoltages = {
-          A: singleRegulated,
-          B: singleRegulated,
-          C: singleRegulated
-        };
-        console.log(`🔧 [SRG2-RATIO-APPLICATION] POLYPHASE EQUILIBRE - Uniform application: ${singleRegulated.toFixed(1)}V on all phases`);
-      }
-    } else {
-      // Fallback: utiliser la tension régulée globale
-      regulatedVoltages = { A: regulatedVoltage, B: regulatedVoltage, C: regulatedVoltage };
-      console.warn(`⚠️ [SRG2-RATIO-APPLICATION] FALLBACK: Using global regulated voltage ${regulatedVoltage.toFixed(1)}V`);
-    }
-
-    // For 400V systems, calculate per-phase ratios (simplified - same ratio for all phases)
-    const phaseRatios = networkType === '400V' 
-      ? { A: ratio, B: ratio, C: ratio }
-      : undefined;
-
-    console.log(`✅ SRG2: Applied on ${node.id}: ${feedVoltage}V → ${regulatedVoltage.toFixed(1)}V (${state})`);
-    console.log(`📊 [SRG2-RESULT] Regulated tensions per phase:`, {
-      networkType,
-      loadModel: project.loadModel,
-      regulated: `A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`
-    });
-
     return {
-      nodeId: node.id,
-      originalVoltage: feedVoltage, // Moyenne des 3 phases pour monophasé réparti, tension unique pour polyphasé
-      regulatedVoltage,
-      regulatedVoltages,  // NOUVEAU: tensions individuelles régulées
+      nodeId: config.nodeId,
       state,
       ratio,
-      phaseRatios,
-      powerDownstream_kVA: powerCheck.powerCalc.totalPower_kVA,
-      diversifiedLoad_kVA: powerCheck.powerCalc.diversifiedLoad_kVA,
-      diversifiedProduction_kVA: powerCheck.powerCalc.diversifiedProduction_kVA,
-      netPower_kVA: powerCheck.powerCalc.netPower_kVA,
-      networkType,
-      isActive: true
+      isActive,
+      originalVoltage,
+      regulatedVoltage,
+      powerDownstream_kVA: 0, // TODO: Calculate based on downstream analysis
+      regulatedVoltages: {
+        A: regulatedVoltage,
+        B: regulatedVoltage, 
+        C: regulatedVoltage
+      },
+      phaseRatios: {
+        A: ratio,
+        B: ratio,
+        C: ratio
+      },
+      diversifiedLoad_kVA: 0, // Simplified - would need downstream calculation
+      diversifiedProduction_kVA: 0,
+      netPower_kVA: 0,
+      networkType
     };
   }
-
-  /** Reset SRG2 state for a node */
-  reset(nodeId: string): void {
-    this.lastSwitchTimes.delete(nodeId);
-    this.currentStates.delete(nodeId);
-    console.log(`🔄 SRG2: Reset state for node ${nodeId}`);
-  }
-
-  /** Reset all SRG2 states - Phase 4: Réinitialisation complète */
-  resetAll(): void {
-    console.log(`🔄 [SRG2-RESET] Resetting all SRG2 states`);
-    this.currentStates.clear();
-    this.lastSwitchTimes.clear();
-  }
-
-  /** Get current state for a node */
-  getCurrentState(nodeId: string): SRG2State | undefined {
-    return this.currentStates.get(nodeId);
-  }
-
+  
   /**
-   * Utility function: Get all descendant nodes in topological order
+   * Get voltage thresholds for different network types
    */
-  getDescendants(nodeId: string, nodes: Node[], cables: Cable[]): string[] {
-    const visited = new Set<string>([nodeId]);
-    const queue = [nodeId];
-    const descendants: string[] = [];
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      
-      // Find cables where currentId is upstream (nodeA → nodeB)
-      const downstreamCables = cables.filter(c => c.nodeAId === currentId && !visited.has(c.nodeBId));
-      
-      for (const cable of downstreamCables) {
-        visited.add(cable.nodeBId);
-        descendants.push(cable.nodeBId);
-        queue.push(cable.nodeBId);
-      }
-    }
-    
-    return descendants;
-  }
-
-  /**
-   * Utility function: Propagate voltage to descendant nodes
-   */
-  propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
-    const parent = nodes.find(n => n.id === nodeId);
-    if (!parent) return;
-
-    const descendants = this.getDescendants(nodeId, nodes, cables);
-    
-    for (const childId of descendants) {
-      const child = nodes.find(n => n.id === childId);
-      if (child) {
-        // Apply the SRG2 ratio to descendant nodes
-        const currentVoltage = child.tensionCible ?? parent.tensionCible ?? 400; // Default fallback
-        child.tensionCible = currentVoltage * ratio;
-        child.srg2Applied = true;
-        child.srg2Ratio = ratio;
-        
-        console.log(`🔧 [SRG2-DESCENDANT] Node ${childId}: ${currentVoltage.toFixed(1)}V → ${child.tensionCible.toFixed(1)}V (ratio: ${ratio.toFixed(3)})`);
-      }
+  private getVoltageThresholds(networkType: string) {
+    if (networkType === '230V') {
+      return {
+        // 230V system thresholds
+        BO2_threshold: 210,  // Strong boost needed
+        BO1_threshold: 220,  // Light boost needed  
+        BYP_low: 225,        // Normal range low
+        BYP_high: 235,       // Normal range high
+        LO1_threshold: 240,  // Light reduction needed
+        LO2_threshold: 250   // Strong reduction needed
+      };
+    } else {
+      return {
+        // 400V system thresholds (phase-neutral ~230V)
+        BO2_threshold: 210,  
+        BO1_threshold: 220,
+        BYP_low: 225,
+        BYP_high: 235, 
+        LO1_threshold: 240,
+        LO2_threshold: 250
+      };
     }
   }
-
+  
   /**
-   * Applique la régulation SRG2 à l'ensemble du réseau.
-   * - Met à jour le nœud ciblé.
-   * - Propage le ratio de tension en aval (et optionnellement en amont).
-   *
-   * @param result   Résultat SRG2 (contient le ratio)
-   * @param nodes    Liste complète des nœuds du projet
-   * @param cables   Liste complète des câbles du projet
-   * @param direction 'downstream' | 'upstream' | 'both' (défaut = 'both')
+   * Calculate regulation state and ratio based on voltage and thresholds
    */
-  applyRegulationToNetwork(
-    result: SRG2Result,
-    nodes: Node[],
-    cables: Cable[],
-    direction: 'downstream' | 'upstream' | 'both' = 'both'
-  ): Node[] {
-    if (!result.isActive) {
-      return nodes;
+  private calculateRegulation(voltage: number, thresholds: any): { state: string; ratio: number } {
+    if (voltage <= thresholds.BO2_threshold) {
+      return { state: 'BO2', ratio: 1.075 }; // +7.5% boost
+    } else if (voltage <= thresholds.BO1_threshold) {
+      return { state: 'BO1', ratio: 1.0375 }; // +3.75% boost
+    } else if (voltage >= thresholds.LO2_threshold) {
+      return { state: 'LO2', ratio: 0.925 }; // -7.5% reduction
+    } else if (voltage >= thresholds.LO1_threshold) {
+      return { state: 'LO1', ratio: 0.9625 }; // -3.75% reduction
+    } else {
+      return { state: 'BYP', ratio: 1.0 }; // Normal - no regulation
     }
-
-    // -----------------------------------------------------------------
-    // 1️⃣  Copie profonde avec clonage des propriétés imbriquées
-    // -----------------------------------------------------------------
-    const clonedNodes: Node[] = nodes.map(n => ({
-      ...n,
-      clients: n.clients ? [...n.clients] : [],
-      productions: n.productions ? [...n.productions] : []
-    }));
-
-    console.log("[SRG2] cloned node sample:", clonedNodes.find(n => n.id === result.nodeId));
-
-    // -----------------------------------------------------------------
-    // 2️⃣  Met à jour le nœud régulé
-    // -----------------------------------------------------------------
-    const regNode = clonedNodes.find(n => n.id === result.nodeId);
-    if (!regNode) return clonedNodes; // sécurité
-
-    regNode.tensionCible = result.regulatedVoltage;
-    regNode.srg2Applied = true;
-    regNode.srg2State = result.state;
-    regNode.srg2Ratio = result.ratio;
-
-    console.log(`🔧 SRG2: Updated node ${result.nodeId} voltage to ${result.regulatedVoltage.toFixed(1)}V`);
-    
-    // NOUVEAU: Log des tensions individuelles si disponibles
-    if (result.regulatedVoltages) {
-      console.log(`📊 [SRG2-PROPAGATION] Individual regulated voltages: A=${result.regulatedVoltages.A.toFixed(1)}V, B=${result.regulatedVoltages.B.toFixed(1)}V, C=${result.regulatedVoltages.C.toFixed(1)}V`);
-    }
-
-    // -----------------------------------------------------------------
-    // 3️⃣  Propagation optimisée vers les descendants
-    // -----------------------------------------------------------------
-    if (direction === 'downstream' || direction === 'both') {
-      this.propagateVoltageToChildren(result.nodeId, clonedNodes, cables, result.ratio);
-      console.log(`🔧 [SRG2-PROPAGATION] Applied optimized propagation to descendants of node ${result.nodeId}`);
-    }
-
-    // ANCIENNE LOGIQUE DE PROPAGATION TOPOLOGIQUE (conservée pour référence)
-    /*
-    const getDownstreamNodes = (startNodeId: string): string[] => {
-      const visited = new Set<string>([startNodeId]);
-      const queue = [startNodeId];
-      const downstream: string[] = [];
-      
-      while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        
-        // Trouver les câbles où currentId est en amont (nodeA → nodeB)
-        const downstreamCables = cables.filter(c => c.nodeAId === currentId && !visited.has(c.nodeBId));
-        
-        for (const cable of downstreamCables) {
-          visited.add(cable.nodeBId);
-          downstream.push(cable.nodeBId);
-          queue.push(cable.nodeBId);
-          
-          // Appliquer le ratio au nœud aval
-          const downstreamNode = clonedNodes.find(n => n.id === cable.nodeBId);
-          if (downstreamNode) {
-            const currentVoltage = downstreamNode.tensionCible ?? result.originalVoltage;
-            const newVoltage = currentVoltage * result.ratio;
-            
-            downstreamNode.tensionCible = newVoltage;
-            downstreamNode.srg2Applied = true;
-            downstreamNode.srg2Ratio = result.ratio;
-            
-            console.log(`🔧 [SRG2-DOWNSTREAM] Node ${cable.nodeBId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V`);
-          }
-        }
-      }
-      
-      return downstream;
-    };
-
-    // Appliquer la propagation
-    const downstreamNodes = getDownstreamNodes(result.nodeId);
-    console.log(`🔧 [SRG2-PROPAGATION] Applied to ${downstreamNodes.length} downstream nodes: ${downstreamNodes.join(', ')}`);
-
-    const propagate = (
-      startIds: string[],
-      allowedDirection: 'downstream' | 'upstream'
-    ) => {
-      const visited = new Set<string>(startIds);
-      const queue = [...startIds];
-
-      while (queue.length) {
-        const curId = queue.shift()!;
-        // Trouve les câbles reliés au nœud courant
-        const relatedCables = cables.filter(c =>
-          allowedDirection === 'downstream'
-            ? c.nodeAId === curId               // on part du côté « amont » vers le descendant
-            : c.nodeBId === curId               // on part du côté « aval » vers l'amont
-        );
-
-        for (const cab of relatedCables) {
-          const neighbourId =
-            allowedDirection === 'downstream' ? cab.nodeBId : cab.nodeAId;
-
-          // Empêcher la double régulation du nœud cible
-          if (neighbourId === result.nodeId) continue;
-          
-          if (visited.has(neighbourId)) continue;
-          visited.add(neighbourId);
-          queue.push(neighbourId);
-
-          const neighbour = clonedNodes.find(n => n.id === neighbourId);
-          if (!neighbour) continue;
-
-          // -------------------------------------------------------------
-          // Application du ratio en préservant la cohérence des tensions
-          // -------------------------------------------------------------
-          const currentVoltage = neighbour.tensionCible ?? result.originalVoltage;
-          const newVoltage = currentVoltage * result.ratio;
-          
-          console.log(`🔧 [SRG2-PROPAGATION] Node ${neighbourId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)})`);
-          
-          neighbour.tensionCible = newVoltage;
-
-          // On conserve les informations de trace (facultatif)
-          neighbour.srg2Applied = true;
-          neighbour.srg2State = result.state;
-          neighbour.srg2Ratio = result.ratio;
-
-          console.log(`[SRG2-prop] Updating ${neighbourId}: ${currentVoltage.toFixed(1)}V → ${newVoltage.toFixed(1)}V (ratio: ${result.ratio.toFixed(3)} from ${curId})`);
-        }
-      }
-    };
-
-    // -----------------------------------------------------------------
-    // 4️⃣  Propagation selon le paramètre `direction`
-    // -----------------------------------------------------------------
-    if (direction === 'downstream' || direction === 'both') {
-      // Les câbles dont le nœud régulé est le **nodeA** (amont → aval)
-      propagate([result.nodeId], 'downstream');
-    }
-
-    if (direction === 'upstream' || direction === 'both') {
-      // Les câbles dont le nœud régulé est le **nodeB** (aval ← amont)
-      propagate([result.nodeId], 'upstream');
-    }
-
-    return clonedNodes;
-    */
-
-    // -----------------------------------------------------------------
-    // 4️⃣  Propagation avancée (logique existante - pour support multi-SRG2)
-    // -----------------------------------------------------------------
+  }
+  
+  /**
+   * Reset internal state (for multi-iteration calculations)
+   */
+  reset(): void {
+    // Nothing to reset in this simplified implementation
+    console.log('🔄 SRG2 Regulator reset');
   }
 }

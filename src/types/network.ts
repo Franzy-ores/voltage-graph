@@ -263,9 +263,15 @@ export interface SimulationEquipment {
 export interface SimulationResult extends CalculationResult {
   isSimulation: boolean;
   equipment?: SimulationEquipment;
-  baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
+  baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison  
   convergenceStatus?: 'converged' | 'not_converged';
   srg2Result?: SRG2Result; // SRG2 regulation result
+  cableUpgradeProposals?: CableUpgrade[]; // Cable upgrade proposals
+  convergenceInfo?: {
+    converged: boolean;
+    iterations: number;
+    maxIterations: number;
+  };
 }
 
 export interface CalculationResult {

@@ -229,7 +229,9 @@ export const SimulationPanel = () => {
                 )}
                 
                 {/* Afficher les tensions calculées si disponibles */}
-                {currentResult?.baselineResult?.nodeMetricsPerPhase?.[srg2Config.nodeId] && (
+                {(() => {
+                  const nodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  return nodeMetric && (
                   <div className="p-3 bg-blue-50 rounded-md border">
                     <Label className="text-xs font-medium text-blue-700 mb-2 block">
                       Tensions calculées au nœud (avant correction SRG2)
@@ -238,27 +240,30 @@ export const SimulationPanel = () => {
                       <div className="text-center">
                         <div className="text-xs text-blue-600 font-medium">Phase A</div>
                         <div className="text-sm font-mono font-bold text-blue-900">
-                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].A?.toFixed(1)} V
+                          {nodeMetric.voltagesPerPhase.A?.toFixed(1)} V
                         </div>
                       </div>
                       <div className="text-center">
                         <div className="text-xs text-blue-600 font-medium">Phase B</div>
                         <div className="text-sm font-mono font-bold text-blue-900">
-                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].B?.toFixed(1)} V
+                          {nodeMetric.voltagesPerPhase.B?.toFixed(1)} V
                         </div>
                       </div>
                       <div className="text-center">
                         <div className="text-xs text-blue-600 font-medium">Phase C</div>
                         <div className="text-sm font-mono font-bold text-blue-900">
-                          {currentResult.baselineResult.nodeMetricsPerPhase[srg2Config.nodeId].C?.toFixed(1)} V
+                          {nodeMetric.voltagesPerPhase.C?.toFixed(1)} V
                         </div>
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
                 
                 {/* Message si pas de données de tension disponibles */}
-                {!currentResult?.baselineResult?.nodeMetricsPerPhase?.[srg2Config.nodeId] && (
+                {(() => {
+                  const nodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  return !nodeMetric && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                     <div className="flex items-center gap-2 text-yellow-700 text-sm font-medium mb-1">
                       <AlertTriangle className="h-4 w-4" />
@@ -269,7 +274,8 @@ export const SimulationPanel = () => {
                       Vérifiez que le nœud est bien connecté au réseau et lancez une simulation.
                     </div>
                   </div>
-                )}
+                  );
+                })()}
                 
                 {/* Message d'état si pas de résultat SRG2 mais configuré */}
                 {!actualSrg2Result && (

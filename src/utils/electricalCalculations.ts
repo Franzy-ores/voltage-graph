@@ -1681,27 +1681,36 @@ export class ElectricalCalculator {
         });
       }
       
-      // SRG2 FIX: Build nodeMetricsPerPhase with robust fallback handling
+      // Build nodeMetricsPerPhase - CRITICAL: Include ALL connected nodes without fallbacks
       const nodeMetricsPerPhase = nodes
         .filter(n => connectedNodes.has(n.id)) // Only include connected nodes
         .map(n => {
-          // Get voltage data with robust fallback
-          const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-          const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-          const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+          // Get voltage data - NO FALLBACKS to expose missing data clearly
+          const Va = phaseA.V_node_phase.get(n.id);
+          const Vb = phaseB.V_node_phase.get(n.id);
+          const Vc = phaseC.V_node_phase.get(n.id);
           
-          // SRG2 FIX: Critical logging for SRG2 nodes  
-          if (n.srg2Applied || n.tensionCible) {
-            const hasDataA = phaseA.V_node_phase.has(n.id);
-            const hasDataB = phaseB.V_node_phase.has(n.id);
-            const hasDataC = phaseC.V_node_phase.has(n.id);
+          // Validate that voltage data exists for connected nodes
+          if (!Va || !Vb || !Vc) {
+            console.error(`❌ Connected node ${n.id} missing voltage data - this indicates a BFS algorithm issue`);
+            console.error(`   Node connectivity status: connected=${connectedNodes.has(n.id)}`);
+            console.error(`   Voltage data availability: A=${!!Va}, B=${!!Vb}, C=${!!Vc}`);
             
-            if (!hasDataA || !hasDataB || !hasDataC) {
-              console.error(`❌ SRG2 Node ${n.id} missing voltage data: A=${hasDataA}, B=${hasDataB}, C=${hasDataC}`);
-              console.error(`   This will cause "Données de tension manquantes" error in UI`);
-            } else {
-              console.log(`✅ SRG2 Node ${n.id} has complete voltage data: A=${abs(Va).toFixed(1)}V, B=${abs(Vb).toFixed(1)}V, C=${abs(Vc).toFixed(1)}V`);
-            }
+            // Use fallback ONLY for error reporting, but log the issue
+            const fallbackV = fromPolar(Vslack_phase, globalAngle);
+            return {
+              nodeId: n.id,
+              voltagesPerPhase: { A: 0, B: 0, C: 0 },
+              calculatedVoltagesPerPhase: { A: 0, B: 0, C: 0 },
+              calculatedVoltagesComposed: { AB: 0, BC: 0, CA: 0 },
+              voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
+              hasValidData: false
+            };
+          }
+          
+          // Node has complete voltage data - proceed with normal calculation
+          if (n.srg2Applied || n.tensionCible) {
+            console.log(`✅ SRG2 Node ${n.id} has complete voltage data: A=${abs(Va).toFixed(1)}V, B=${abs(Vb).toFixed(1)}V, C=${abs(Vc).toFixed(1)}V`);
           }
         
         // Vraies tensions calculées phase-neutre (pour SRG2 et calculs techniques)
