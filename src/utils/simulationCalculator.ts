@@ -37,7 +37,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     console.log('📊 Step 1: Computing baseline electrical network...');
     
     // STEP 1: Pure electrical calculation without any equipment
-    const baselineResult = this.calculateScenario(cleanProject, scenario);
+    const baselineResult = this.calculateScenario(
+      cleanProject.nodes, 
+      cleanProject.cables, 
+      cleanProject.cableTypes,
+      scenario
+    );
     console.log('✅ Baseline calculation completed');
     
     // STEP 2: Apply SRG2 regulation if configured
@@ -101,7 +106,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     console.log('🔄 Step 3: Final calculation with equipment...');
     const finalResult = regulatedProject === cleanProject ? 
       baselineResult : 
-      this.calculateScenario(regulatedProject, scenario);
+      this.calculateScenario(
+        regulatedProject.nodes, 
+        regulatedProject.cables, 
+        regulatedProject.cableTypes,
+        scenario
+      );
     
     console.log('✅ Simulation completed successfully');
     
@@ -202,7 +212,12 @@ export class SimulationCalculator extends ElectricalCalculator {
       })
     };
     
-    return this.calculateScenario(modifiedProject, scenario);
+    return this.calculateScenario(
+      modifiedProject.nodes, 
+      modifiedProject.cables, 
+      modifiedProject.cableTypes,
+      scenario
+    );
   }
 
   /**
