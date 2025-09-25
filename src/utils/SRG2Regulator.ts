@@ -52,7 +52,7 @@ export class SRG2Regulator {
       diversifiedLoad_kVA: this.calculateDiversifiedLoad(config.nodeId, project, baselineResult),
       diversifiedProduction_kVA: this.calculateDiversifiedProduction(config.nodeId, project, baselineResult),
       netPower_kVA: this.calculateNetPower(config.nodeId, project, baselineResult),
-      networkType: 'UNIFIED_230V'
+      networkType: project.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'
     };
   }
   

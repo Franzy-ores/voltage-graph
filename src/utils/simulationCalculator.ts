@@ -85,16 +85,23 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       if (!nodeFound) {
         console.error(`❌ SRG2 target node ${srg2NodeId} not found in baseline calculation`);
-        srg2Result = {
-          nodeId: srg2NodeId,
-          errorMessage: `Le nœud ${srg2NodeId} n'est pas inclus dans les calculs électriques.`,
-          state: 'OFF',
-          ratio: 1.0,
-          isActive: false,
-          originalVoltage: 0,
-          regulatedVoltage: 0,
-          powerDownstream_kVA: 0
-        };
+        console.log(`🔍 Stratégie de repli: utilisation de la tension nominale du projet`);
+        
+        // Stratégie de repli: utiliser la tension nominale du projet
+        const fallbackVoltage = project.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+        originalVoltage = fallbackVoltage;
+        
+        console.log(`⚠️ Tension de repli appliquée: ${fallbackVoltage}V pour le nœud ${srg2NodeId}`);
+        
+        srg2Result = this.srg2Regulator.apply(
+          simulationEquipment.srg2,
+          originalVoltage,
+          cleanProject,
+          baselineResult
+        );
+        
+        // Ajouter un message d'avertissement dans le résultat
+        srg2Result.errorMessage = `Le nœud ${srg2NodeId} n'était pas trouvé dans les métriques de base. Tension nominale utilisée.`;
       } else {
         if (DEBUG) console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage!.toFixed(1)}V`);
         
@@ -104,27 +111,38 @@ export class SimulationCalculator extends ElectricalCalculator {
           cleanProject,
           baselineResult
         );
+      }
+      
+      // Propagation des tensions régulées si SRG2 est actif
+      if (srg2Result.isActive) {
+        if (DEBUG) console.log(`🔄 Propagation des tensions régulées avec ratio ${srg2Result.ratio.toFixed(3)}`);
+        this.srg2Regulator.propagateVoltageToChildren(
+          srg2Result.nodeId, 
+          cleanProject.nodes, 
+          cleanProject.cables, 
+          srg2Result.ratio
+        );
+      }
+      
+      if (srg2Result.isActive && srg2Result.ratio !== 1.0) {
+        // Create regulated project with SRG2 applied
+        regulatedProject = {
+          ...cleanProject,
+          nodes: cleanProject.nodes.map(node => {
+            if (node.id === srg2NodeId) {
+              return {
+                ...node,
+                srg2Applied: true,
+                srg2State: srg2Result!.state,
+                srg2Ratio: srg2Result!.ratio,
+                tensionCible: srg2Result!.regulatedVoltage
+              };
+            }
+            return node;
+          })
+        };
         
-        if (srg2Result.isActive && srg2Result.ratio !== 1.0) {
-          // Create regulated project with SRG2 applied
-          regulatedProject = {
-            ...cleanProject,
-            nodes: cleanProject.nodes.map(node => {
-              if (node.id === srg2NodeId) {
-                return {
-                  ...node,
-                  srg2Applied: true,
-                  srg2State: srg2Result!.state,
-                  srg2Ratio: srg2Result!.ratio,
-                  tensionCible: srg2Result!.regulatedVoltage
-                };
-              }
-              return node;
-            })
-          };
-          
-          if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
-        }
+        if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
       }
     }
     
@@ -146,7 +164,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       );
     
     // T2: Universal SRG2 injection for both balanced and unbalanced modes
-    if (srg2Result?.isActive) {
+    // Injection systématique même si ratio === 1.0 pour assurer la cohérence
+    if (srg2Result && simulationEquipment.srg2?.enabled) {
       // Inject for unbalanced mode (per-phase metrics)
       if (finalResult.nodeMetricsPerPhase) {
         finalResult.nodeMetricsPerPhase = finalResult.nodeMetricsPerPhase.map(nodeMetric => {
