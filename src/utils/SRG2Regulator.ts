@@ -56,59 +56,89 @@ export class SRG2Regulator {
   
   /**
    * Get voltage thresholds for different network types
+   * CORRECTED: All 400V systems use ~230V phase-neutral reference voltage
    */
   private getVoltageThresholds(networkType: string) {
-    // All thresholds are in phase-neutral voltages
-    // For 230V polyphase: direct phase-neutral (230V between phases)
-    // For 400V systems: phase-neutral is ~230V, phase-phase is 400V
-    // For monophase systems: depends on connection type
+    console.log(`[SRG2] Getting thresholds for network type: ${networkType}`);
     
-    if (networkType === '230V_MONO' || networkType === '230V_POLY') {
-      return {
-        // 230V system thresholds (phase-neutral for polyphase, phase-phase for monophase)
-        BO2_threshold: 210,  // Strong boost needed
-        BO1_threshold: 220,  // Light boost needed  
-        BYP_low: 225,        // Normal range low
-        BYP_high: 235,       // Normal range high
-        LO1_threshold: 240,  // Light reduction needed
-        LO2_threshold: 250   // Strong reduction needed
-      };
-    } else if (networkType === '400V_MONO') {
-      return {
-        // 400V monophase thresholds (phase-phase voltage)
-        BO2_threshold: 365,  // Strong boost needed (400V * 0.9125) 
-        BO1_threshold: 380,  // Light boost needed (400V * 0.95)
-        BYP_low: 390,        // Normal range low (400V * 0.975)
-        BYP_high: 410,       // Normal range high (400V * 1.025)
-        LO1_threshold: 420,  // Light reduction needed (400V * 1.05)
-        LO2_threshold: 440   // Strong reduction needed (400V * 1.1)
-      };
-    } else {
-      return {
-        // 400V polyphase thresholds (phase-neutral ~230V)
-        BO2_threshold: 210,  
-        BO1_threshold: 220,
-        BYP_low: 225,
-        BYP_high: 235, 
-        LO1_threshold: 240,
-        LO2_threshold: 250
-      };
-    }
+    const thresholds = {
+      '230V_MONO': {
+        BO2_threshold: 218.5, // 95% of 230V
+        BO1_threshold: 224.25, // 97.5% of 230V
+        BYP_low: 224.25, // 97.5% of 230V
+        BYP_high: 235.75, // 102.5% of 230V
+        LO1_threshold: 235.75, // 102.5% of 230V
+        LO2_threshold: 241.5, // 105% of 230V
+        BO2_ratio: 1.055, // +5.5%
+        BO1_ratio: 1.025, // +2.5%
+        LO1_ratio: 0.975, // -2.5%
+        LO2_ratio: 0.945, // -5.5%
+      },
+      '230V_POLY': {
+        BO2_threshold: 218.5, // 95% of 230V
+        BO1_threshold: 224.25, // 97.5% of 230V
+        BYP_low: 224.25, // 97.5% of 230V
+        BYP_high: 235.75, // 102.5% of 230V
+        LO1_threshold: 235.75, // 102.5% of 230V
+        LO2_threshold: 241.5, // 105% of 230V
+        BO2_ratio: 1.055, // +5.5%
+        BO1_ratio: 1.025, // +2.5%
+        LO1_ratio: 0.975, // -2.5%
+        LO2_ratio: 0.945, // -5.5%
+      },
+      // CORRECTED: 400V systems use ~230V phase-neutral reference, not 400V
+      '400V_MONO': {
+        BO2_threshold: 218.5, // 95% of 230V (phase-neutral)
+        BO1_threshold: 224.25, // 97.5% of 230V (phase-neutral)
+        BYP_low: 224.25, // 97.5% of 230V (phase-neutral)
+        BYP_high: 235.75, // 102.5% of 230V (phase-neutral)
+        LO1_threshold: 235.75, // 102.5% of 230V (phase-neutral)
+        LO2_threshold: 241.5, // 105% of 230V (phase-neutral)
+        BO2_ratio: 1.055, // +5.5%
+        BO1_ratio: 1.025, // +2.5%
+        LO1_ratio: 0.975, // -2.5%
+        LO2_ratio: 0.945, // -5.5%
+      },
+      '400V_POLY': {
+        BO2_threshold: 218.5, // 95% of 230V (phase-neutral)
+        BO1_threshold: 224.25, // 97.5% of 230V (phase-neutral)
+        BYP_low: 224.25, // 97.5% of 230V (phase-neutral)
+        BYP_high: 235.75, // 102.5% of 230V (phase-neutral)
+        LO1_threshold: 235.75, // 102.5% of 230V (phase-neutral)
+        LO2_threshold: 241.5, // 105% of 230V (phase-neutral)
+        BO2_ratio: 1.055, // +5.5%
+        BO1_ratio: 1.025, // +2.5%
+        LO1_ratio: 0.975, // -2.5%
+        LO2_ratio: 0.945, // -5.5%
+      }
+    };
+
+    const selectedThresholds = thresholds[networkType] || thresholds['230V_POLY'];
+    console.log(`[SRG2] Using thresholds for ${networkType}:`, selectedThresholds);
+    return selectedThresholds;
   }
   
   /**
    * Calculate regulation state and ratio based on voltage and thresholds
+   * CORRECTED: Use the ratios defined in thresholds structure
    */
   private calculateRegulation(voltage: number, thresholds: any): { state: string; ratio: number } {
+    console.log(`[SRG2] Calculating regulation for voltage ${voltage}V with thresholds:`, thresholds);
+    
     if (voltage <= thresholds.BO2_threshold) {
-      return { state: 'BO2', ratio: 1.075 }; // +7.5% boost
+      console.log(`[SRG2] Voltage ${voltage}V <= BO2_threshold ${thresholds.BO2_threshold}V → BO2 state`);
+      return { state: 'BO2', ratio: thresholds.BO2_ratio };
     } else if (voltage <= thresholds.BO1_threshold) {
-      return { state: 'BO1', ratio: 1.0375 }; // +3.75% boost
+      console.log(`[SRG2] Voltage ${voltage}V <= BO1_threshold ${thresholds.BO1_threshold}V → BO1 state`);
+      return { state: 'BO1', ratio: thresholds.BO1_ratio };
     } else if (voltage >= thresholds.LO2_threshold) {
-      return { state: 'LO2', ratio: 0.925 }; // -7.5% reduction
+      console.log(`[SRG2] Voltage ${voltage}V >= LO2_threshold ${thresholds.LO2_threshold}V → LO2 state`);
+      return { state: 'LO2', ratio: thresholds.LO2_ratio };
     } else if (voltage >= thresholds.LO1_threshold) {
-      return { state: 'LO1', ratio: 0.9625 }; // -3.75% reduction
+      console.log(`[SRG2] Voltage ${voltage}V >= LO1_threshold ${thresholds.LO1_threshold}V → LO1 state`);
+      return { state: 'LO1', ratio: thresholds.LO1_ratio };
     } else {
+      console.log(`[SRG2] Voltage ${voltage}V in normal range → BYP state`);
       return { state: 'BYP', ratio: 1.0 }; // Normal - no regulation
     }
   }

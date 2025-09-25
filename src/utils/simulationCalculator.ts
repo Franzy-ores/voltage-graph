@@ -59,9 +59,30 @@ export class SimulationCalculator extends ElectricalCalculator {
       console.log('⚡ Step 2: Applying SRG2 regulation...');
       
       const srg2NodeId = simulationEquipment.srg2.nodeId;
-      const targetNode = baselineResult.nodeMetricsPerPhase.find(n => n.nodeId === srg2NodeId);
       
-      if (!targetNode) {
+      // Get the original voltage from the correct metrics based on load model
+      let originalVoltage: number;
+      let nodeFound = false;
+      
+      if (project.loadModel === 'polyphase_equilibre') {
+        // For balanced polyphase, use nodeMetrics
+        const nodeMetric = baselineResult.nodeMetrics?.find(n => n.nodeId === srg2NodeId);
+        if (nodeMetric) {
+          originalVoltage = nodeMetric.V_phase_V;
+          nodeFound = true;
+          console.log(`🎯 SRG2 reading from balanced metrics: ${originalVoltage.toFixed(1)}V`);
+        }
+      } else {
+        // For unbalanced systems, use nodeMetricsPerPhase
+        const nodeMetric = baselineResult.nodeMetricsPerPhase?.find(n => n.nodeId === srg2NodeId);
+        if (nodeMetric) {
+          originalVoltage = nodeMetric.voltagesPerPhase?.A || 0;
+          nodeFound = true;
+          console.log(`🎯 SRG2 reading from per-phase metrics: ${originalVoltage.toFixed(1)}V`);
+        }
+      }
+      
+      if (!nodeFound) {
         console.error(`❌ SRG2 target node ${srg2NodeId} not found in baseline calculation`);
         srg2Result = {
           nodeId: srg2NodeId,
@@ -74,13 +95,11 @@ export class SimulationCalculator extends ElectricalCalculator {
           powerDownstream_kVA: 0
         };
       } else {
-        // Apply SRG2 regulation based on baseline voltages
-        const originalVoltage = targetNode.calculatedVoltagesPerPhase?.A || targetNode.voltagesPerPhase.A;
-        console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage.toFixed(1)}V`);
+        console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage!.toFixed(1)}V`);
         
         srg2Result = this.srg2Regulator.apply(
           simulationEquipment.srg2,
-          originalVoltage,
+          originalVoltage!,
           cleanProject,
           baselineResult
         );
