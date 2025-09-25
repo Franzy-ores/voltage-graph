@@ -1,5 +1,6 @@
 import { ElectricalCalculator } from './electricalCalculations';
 import { SRG2Regulator } from './SRG2Regulator';
+import { getSRG2ReferenceVoltage } from './voltageReference';
 import { Project, CalculationScenario, CalculationResult, VoltageRegulator, NeutralCompensator, CableUpgrade, SimulationResult, SimulationEquipment, Cable, CableType, Node, SRG2Config, SRG2Result, LoadModel } from '@/types/network';
 
 export class SimulationCalculator extends ElectricalCalculator {
@@ -61,57 +62,20 @@ export class SimulationCalculator extends ElectricalCalculator {
       
       const srg2NodeId = simulationEquipment.srg2.nodeId;
       
-      // Get the original voltage from the correct metrics based on load model
-      let originalVoltage: number;
-      let nodeFound = false;
+      // Use unified SRG2 voltage reference (always 230V phase-neutral)
+      const originalVoltage = getSRG2ReferenceVoltage(srg2NodeId, baselineResult, cleanProject);
       
-      if (project.loadModel === 'polyphase_equilibre') {
-        // For balanced polyphase, use nodeMetrics
-        const nodeMetric = baselineResult.nodeMetrics?.find(n => n.nodeId === srg2NodeId);
-        if (nodeMetric) {
-          originalVoltage = nodeMetric.V_phase_V;
-          nodeFound = true;
-          if (DEBUG) console.log(`🎯 SRG2 reading from balanced metrics: ${originalVoltage.toFixed(1)}V`);
-        }
-      } else {
-        // For unbalanced systems, use nodeMetricsPerPhase
-        const nodeMetric = baselineResult.nodeMetricsPerPhase?.find(n => n.nodeId === srg2NodeId);
-        if (nodeMetric) {
-          originalVoltage = nodeMetric.voltagesPerPhase?.A || 0;
-          nodeFound = true;
-          if (DEBUG) console.log(`🎯 SRG2 reading from per-phase metrics: ${originalVoltage.toFixed(1)}V`);
-        }
+      if (DEBUG) {
+        console.log(`🎯 SRG2 unified voltage reading for node ${srg2NodeId}: ${originalVoltage.toFixed(1)}V`);
+        console.log(`🎯 Network: ${cleanProject.voltageSystem}, Load Model: ${cleanProject.loadModel || 'polyphase_equilibre'}`);
       }
       
-      if (!nodeFound) {
-        console.error(`❌ SRG2 target node ${srg2NodeId} not found in baseline calculation`);
-        console.log(`🔍 Stratégie de repli: utilisation de la tension nominale du projet`);
-        
-        // Stratégie de repli: utiliser la tension nominale du projet
-        const fallbackVoltage = project.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
-        originalVoltage = fallbackVoltage;
-        
-        console.log(`⚠️ Tension de repli appliquée: ${fallbackVoltage}V pour le nœud ${srg2NodeId}`);
-        
-        srg2Result = this.srg2Regulator.apply(
-          simulationEquipment.srg2,
-          originalVoltage,
-          cleanProject,
-          baselineResult
-        );
-        
-        // Ajouter un message d'avertissement dans le résultat
-        srg2Result.errorMessage = `Le nœud ${srg2NodeId} n'était pas trouvé dans les métriques de base. Tension nominale utilisée.`;
-      } else {
-        if (DEBUG) console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage!.toFixed(1)}V`);
-        
-        srg2Result = this.srg2Regulator.apply(
-          simulationEquipment.srg2,
-          originalVoltage!,
-          cleanProject,
-          baselineResult
-        );
-      }
+      srg2Result = this.srg2Regulator.apply(
+        simulationEquipment.srg2,
+        originalVoltage,
+        cleanProject,
+        baselineResult
+      );
       
       // Propagation des tensions régulées si SRG2 est actif
       if (srg2Result.isActive) {

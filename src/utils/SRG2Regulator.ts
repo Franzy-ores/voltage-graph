@@ -16,7 +16,7 @@ export class SRG2Regulator {
     project: Project,
     baselineResult: CalculationResult
   ): SRG2Result {
-    const DEBUG = process.env.DEBUG_CALC === '1';
+    const DEBUG = typeof window !== 'undefined' && (window as any).DEBUG_CALC === '1';
     if (DEBUG) console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
     
     // Use external unified regulation calculation from voltageDisplay module

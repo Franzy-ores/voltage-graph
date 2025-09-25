@@ -1,4 +1,4 @@
-import { VoltageSystem, LoadModel } from '@/types/network';
+import { VoltageSystem, LoadModel, CalculationResult, Project } from '@/types/network';
 
 /**
  * Centralized voltage reference system
@@ -79,6 +79,74 @@ export function getDisplayVoltage(
 ): number {
   const ref = getNetworkVoltageReference(voltageSystem, loadModel);
   return ref.displayReference;
+}
+
+/**
+ * Get SRG2 reference voltage from calculation results
+ * SRG2 always works with phase-neutral voltage (230V), regardless of network type
+ */
+export function getSRG2ReferenceVoltage(
+  nodeId: string,
+  calculationResult: CalculationResult,
+  project: Project
+): number {
+  const voltageRef = getNetworkVoltageReference(project.voltageSystem, project.loadModel || 'polyphase_equilibre');
+  const srg2TargetVoltage = 230; // SRG2 always works with 230V phase-neutral
+  
+  // Try to read the actual calculated voltage first
+  let calculatedVoltage: number | null = null;
+  
+  if (project.loadModel === 'polyphase_equilibre') {
+    // For balanced polyphase, read from nodeMetrics
+    const nodeMetric = calculationResult.nodeMetrics?.find(n => n.nodeId === nodeId);
+    if (nodeMetric) {
+      calculatedVoltage = nodeMetric.V_phase_V;
+      
+      // Convert to phase-neutral if needed
+      if (project.voltageSystem === 'TRIPHASÉ_230V') {
+        // For 230V triphasé, V_phase_V is already line voltage (230V), convert to phase-neutral
+        calculatedVoltage = calculatedVoltage / Math.sqrt(3);
+      } else if (project.voltageSystem === 'TÉTRAPHASÉ_400V') {
+        // For 400V tétra, V_phase_V should already be phase-neutral (230V)
+        // No conversion needed
+      }
+    }
+  } else {
+    // For unbalanced systems, read from nodeMetricsPerPhase
+    const nodeMetric = calculationResult.nodeMetricsPerPhase?.find(n => n.nodeId === nodeId);
+    if (nodeMetric && nodeMetric.voltagesPerPhase) {
+      // Use phase A as reference
+      calculatedVoltage = nodeMetric.voltagesPerPhase.A;
+      
+      // Ensure it's phase-neutral voltage
+      if (project.voltageSystem === 'TRIPHASÉ_230V') {
+        // Phase A should already be phase-neutral, but verify it's around 133V
+        if (calculatedVoltage > 200) {
+          calculatedVoltage = calculatedVoltage / Math.sqrt(3);
+        }
+      }
+      // For TÉTRAPHASÉ_400V, phase voltages should already be phase-neutral (~230V)
+    }
+  }
+  
+  // If we have a calculated voltage, scale it to SRG2's 230V reference
+  if (calculatedVoltage !== null && isFinite(calculatedVoltage) && calculatedVoltage > 0) {
+    // Scale the voltage to SRG2's 230V reference
+    const expectedPhaseNeutral = voltageRef.phaseToNeutral;
+    const scaleFactor = srg2TargetVoltage / expectedPhaseNeutral;
+    const srg2Voltage = calculatedVoltage * scaleFactor;
+    
+    console.log(`🎯 SRG2 voltage conversion for node ${nodeId}:`);
+    console.log(`   - Raw calculated: ${calculatedVoltage.toFixed(1)}V`);
+    console.log(`   - Expected phase-neutral: ${expectedPhaseNeutral.toFixed(1)}V`);
+    console.log(`   - SRG2 reference: ${srg2Voltage.toFixed(1)}V`);
+    
+    return srg2Voltage;
+  }
+  
+  // Fallback: always use SRG2's 230V phase-neutral reference
+  console.log(`⚠️ SRG2 fallback: No calculated voltage found for node ${nodeId}, using 230V reference`);
+  return srg2TargetVoltage;
 }
 
 /**
