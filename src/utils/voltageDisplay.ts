@@ -129,3 +129,36 @@ export function getVoltageComplianceColor(voltage: number, project: Project): st
     return 'text-green-600'; // <5% deviation
   }
 }
+
+/**
+ * Get unified SRG2 voltage thresholds (all based on 230V reference)
+ */
+export function getSRG2VoltageThresholds() {
+  return {
+    BO2_max: 207,     // 230 * 0.90
+    BO1_max: 218.5,   // 230 * 0.95
+    BYP_min: 218.5,   // 230 * 0.95
+    BYP_max: 241.5,   // 230 * 1.05
+    LO1_min: 241.5,   // 230 * 1.05
+    LO2_min: 253      // 230 * 1.10
+  };
+}
+
+/**
+ * Calculate SRG2 regulation state and ratio
+ */
+export function calculateSRG2Regulation(voltage: number): { state: string; ratio: number } {
+  const thresholds = getSRG2VoltageThresholds();
+  
+  if (voltage <= thresholds.BO2_max) {
+    return { state: 'BO2', ratio: 1.10 };
+  } else if (voltage <= thresholds.BO1_max) {
+    return { state: 'BO1', ratio: 1.05 };
+  } else if (voltage >= thresholds.LO2_min) {
+    return { state: 'LO2', ratio: 0.90 };
+  } else if (voltage >= thresholds.LO1_min) {
+    return { state: 'LO1', ratio: 0.95 };
+  } else {
+    return { state: 'BYP', ratio: 1.00 };
+  }
+}
