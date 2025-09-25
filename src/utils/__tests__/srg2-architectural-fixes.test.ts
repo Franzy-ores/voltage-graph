@@ -50,16 +50,20 @@ const createTestProject = (loadModel: LoadModel = 'polyphase_equilibre'): Projec
   cables: [
     {
       id: 'cable1',
+      name: 'Cable 1',
       nodeAId: 'source',
       nodeBId: 'node1',
       typeId: 'test-cable',
+      pose: 'SOUTERRAIN',
       coordinates: []
     },
     {
       id: 'cable2',
+      name: 'Cable 2', 
       nodeAId: 'node1', 
       nodeBId: 'node2',
       typeId: 'test-cable',
+      pose: 'SOUTERRAIN',
       coordinates: []
     }
   ],
@@ -80,8 +84,15 @@ const createTestProject = (loadModel: LoadModel = 'polyphase_equilibre'): Projec
   transformerConfig: {
     nominalVoltage_V: 400,
     shortCircuitVoltage_percent: 4,
-    nominalPower_kVA: 250
-  }
+    nominalPower_kVA: 250,
+    rating: '250kVA',
+    cosPhi: 0.95
+  },
+  cosPhi: 0.95,
+  foisonnementCharges: 100,
+  foisonnementProductions: 100,
+  defaultChargeKVA: 10,
+  defaultProductionKVA: 5
 });
 
 describe('SRG2 Architectural Fixes', () => {
@@ -116,7 +127,9 @@ describe('SRG2 Architectural Fixes', () => {
         srg2: {
           nodeId: 'node1',
           enabled: false
-        }
+        },
+        neutralCompensators: [],
+        cableUpgrades: []
       };
       
       const resultWithoutSRG2 = calculator.calculateWithSimulation(
@@ -136,7 +149,9 @@ describe('SRG2 Architectural Fixes', () => {
         srg2: {
           nodeId: 'node1',
           enabled: true
-        }
+        },
+        neutralCompensators: [],
+        cableUpgrades: []
       };
       
       // Test balanced mode (polyphase_equilibre)
@@ -204,6 +219,7 @@ describe('SRG2 Architectural Fixes', () => {
       
       // Create a baseline result without nodeMetricsPerPhase
       const baselineResult = {
+        scenario: 'PRÉLÈVEMENT' as const,
         cables: [],
         totalLoads_kVA: 25,
         totalProductions_kVA: 0,
@@ -229,6 +245,7 @@ describe('SRG2 Architectural Fixes', () => {
       const calculator = new SimulationCalculator();
       
       const baselineResult = {
+        scenario: 'PRÉLÈVEMENT' as const,
         cables: [],
         totalLoads_kVA: 25,
         totalProductions_kVA: 0,
@@ -267,7 +284,9 @@ describe('SRG2 Architectural Fixes', () => {
         srg2: {
           nodeId: 'node1', // Middle node
           enabled: true
-        }
+        },
+        neutralCompensators: [],
+        cableUpgrades: []
       };
       
       const result = calculator.calculateWithSimulation(
@@ -309,8 +328,10 @@ describe('SRG2 Architectural Fixes', () => {
 
     it('should have consistent scenario runner execution', async () => {
       const project = createTestProject();
+      const calculator = new ElectricalCalculator();
       
       const results = executeAllScenarioCalculations(
+        calculator,
         project.nodes,
         project.cables,
         project.cableTypes,
@@ -318,7 +339,8 @@ describe('SRG2 Architectural Fixes', () => {
         100,
         project.transformerConfig,
         'polyphase_equilibre',
-        0
+        0,
+        undefined
       );
       
       expect(results.PRÉLÈVEMENT).toBeDefined();
@@ -375,6 +397,7 @@ describe('SRG2 Architectural Fixes', () => {
       const project = createTestProject();
       
       const baselineResult = {
+        scenario: 'PRÉLÈVEMENT' as const,
         cables: [],
         totalLoads_kVA: 25,
         totalProductions_kVA: 0,
