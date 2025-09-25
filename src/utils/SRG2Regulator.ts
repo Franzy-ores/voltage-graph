@@ -1,8 +1,9 @@
 import { SRG2Config, SRG2Result, Project, CalculationResult, Node, Cable, LoadModel } from '@/types/network';
+import { getSRG2VoltageThresholds, calculateSRG2Regulation } from './voltageDisplay';
 
 /**
- * SRG2 Voltage Regulator - Simplified and focused implementation
- * Handles voltage regulation based on measured node voltages
+ * SRG2 Voltage Regulator - Unified implementation with consistent voltage references
+ * Uses centralized voltage reference system for all network types
  */
 export class SRG2Regulator {
   
@@ -17,19 +18,15 @@ export class SRG2Regulator {
   ): SRG2Result {
     console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
     
-    // Determine network type from project configuration
-    const networkType = this.determineNetworkType(project);
-    const thresholds = this.getVoltageThresholds(networkType);
+    // Use unified regulation calculation
+    const { state, ratio } = calculateSRG2Regulation(originalVoltage);
     
-    console.log(`🔧 SRG2 Network Type: ${networkType}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
-    console.log(`🔧 SRG2 Thresholds:`, thresholds);
+    console.log(`🔧 SRG2 Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
+    console.log(`🔧 SRG2 Unified thresholds used for regulation`);
     
-    // Determine regulation state based on voltage
-    const { state, ratio } = this.calculateRegulation(originalVoltage, thresholds);
-    
-    // Calculate regulated voltages per phase based on network type and load model
+    // Calculate regulated voltages per phase
     const { regulatedVoltages, phaseRatios } = this.calculateRegulatedVoltages(
-      originalVoltage, ratio, networkType, project.loadModel || 'polyphase_equilibre'
+      originalVoltage, ratio, 'UNIFIED_230V', project.loadModel || 'polyphase_equilibre'
     );
     
     const isActive = state !== 'BYP' && ratio !== 1.0;
@@ -50,7 +47,7 @@ export class SRG2Regulator {
       diversifiedLoad_kVA: this.calculateDiversifiedLoad(config.nodeId, project, baselineResult),
       diversifiedProduction_kVA: this.calculateDiversifiedProduction(config.nodeId, project, baselineResult),
       netPower_kVA: this.calculateNetPower(config.nodeId, project, baselineResult),
-      networkType
+      networkType: 'UNIFIED_230V'
     };
   }
   

@@ -24,7 +24,7 @@ import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { SimulationCalculator } from '@/utils/simulationCalculator';
 import { calculatorManager } from '@/utils/calculatorSingleton';
 import { nodeUtilities } from '@/utils/nodeUtilities';
-import { executeAllScenarioCalculations } from '@/utils/scenarioRunner';
+import { executeAllScenarioCalculations, executeAllScenariosWithForcedMode } from '@/utils/scenarioRunner';
 import { toast } from 'sonner';
 
 // Fonction helper commune pour préparer les nœuds avec tension HT réaliste
@@ -832,57 +832,17 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Appliquer la renumérotation
     renumberCables();
 
+    // Use centralized calculation logic with proper FORCÉ handling
     const calculator = calculatorManager.getElectricalCalculator(currentProject.cosPhi);
+    const simulationCalculator = calculatorManager.getSimulationCalculator(currentProject.cosPhi);
     const modifiedNodes = nodeUtilities.prepareNodesWithHT(currentProject, calculator);
     
-    const standardResults = executeAllScenarioCalculations(
+    const results = executeAllScenariosWithForcedMode(
+      currentProject,
       calculator,
-      modifiedNodes,
-      currentProject.cables,
-      currentProject.cableTypes,
-      currentProject.foisonnementCharges,
-      currentProject.foisonnementProductions,
-      currentProject.transformerConfig,
-      currentProject.loadModel ?? 'polyphase_equilibre',
-      currentProject.desequilibrePourcent ?? 0,
-      currentProject.manualPhaseDistribution
+      simulationCalculator,
+      modifiedNodes
     );
-    
-    const results = {
-      ...standardResults,
-      FORCÉ: (() => {
-        // Pour le mode FORCÉ, utiliser la simulation avec convergence
-        if (currentProject.forcedModeConfig) {
-          try {
-            const simCalculator = calculatorManager.getSimulationCalculator(currentProject.cosPhi);
-            const simResult = simCalculator.calculateWithSimulation(
-              currentProject,
-              'FORCÉ',
-              { srg2: null, neutralCompensators: [], cableUpgrades: [] }
-            );
-            return simResult.baselineResult || simResult;
-          } catch (error) {
-            console.error('Erreur simulation mode FORCÉ:', error);
-            // Fallback vers calcul standard avec nœuds HT
-            const fallbackNodes = prepareNodesWithHT(currentProject, calculator);
-            return calculator.calculateScenario(
-              fallbackNodes, currentProject.cables, currentProject.cableTypes, 'FORCÉ',
-              currentProject.foisonnementCharges, currentProject.foisonnementProductions,
-              currentProject.transformerConfig, currentProject.loadModel ?? 'polyphase_equilibre',
-              currentProject.desequilibrePourcent ?? 0, currentProject.manualPhaseDistribution, false
-            );
-          }
-        } else {
-          const forcedNodes = prepareNodesWithHT(currentProject, calculator);
-          return calculator.calculateScenario(
-            forcedNodes, currentProject.cables, currentProject.cableTypes, 'FORCÉ',
-            currentProject.foisonnementCharges, currentProject.foisonnementProductions,
-            currentProject.transformerConfig, currentProject.loadModel ?? 'polyphase_equilibre',
-            currentProject.desequilibrePourcent ?? 0, currentProject.manualPhaseDistribution, false
-          );
-        }
-      })()
-    };
 
     set({ calculationResults: results });
   },

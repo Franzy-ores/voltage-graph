@@ -1,65 +1,17 @@
 import React from 'react';
-import { useNetworkStore } from "@/store/networkStore";
+import { UnifiedVoltageDisplay } from './UnifiedVoltageDisplay';
 
 interface NodePhaseDisplayProps {
   nodeId: string;
 }
 
 export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
-  const { calculationResults, simulationResults, selectedScenario, currentProject, simulationEquipment, simulationMode } = useNetworkStore();
-  
-  if (!currentProject || currentProject.loadModel !== 'monophase_reparti') {
-    return null;
-  }
-
-  // Utiliser les résultats de simulation si du matériel de simulation est actif ET en mode simulation
-  const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
-                              simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
-  
-  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
-  
-  console.log('🐛 NodePhaseDisplay logic:', {
-    simulationMode,
-    activeEquipmentCount,
-    usingSimulation: simulationMode && activeEquipmentCount > 0,
-    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'simulation' : 'calculation'
-  });
-  
-  if (!resultsToUse[selectedScenario]?.nodeMetricsPerPhase) {
-    return null;
-  }
-
-  const nodeMetrics = resultsToUse[selectedScenario]!.nodeMetricsPerPhase!
-    .find(nm => nm.nodeId === nodeId);
-    
-  if (!nodeMetrics) {
-    return null;
-  }
-
-  // Use calculatedVoltagesPerPhase if available (from SRG2 regulation), otherwise use voltagesPerPhase
-  const voltages = nodeMetrics.calculatedVoltagesPerPhase || nodeMetrics.voltagesPerPhase;
-  const { voltageDropsPerPhase } = nodeMetrics;
-
   return (
-    <div className="text-xs bg-background/90 border rounded px-2 py-1 space-y-1">
-      <div className="font-medium text-foreground">Tensions par phase:</div>
-      <div className="grid grid-cols-3 gap-2 text-xs">
-        <div className="text-center">
-          <div className="font-medium text-blue-600">Phase A</div>
-          <div>{voltages.A.toFixed(1)}V</div>
-          <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.A.toFixed(1)}V</div>
-        </div>
-        <div className="text-center">
-          <div className="font-medium text-green-600">Phase B</div>
-          <div>{voltages.B.toFixed(1)}V</div>
-          <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.B.toFixed(1)}V</div>
-        </div>
-        <div className="text-center">
-          <div className="font-medium text-red-600">Phase C</div>
-          <div>{voltages.C.toFixed(1)}V</div>
-          <div className="text-muted-foreground">ΔU: {voltageDropsPerPhase.C.toFixed(1)}V</div>
-        </div>
-      </div>
-    </div>
+    <UnifiedVoltageDisplay
+      nodeId={nodeId}
+      displayType="phases"
+      showRegulationIndicator={true}
+      showComplianceColor={true}
+    />
   );
 };
