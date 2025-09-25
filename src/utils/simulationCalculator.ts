@@ -18,7 +18,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     simulationEquipment: SimulationEquipment,
     forcedModeConfig?: any
   ): SimulationResult {
-    console.log('🚀 Starting SIMPLIFIED SRG2 simulation...');
+    const DEBUG = process.env.DEBUG_CALC === '1';
+    if (DEBUG) console.log('🚀 Starting SIMPLIFIED SRG2 simulation...');
     
     // Clean all equipment-related properties from nodes
     const cleanProject: Project = {
@@ -34,7 +35,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       }))
     };
     
-    console.log('📊 Step 1: Computing baseline electrical network...');
+    if (DEBUG) console.log('📊 Step 1: Computing baseline electrical network...');
     
     // STEP 1: Pure electrical calculation without any equipment
     const baselineResult = this.calculateScenario(
@@ -49,14 +50,14 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.desequilibrePourcent || 0,
       project.manualPhaseDistribution
     );
-    console.log('✅ Baseline calculation completed');
+    if (DEBUG) console.log('✅ Baseline calculation completed');
     
     // STEP 2: Apply SRG2 regulation if configured
     let srg2Result: SRG2Result | undefined;
     let regulatedProject = cleanProject;
     
     if (simulationEquipment.srg2 && simulationEquipment.srg2.enabled) {
-      console.log('⚡ Step 2: Applying SRG2 regulation...');
+      if (DEBUG) console.log('⚡ Step 2: Applying SRG2 regulation...');
       
       const srg2NodeId = simulationEquipment.srg2.nodeId;
       
@@ -70,7 +71,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         if (nodeMetric) {
           originalVoltage = nodeMetric.V_phase_V;
           nodeFound = true;
-          console.log(`🎯 SRG2 reading from balanced metrics: ${originalVoltage.toFixed(1)}V`);
+          if (DEBUG) console.log(`🎯 SRG2 reading from balanced metrics: ${originalVoltage.toFixed(1)}V`);
         }
       } else {
         // For unbalanced systems, use nodeMetricsPerPhase
@@ -78,7 +79,7 @@ export class SimulationCalculator extends ElectricalCalculator {
         if (nodeMetric) {
           originalVoltage = nodeMetric.voltagesPerPhase?.A || 0;
           nodeFound = true;
-          console.log(`🎯 SRG2 reading from per-phase metrics: ${originalVoltage.toFixed(1)}V`);
+          if (DEBUG) console.log(`🎯 SRG2 reading from per-phase metrics: ${originalVoltage.toFixed(1)}V`);
         }
       }
       
@@ -95,7 +96,7 @@ export class SimulationCalculator extends ElectricalCalculator {
           powerDownstream_kVA: 0
         };
       } else {
-        console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage!.toFixed(1)}V`);
+        if (DEBUG) console.log(`🎯 SRG2 node ${srg2NodeId} original voltage: ${originalVoltage!.toFixed(1)}V`);
         
         srg2Result = this.srg2Regulator.apply(
           simulationEquipment.srg2,
@@ -122,21 +123,13 @@ export class SimulationCalculator extends ElectricalCalculator {
             })
           };
           
-          // Propagate voltage changes to downstream nodes
-          this.srg2Regulator.propagateVoltageToChildren(
-            srg2NodeId, 
-            regulatedProject.nodes, 
-            regulatedProject.cables, 
-            srg2Result.ratio
-          );
-          
-          console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
+          if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
         }
       }
     }
     
     // STEP 3: Final calculation with equipment applied
-    console.log('🔄 Step 3: Final calculation with equipment...');
+    if (DEBUG) console.log('🔄 Step 3: Final calculation with equipment...');
     const finalResult = regulatedProject === cleanProject ? 
       baselineResult : 
       this.calculateScenario(
@@ -152,31 +145,54 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.manualPhaseDistribution
       );
     
-    // Inject SRG2 regulated voltages into final result if SRG2 was applied
-    if (srg2Result?.isActive && finalResult.nodeMetricsPerPhase) {
-      finalResult.nodeMetricsPerPhase = finalResult.nodeMetricsPerPhase.map(nodeMetric => {
-        if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
-          return {
-            ...nodeMetric,
-            calculatedVoltagesPerPhase: srg2Result.regulatedVoltages
-          };
-        }
-        return nodeMetric;
-      });
+    // T2: Universal SRG2 injection for both balanced and unbalanced modes
+    if (srg2Result?.isActive) {
+      // Inject for unbalanced mode (per-phase metrics)
+      if (finalResult.nodeMetricsPerPhase) {
+        finalResult.nodeMetricsPerPhase = finalResult.nodeMetricsPerPhase.map(nodeMetric => {
+          if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
+            return {
+              ...nodeMetric,
+              calculatedVoltagesPerPhase: srg2Result.regulatedVoltages
+            };
+          }
+          return nodeMetric;
+        });
+        
+        if (DEBUG) console.log(`🔧 SRG2 voltages injected into nodeMetricsPerPhase for node ${srg2Result.nodeId}:`, srg2Result.regulatedVoltages);
+      }
       
-      console.log(`🔧 SRG2 voltages injected into final result for node ${srg2Result.nodeId}:`, srg2Result.regulatedVoltages);
+      // Inject for balanced mode (single voltage metrics)
+      if (finalResult.nodeMetrics) {
+        finalResult.nodeMetrics = finalResult.nodeMetrics.map(nodeMetric => {
+          if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
+            return {
+              ...nodeMetric,
+              V_phase_V: srg2Result.regulatedVoltage
+            };
+          }
+          return nodeMetric;
+        });
+        
+        if (DEBUG) console.log(`🔧 SRG2 voltage injected into nodeMetrics for node ${srg2Result.nodeId}: ${srg2Result.regulatedVoltage}V`);
+      }
     }
     
-    console.log('✅ Simulation completed successfully');
+    if (DEBUG) console.log('✅ Simulation completed successfully');
+    
+    // T1: Return final results when SRG2 active, baseline otherwise
+    const useFinal = !!(srg2Result?.isActive && regulatedProject !== cleanProject);
+    const resultMetrics = useFinal ? finalResult : baselineResult;
     
     return {
       scenario,
-      cables: baselineResult.cables,
-      totalLoads_kVA: baselineResult.totalLoads_kVA,
-      totalProductions_kVA: baselineResult.totalProductions_kVA,
-      globalLosses_kW: baselineResult.globalLosses_kW,
-      maxVoltageDropPercent: baselineResult.maxVoltageDropPercent,
-      compliance: baselineResult.compliance,
+      cables: resultMetrics.cables,
+      totalLoads_kVA: resultMetrics.totalLoads_kVA,
+      totalProductions_kVA: resultMetrics.totalProductions_kVA,
+      globalLosses_kW: resultMetrics.globalLosses_kW,
+      maxVoltageDropPercent: resultMetrics.maxVoltageDropPercent,
+      compliance: resultMetrics.compliance,
+      nodeMetrics: finalResult.nodeMetrics,
       nodeMetricsPerPhase: finalResult.nodeMetricsPerPhase,
       baselineResult,
       srg2Result,
@@ -208,39 +224,53 @@ export class SimulationCalculator extends ElectricalCalculator {
   ): CableUpgrade[] {
     const upgrades: CableUpgrade[] = [];
     
-    // Find nodes with significant voltage drops
-    baselineResult.nodeMetricsPerPhase.forEach(nodeMetric => {
+    // T5: Robust null check and percentage calculation
+    const metrics = baselineResult.nodeMetricsPerPhase ?? [];
+    if (metrics.length === 0) {
+      console.warn('⚠️ No nodeMetricsPerPhase available for cable reinforcement analysis');
+      return [];
+    }
+    
+    // Find source node for voltage reference
+    const sourceNode = project.nodes.find(n => n.isSource);
+    
+    metrics.forEach(nodeMetric => {
       const maxDrop = Math.max(
         Math.abs(nodeMetric.voltageDropsPerPhase.A),
         Math.abs(nodeMetric.voltageDropsPerPhase.B),
         Math.abs(nodeMetric.voltageDropsPerPhase.C)
       );
       
+      // Determine reference voltage for this node
+      const node = project.nodes.find(n => n.id === nodeMetric.nodeId);
+      const Uref = sourceNode?.tensionCible ?? 
+                   (project.voltageSystem === 'TRIPHASÉ_230V' ? 230 : 400);
+      
+      // Calculate percentage drop relative to node's reference voltage
+      const maxDropPct = (maxDrop / Uref) * 100;
+      
       // Suggest upgrade if voltage drop > 5%
-      if (maxDrop > 0.05 * 230) { // 5% of 230V
-        const node = project.nodes.find(n => n.id === nodeMetric.nodeId);
-        if (node && !node.isSource) {
-          upgrades.push({
-            originalCableId: `cable-to-${nodeMetric.nodeId}`,
-            newCableTypeId: 'upgrade-25mm2',
-            reason: 'voltage_drop' as const,
-            before: {
-              voltageDropPercent: (maxDrop / 230) * 100,
-              current_A: 50, // Estimate
-              losses_kW: 1.0 // Estimate
-            },
-            after: {
-              voltageDropPercent: (maxDrop * 0.6 / 230) * 100,
-              current_A: 50,
-              losses_kW: 0.6
-            },
-            improvement: {
-              voltageDropReduction: 40, // 40% improvement estimate
-              lossReduction_kW: 0.4,
-              lossReductionPercent: 40
-            }
-          });
-        }
+      if (maxDropPct > 5 && node && !node.isSource) {
+        upgrades.push({
+          originalCableId: `cable-to-${nodeMetric.nodeId}`,
+          newCableTypeId: 'upgrade-25mm2',
+          reason: 'voltage_drop' as const,
+          before: {
+            voltageDropPercent: maxDropPct,
+            current_A: 50, // Estimate
+            losses_kW: 1.0 // Estimate
+          },
+          after: {
+            voltageDropPercent: maxDropPct * 0.6, // 40% improvement
+            current_A: 50,
+            losses_kW: 0.6
+          },
+          improvement: {
+            voltageDropReduction: 40, // 40% improvement estimate
+            lossReduction_kW: 0.4,
+            lossReductionPercent: 40
+          }
+        });
       }
     });
     
@@ -281,7 +311,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Apply neutral compensation (placeholder implementation)
+   * T9: Delegate neutral compensation to ElectricalCalculator for consistency
    */
   applyNeutralCompensation(
     nodes: Node[],
@@ -290,8 +320,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     baseResult: CalculationResult,
     cableTypes: CableType[]
   ): CalculationResult {
-    console.log(`🔧 Applying ${compensators.length} neutral compensators`);
-    return baseResult; // Placeholder - implement actual compensation logic
+    console.log(`🔧 Delegating ${compensators.length} neutral compensators to ElectricalCalculator`);
+    return super.applyNeutralCompensation(nodes, cables, compensators, baseResult, cableTypes);
   }
 
   /**

@@ -304,7 +304,6 @@ export class ElectricalCalculator {
   // Les calculs transfo sont désormais exclusivement phasoriels via Ztr_phase et I_source_net.
 
 
-  // Calcul du jeu de barres virtuel (phasors) avec analyse par départ
   private calculateVirtualBusbar(
     transformerConfig: TransformerConfig,
     totalLoads_kVA: number,
@@ -316,6 +315,7 @@ export class ElectricalCalculator {
     I_source_net: Complex,
     Ztr_phase: Complex | null,
     cableIndexByPair: Map<string, Cable>,
+    nodeById: Map<string, Node>, // T4: Add nodeById parameter for correct connectionType lookup
     I_source_net_phases?: { A: Complex; B: Complex; C: Complex } // Pour I_N en mode déséquilibré
   ): VirtualBusbar {
     const { U_base: U_nom_source, isThreePhase: isSourceThree } = this.getVoltage(source.connectionType);
@@ -388,10 +388,9 @@ export class ElectricalCalculator {
       for (const nid of subtreeNodes) {
         const nV = V_node.get(nid);
         if (!nV) continue;
-        // Conversion ligne/phase basée sur le type de connexion (fallback: type de la source)
-        const nodeConnType: ConnectionType = nid === source.id
-          ? source.connectionType
-          : source.connectionType;
+        // T4: Use correct connectionType per node, not source's type
+        const node = nodeById.get(nid);
+        const nodeConnType: ConnectionType = node?.connectionType ?? source.connectionType;
         const isThree = this.getVoltage(nodeConnType).isThreePhase;
         const scaleLine = this.getDisplayLineScale(nodeConnType);
         const U_node_line = abs(nV) * scaleLine;
@@ -640,8 +639,7 @@ export class ElectricalCalculator {
       project.transformerConfig,
       project.loadModel ?? 'polyphase_equilibre',
       project.desequilibrePourcent ?? 0,
-      undefined, // manualPhaseDistribution
-      true // skipSRG2Integration
+      undefined // manualPhaseDistribution
     );
 
     console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
@@ -891,8 +889,7 @@ export class ElectricalCalculator {
     transformerConfig?: TransformerConfig,
     loadModel: LoadModel = 'polyphase_equilibre',
     desequilibrePourcent: number = 0,
-    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} },
-    skipSRG2Integration: boolean = false
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
   ): CalculationResult {
     // Ancien système SRG2 supprimé - validation simplifiée
     if (!nodes?.length) throw new Error('Aucun nœud fourni');
@@ -1577,6 +1574,7 @@ export class ElectricalCalculator {
           I_source_net_A,
           Ztr_phase,
           cableIndexByPair,
+          nodeById,
           { A: I_source_net_A, B: I_source_net_B, C: I_source_net_C }
         );
       }
@@ -1973,7 +1971,8 @@ export class ElectricalCalculator {
         V_node,
         I_source_net_final,
         Ztr_phase,
-        cableIndexByPair
+        cableIndexByPair,
+        nodeById
       );
 
       console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);

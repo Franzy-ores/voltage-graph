@@ -945,7 +945,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         testNodes, tempProject.cables, tempProject.cableTypes, selectedScenario,
         testFoisonnement, 0, tempProject.transformerConfig,
         tempProject.loadModel ?? 'polyphase_equilibre',
-        tempProject.desequilibrePourcent ?? 0, tempProject.manualPhaseDistribution, false
+        tempProject.desequilibrePourcent ?? 0, tempProject.manualPhaseDistribution
       );
 
       const nodeData = result.nodeVoltageDrops?.find(n => n.nodeId === nodeId);

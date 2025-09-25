@@ -131,8 +131,7 @@ describe('SRG2 Unified System Validation', () => {
       testProject.transformerConfig,
       'polyphase_equilibre',
       0,
-      undefined,
-      false // skipSRG2Integration = false pour tester
+      undefined
     );
 
     // Verify calculation completed
@@ -191,8 +190,7 @@ describe('SRG2 Unified System Validation', () => {
       testProject.transformerConfig,
       'polyphase_equilibre',
       0,
-      undefined,
-      false // skipSRG2Integration = false to enable SRG2
+      undefined
     );
 
     // Should complete without errors

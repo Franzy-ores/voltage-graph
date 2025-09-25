@@ -23,22 +23,22 @@ export function executeAllScenarioCalculations(
     PRÉLÈVEMENT: calculator.calculateScenario(
       modifiedNodes, cables, cableTypes, 'PRÉLÈVEMENT',
       foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution, false
+      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution
     ),
     MIXTE: calculator.calculateScenario(
       modifiedNodes, cables, cableTypes, 'MIXTE', 
       foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution, false
+      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution
     ),
     PRODUCTION: calculator.calculateScenario(
       modifiedNodes, cables, cableTypes, 'PRODUCTION',
       foisonnementCharges, foisonnementProductions, 
-      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution, false
+      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution
     ),
     FORCÉ: calculator.calculateScenario(
       modifiedNodes, cables, cableTypes, 'FORCÉ',
       foisonnementCharges, foisonnementProductions,
-      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution, false
+      transformerConfig, loadModel, desequilibrePourcent, manualPhaseDistribution
     )
   };
 }

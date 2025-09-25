@@ -16,23 +16,28 @@ export class SRG2Regulator {
     project: Project,
     baselineResult: CalculationResult
   ): SRG2Result {
-    console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
+    const DEBUG = process.env.DEBUG_CALC === '1';
+    if (DEBUG) console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
     
-    // Use unified regulation calculation
+    // Use external unified regulation calculation from voltageDisplay module
     const { state, ratio } = calculateSRG2Regulation(originalVoltage);
     
-    console.log(`🔧 SRG2 Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
-    console.log(`🔧 SRG2 Unified thresholds used for regulation`);
+    if (DEBUG) {
+      console.log(`🔧 SRG2 regulation calculated via external voltageDisplay module`);
+      console.log(`🔧 SRG2 Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
+    }
     
     // Calculate regulated voltages per phase
     const { regulatedVoltages, phaseRatios } = this.calculateRegulatedVoltages(
-      originalVoltage, ratio, 'UNIFIED_230V', project.loadModel || 'polyphase_equilibre'
+      originalVoltage, ratio, project.loadModel || 'polyphase_equilibre'
     );
     
     const isActive = state !== 'BYP' && ratio !== 1.0;
     
-    console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
-    console.log(`📊 SRG2 Regulated Voltages: A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`);
+    if (DEBUG) {
+      console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
+      console.log(`📊 SRG2 Regulated Voltages: A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`);
+    }
     
     return {
       nodeId: config.nodeId,
@@ -51,94 +56,7 @@ export class SRG2Regulator {
     };
   }
   
-  /**
-   * Get voltage thresholds for different network types
-   * CORRECTED: All 400V systems use ~230V phase-neutral reference voltage
-   */
-  private getVoltageThresholds(networkType: string) {
-    console.log(`[SRG2] Getting thresholds for network type: ${networkType}`);
-    
-    const thresholds = {
-      '230V_MONO': {
-        BO2_threshold: 218.5, // 95% of 230V
-        BO1_threshold: 224.25, // 97.5% of 230V
-        BYP_low: 224.25, // 97.5% of 230V
-        BYP_high: 235.75, // 102.5% of 230V
-        LO1_threshold: 235.75, // 102.5% of 230V
-        LO2_threshold: 241.5, // 105% of 230V
-        BO2_ratio: 1.055, // +5.5%
-        BO1_ratio: 1.025, // +2.5%
-        LO1_ratio: 0.975, // -2.5%
-        LO2_ratio: 0.945, // -5.5%
-      },
-      '230V_POLY': {
-        BO2_threshold: 218.5, // 95% of 230V
-        BO1_threshold: 224.25, // 97.5% of 230V
-        BYP_low: 224.25, // 97.5% of 230V
-        BYP_high: 235.75, // 102.5% of 230V
-        LO1_threshold: 235.75, // 102.5% of 230V
-        LO2_threshold: 241.5, // 105% of 230V
-        BO2_ratio: 1.055, // +5.5%
-        BO1_ratio: 1.025, // +2.5%
-        LO1_ratio: 0.975, // -2.5%
-        LO2_ratio: 0.945, // -5.5%
-      },
-      // CORRECTED: 400V systems use ~230V phase-neutral reference, not 400V
-      '400V_MONO': {
-        BO2_threshold: 218.5, // 95% of 230V (phase-neutral)
-        BO1_threshold: 224.25, // 97.5% of 230V (phase-neutral)
-        BYP_low: 224.25, // 97.5% of 230V (phase-neutral)
-        BYP_high: 235.75, // 102.5% of 230V (phase-neutral)
-        LO1_threshold: 235.75, // 102.5% of 230V (phase-neutral)
-        LO2_threshold: 241.5, // 105% of 230V (phase-neutral)
-        BO2_ratio: 1.055, // +5.5%
-        BO1_ratio: 1.025, // +2.5%
-        LO1_ratio: 0.975, // -2.5%
-        LO2_ratio: 0.945, // -5.5%
-      },
-      '400V_POLY': {
-        BO2_threshold: 218.5, // 95% of 230V (phase-neutral)
-        BO1_threshold: 224.25, // 97.5% of 230V (phase-neutral)
-        BYP_low: 224.25, // 97.5% of 230V (phase-neutral)
-        BYP_high: 235.75, // 102.5% of 230V (phase-neutral)
-        LO1_threshold: 235.75, // 102.5% of 230V (phase-neutral)
-        LO2_threshold: 241.5, // 105% of 230V (phase-neutral)
-        BO2_ratio: 1.055, // +5.5%
-        BO1_ratio: 1.025, // +2.5%
-        LO1_ratio: 0.975, // -2.5%
-        LO2_ratio: 0.945, // -5.5%
-      }
-    };
-
-    const selectedThresholds = thresholds[networkType] || thresholds['230V_POLY'];
-    console.log(`[SRG2] Using thresholds for ${networkType}:`, selectedThresholds);
-    return selectedThresholds;
-  }
-  
-  /**
-   * Calculate regulation state and ratio based on voltage and thresholds
-   * CORRECTED: Use the ratios defined in thresholds structure
-   */
-  private calculateRegulation(voltage: number, thresholds: any): { state: string; ratio: number } {
-    console.log(`[SRG2] Calculating regulation for voltage ${voltage}V with thresholds:`, thresholds);
-    
-    if (voltage <= thresholds.BO2_threshold) {
-      console.log(`[SRG2] Voltage ${voltage}V <= BO2_threshold ${thresholds.BO2_threshold}V → BO2 state`);
-      return { state: 'BO2', ratio: thresholds.BO2_ratio };
-    } else if (voltage <= thresholds.BO1_threshold) {
-      console.log(`[SRG2] Voltage ${voltage}V <= BO1_threshold ${thresholds.BO1_threshold}V → BO1 state`);
-      return { state: 'BO1', ratio: thresholds.BO1_ratio };
-    } else if (voltage >= thresholds.LO2_threshold) {
-      console.log(`[SRG2] Voltage ${voltage}V >= LO2_threshold ${thresholds.LO2_threshold}V → LO2 state`);
-      return { state: 'LO2', ratio: thresholds.LO2_ratio };
-    } else if (voltage >= thresholds.LO1_threshold) {
-      console.log(`[SRG2] Voltage ${voltage}V >= LO1_threshold ${thresholds.LO1_threshold}V → LO1 state`);
-      return { state: 'LO1', ratio: thresholds.LO1_ratio };
-    } else {
-      console.log(`[SRG2] Voltage ${voltage}V in normal range → BYP state`);
-      return { state: 'BYP', ratio: 1.0 }; // Normal - no regulation
-    }
-  }
+  // T6: Dead code methods removed - regulation logic now handled by voltageDisplay module
   
   /**
    * Get descendants of a node in the network
@@ -170,30 +88,14 @@ export class SRG2Regulator {
     return descendants;
   }
 
-  /**
-   * Determine network type from project configuration
-   */
-  private determineNetworkType(project: Project): string {
-    const voltageSystem = project.voltageSystem;
-    const loadModel = project.loadModel || 'polyphase_equilibre';
-    
-    if (voltageSystem === 'TRIPHASÉ_230V') {
-      return loadModel === 'monophase_reparti' ? '230V_MONO' : '230V_POLY';
-    } else if (voltageSystem === 'TÉTRAPHASÉ_400V') {
-      return loadModel === 'monophase_reparti' ? '400V_MONO' : '400V_POLY';
-    }
-    
-    // Default fallback
-    return '400V_POLY';
-  }
+  // T6: determineNetworkType method removed - no longer needed with unified system
 
   /**
-   * Calculate regulated voltages per phase based on network type
+   * Calculate regulated voltages per phase - simplified signature after dead code removal
    */
   private calculateRegulatedVoltages(
     originalVoltage: number, 
     ratio: number, 
-    networkType: string, 
     loadModel: LoadModel
   ): { regulatedVoltages: { A: number; B: number; C: number }; phaseRatios: { A: number; B: number; C: number } } {
     
