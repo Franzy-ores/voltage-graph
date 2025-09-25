@@ -18,7 +18,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     simulationEquipment: SimulationEquipment,
     forcedModeConfig?: any
   ): SimulationResult {
-    const DEBUG = process.env.DEBUG_CALC === '1';
+    const DEBUG = typeof window !== 'undefined' && (window as any).DEBUG_CALC === '1';
     if (DEBUG) console.log('🚀 Starting SIMPLIFIED SRG2 simulation...');
     
     // Clean all equipment-related properties from nodes

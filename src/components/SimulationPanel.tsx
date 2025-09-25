@@ -230,11 +230,16 @@ export const SimulationPanel = () => {
                 
                 {/* Afficher les tensions calculées si disponibles */}
                 {(() => {
-                  const nodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  // Check both simulation and calculation results for voltage data
+                  const simNodeMetric = currentResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  const baseNodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  const nodeMetric = simNodeMetric || baseNodeMetric;
+                  const dataSource = simNodeMetric ? 'simulation' : 'calcul de base';
+                  
                   return nodeMetric && (
                   <div className="p-3 bg-blue-50 rounded-md border">
                     <Label className="text-xs font-medium text-blue-700 mb-2 block">
-                      Tensions calculées au nœud (avant correction SRG2)
+                      Tensions calculées au nœud ({dataSource})
                     </Label>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="text-center">
@@ -262,8 +267,12 @@ export const SimulationPanel = () => {
                 
                 {/* Message si pas de données de tension disponibles */}
                 {(() => {
-                  const nodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
-                  return !nodeMetric && (
+                  // Check both simulation and calculation results
+                  const simNodeMetric = currentResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  const baseNodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
+                  const hasVoltageData = simNodeMetric || baseNodeMetric;
+                  
+                  return !hasVoltageData && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                     <div className="flex items-center gap-2 text-yellow-700 text-sm font-medium mb-1">
                       <AlertTriangle className="h-4 w-4" />

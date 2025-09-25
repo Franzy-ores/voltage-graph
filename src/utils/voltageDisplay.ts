@@ -32,21 +32,32 @@ export function getNodeVoltageInfo(
                               simulationEquipment.neutralCompensators.filter((c: any) => c.enabled).length;
   
   const useSimulation = simulationMode && activeEquipmentCount > 0;
-  const resultsToUse = useSimulation ? simulationResults : calculationResults;
-  const sourceType = useSimulation ? 'simulation' : 'calculation';
   
   console.log('🔍 Voltage Info Logic:', {
     nodeId,
     simulationMode,
     activeEquipmentCount,
     useSimulation,
-    sourceType,
     selectedScenario,
-    hasResults: !!resultsToUse[selectedScenario]
+    hasSimulationResults: !!simulationResults[selectedScenario],
+    hasCalculationResults: !!calculationResults[selectedScenario]
   });
   
-  const result = resultsToUse[selectedScenario];
+  // Try simulation results first if we should use them
+  let result = null;
+  let sourceType: 'simulation' | 'calculation' | 'fallback' = 'fallback';
+  
+  if (useSimulation && simulationResults[selectedScenario]) {
+    result = simulationResults[selectedScenario];
+    sourceType = 'simulation';
+  } else if (calculationResults[selectedScenario]) {
+    // Fallback to calculation results
+    result = calculationResults[selectedScenario];
+    sourceType = 'calculation';
+  }
+  
   if (!result) {
+    console.log('🔍 No results found, using fallback voltage for:', nodeId);
     return getFallbackVoltage(nodeId, project);
   }
   
