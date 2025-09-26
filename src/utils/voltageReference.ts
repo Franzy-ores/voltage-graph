@@ -104,8 +104,8 @@ export function getSRG2ReferenceVoltage(
       
       // Convert to phase-neutral if needed
       if (project.voltageSystem === 'TRIPHASÉ_230V') {
-        // For 230V triphasé, V_phase_V is already phase-neutral voltage (no conversion needed)
-        // No conversion needed - calculatedVoltage is already the phase-neutral value
+        // For 230V triphasé, V_phase_V is already line voltage (230V), convert to phase-neutral
+        calculatedVoltage = calculatedVoltage / Math.sqrt(3);
       } else if (project.voltageSystem === 'TÉTRAPHASÉ_400V') {
         // For 400V tétra, V_phase_V should already be phase-neutral (230V)
         // No conversion needed
@@ -120,23 +120,28 @@ export function getSRG2ReferenceVoltage(
       
       // Ensure it's phase-neutral voltage
       if (project.voltageSystem === 'TRIPHASÉ_230V') {
-        // For 230V triphasé, phase voltages are already in correct reference for SRG2
-        // No conversion needed - calculatedVoltage is already usable
+        // Phase A should already be phase-neutral, but verify it's around 133V
+        if (calculatedVoltage > 200) {
+          calculatedVoltage = calculatedVoltage / Math.sqrt(3);
+        }
       }
       // For TÉTRAPHASÉ_400V, phase voltages should already be phase-neutral (~230V)
     }
   }
   
-  // If we have a calculated voltage, use it directly for SRG2
+  // If we have a calculated voltage, scale it to SRG2's 230V reference
   if (calculatedVoltage !== null && isFinite(calculatedVoltage) && calculatedVoltage > 0) {
-    // For SRG2, use the calculated voltage directly (it's already in the correct reference)
-    // No scaling needed - SRG2 thresholds are based on actual measured voltages
+    // Scale the voltage to SRG2's 230V reference
+    const expectedPhaseNeutral = voltageRef.phaseToNeutral;
+    const scaleFactor = srg2TargetVoltage / expectedPhaseNeutral;
+    const srg2Voltage = calculatedVoltage * scaleFactor;
     
-    console.log(`🎯 SRG2 voltage reading for node ${nodeId}:`);
-    console.log(`   - Calculated voltage: ${calculatedVoltage.toFixed(1)}V`);
-    console.log(`   - Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
+    console.log(`🎯 SRG2 voltage conversion for node ${nodeId}:`);
+    console.log(`   - Raw calculated: ${calculatedVoltage.toFixed(1)}V`);
+    console.log(`   - Expected phase-neutral: ${expectedPhaseNeutral.toFixed(1)}V`);
+    console.log(`   - SRG2 reference: ${srg2Voltage.toFixed(1)}V`);
     
-    return calculatedVoltage;
+    return srg2Voltage;
   }
   
   // Fallback: always use SRG2's 230V phase-neutral reference
