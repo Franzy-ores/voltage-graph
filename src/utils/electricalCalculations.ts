@@ -1304,7 +1304,15 @@ export class ElectricalCalculator {
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
               let Vv = sub(Vu, mul(Z, Iuv));
               
-              // SRG2 FIX: Store calculated voltage for ALL nodes including SRG2
+              // T3: Pin SRG2 setpoint during Forward sweep (unbalanced)
+              const childNodeObj = nodeById.get(v);
+              if (childNodeObj?.tensionCible && childNodeObj.tensionCible > 0) {
+                const isThree = this.getVoltage(childNodeObj.connectionType).isThreePhase;
+                const forcedPhase = childNodeObj.connectionType === 'TRI_230V_3F'
+                  ? childNodeObj.tensionCible
+                  : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
+                Vv = fromPolar(forcedPhase, this.deg2rad(angleDeg)); // pin SRG2 (and any tensionCible) node
+              }
               V_node_phase.set(v, Vv);
               
               // Debug logging for SRG2 nodes
@@ -1813,9 +1821,15 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // SRG2 FIX: Do not apply transformation to SRG2 node itself
-          // The SRG2 node voltage is the measurement point and should remain unchanged
-          
+          // T3: Pin SRG2 setpoint during Forward sweep (balanced)
+          const childNodeObj = nodeById.get(v);
+          if (childNodeObj?.tensionCible && childNodeObj.tensionCible > 0) {
+            const isThree = this.getVoltage(childNodeObj.connectionType).isThreePhase;
+            const forcedPhase = childNodeObj.connectionType === 'TRI_230V_3F'
+              ? childNodeObj.tensionCible
+              : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
+            Vv = C(forcedPhase, 0); // 0° in balanced mode
+          }
           V_node.set(v, Vv);
           stack2.push(v);
         }

@@ -77,6 +77,12 @@ export class SimulationCalculator extends ElectricalCalculator {
         baselineResult
       );
       
+      // T2: Foisonné downstream balance exposed to UI
+      const bilan = this.computeDownstreamFoisonnement(cleanProject, srg2Result.nodeId);
+      (srg2Result as any).downstreamLoads_kVA       = bilan.loads_kVA;
+      (srg2Result as any).downstreamProductions_kVA = bilan.productions_kVA;
+      (srg2Result as any).downstreamNet_kVA         = bilan.net_kVA;
+      
       // Propagation des tensions régulées si SRG2 est actif
       if (srg2Result.isActive) {
         if (DEBUG) console.log(`🔄 Propagation des tensions régulées avec ratio ${srg2Result.ratio.toFixed(3)}`);
@@ -127,38 +133,11 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.manualPhaseDistribution
       );
     
-    // T2: Universal SRG2 injection for both balanced and unbalanced modes
-    // Injection systématique même si ratio === 1.0 pour assurer la cohérence
-    if (srg2Result && simulationEquipment.srg2?.enabled) {
-      // Inject for unbalanced mode (per-phase metrics)
-      if (finalResult.nodeMetricsPerPhase) {
-        finalResult.nodeMetricsPerPhase = finalResult.nodeMetricsPerPhase.map(nodeMetric => {
-          if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
-            return {
-              ...nodeMetric,
-              calculatedVoltagesPerPhase: srg2Result.regulatedVoltages
-            };
-          }
-          return nodeMetric;
-        });
-        
-        if (DEBUG) console.log(`🔧 SRG2 voltages injected into nodeMetricsPerPhase for node ${srg2Result.nodeId}:`, srg2Result.regulatedVoltages);
-      }
-      
-      // Inject for balanced mode (single voltage metrics)
-      if (finalResult.nodeMetrics) {
-        finalResult.nodeMetrics = finalResult.nodeMetrics.map(nodeMetric => {
-          if (nodeMetric.nodeId === simulationEquipment.srg2?.nodeId) {
-            return {
-              ...nodeMetric,
-              V_phase_V: srg2Result.regulatedVoltage
-            };
-          }
-          return nodeMetric;
-        });
-        
-        if (DEBUG) console.log(`🔧 SRG2 voltage injected into nodeMetrics for node ${srg2Result.nodeId}: ${srg2Result.regulatedVoltage}V`);
-      }
+    // T4: Disabled post-calculation SRG2 injection (desynchronizes UI vs calculation)
+    // The solver now produces correct downstream voltages thanks to T3 pinning
+    if (false && srg2Result && simulationEquipment.srg2?.enabled) {
+      // Disabled on purpose: solver's native results already reflect pinned setpoints.
+      // If needed temporarily for debugging, flip to `if (DEBUG && ...)`.
     }
     
     if (DEBUG) console.log('✅ Simulation completed successfully');
@@ -187,6 +166,53 @@ export class SimulationCalculator extends ElectricalCalculator {
       },
       isSimulation: true,
       equipment: simulationEquipment
+    };
+  }
+
+  /**
+   * T2: Compute foisonned downstream balance at the SRG2 node
+   */
+  private computeDownstreamFoisonnement(
+    project: Project,
+    rootNodeId: string
+  ): { loads_kVA: number; productions_kVA: number; net_kVA: number } {
+    const foissC = project.foisonnementCharges ?? 100;
+    const foissP = project.foisonnementProductions ?? 100;
+
+    // Build undirected adjacency
+    const adj = new Map<string, string[]>();
+    for (const n of project.nodes) adj.set(n.id, []);
+    for (const c of project.cables) {
+      if (adj.has(c.nodeAId) && adj.has(c.nodeBId)) {
+        adj.get(c.nodeAId)!.push(c.nodeBId);
+        adj.get(c.nodeBId)!.push(c.nodeAId);
+      }
+    }
+
+    // BFS including the root
+    const visited = new Set<string>([rootNodeId]);
+    const queue: string[] = [rootNodeId];
+    let sumLoads = 0;
+    let sumProd  = 0;
+
+    while (queue.length) {
+      const u = queue.shift()!;
+      const node = project.nodes.find(n => n.id === u);
+      if (node) {
+        const Su = (node.clients ?? []).reduce((s, c) => s + (c.S_kVA ?? 0), 0) * (foissC / 100);
+        const Pu = (node.productions ?? []).reduce((s, p) => s + (p.S_kVA ?? 0), 0) * (foissP / 100);
+        sumLoads += Su;
+        sumProd  += Pu;
+      }
+      for (const v of (adj.get(u) ?? [])) {
+        if (!visited.has(v)) { visited.add(v); queue.push(v); }
+      }
+    }
+
+    return {
+      loads_kVA: parseFloat(sumLoads.toFixed(2)),
+      productions_kVA: parseFloat(sumProd.toFixed(2)),
+      net_kVA: parseFloat((sumLoads - sumProd).toFixed(2)),
     };
   }
 

@@ -252,6 +252,10 @@ export interface SRG2Result {
   isActive: boolean;
   limitReason?: string;
   errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner
+  // T1: Foisonné downstream balance fields (backward compatible)
+  downstreamLoads_kVA?: number;
+  downstreamProductions_kVA?: number;
+  downstreamNet_kVA?: number;
 }
 
 export interface SimulationEquipment {
