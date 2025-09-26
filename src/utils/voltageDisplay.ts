@@ -84,13 +84,24 @@ export function getNodeVoltageInfo(
   if (result.nodeMetrics) {
     const nodeMetric = result.nodeMetrics.find(nm => nm.nodeId === nodeId);
     if (nodeMetric) {
-      // Check if this node has SRG2 regulation applied
-      const node = project.nodes.find(n => n.id === nodeId);
-      const hasRegulation = node && (node as any).srg2Applied;
+      // For polyphase_equilibre with SRG2: check if we have SRG2 regulated voltage
+      let voltage = nodeMetric.V_phase_V;
+      let isRegulated = false;
+      
+      // If this is a simulation result with SRG2, use the regulated voltage
+      if (sourceType === 'simulation' && result.srg2Result && result.srg2Result.nodeId === nodeId) {
+        voltage = result.srg2Result.regulatedVoltage;
+        isRegulated = result.srg2Result.isActive;
+      } else {
+        // For downstream nodes affected by SRG2, use the calculated voltages from solver
+        // The solver should have already propagated the SRG2 effects via tensionCible pinning
+        const node = project.nodes.find(n => n.id === nodeId);
+        isRegulated = node && (node as any).srg2Applied;
+      }
       
       return {
-        voltage: nodeMetric.V_phase_V, // Use correct property name
-        isRegulated: !!hasRegulation,
+        voltage,
+        isRegulated,
         source: sourceType
       };
     }
