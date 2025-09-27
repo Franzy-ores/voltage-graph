@@ -40,7 +40,9 @@ export function getNodeVoltageInfo(
     useSimulation,
     selectedScenario,
     hasSimulationResults: !!simulationResults[selectedScenario],
-    hasCalculationResults: !!calculationResults[selectedScenario]
+    hasCalculationResults: !!calculationResults[selectedScenario],
+    loadModel: project.loadModel,
+    voltageSystem: project.voltageSystem
   });
   
   // Try simulation results first if we should use them
@@ -88,15 +90,40 @@ export function getNodeVoltageInfo(
       let voltage = nodeMetric.V_phase_V;
       let isRegulated = false;
       
+      console.log('🔍 Polyphase voltage reading:', {
+        nodeId,
+        originalVoltage: voltage,
+        sourceType,
+        hasSRG2Result: !!result.srg2Result,
+        srg2NodeId: result.srg2Result?.nodeId,
+        isDirectSRG2Node: result.srg2Result?.nodeId === nodeId
+      });
+      
       // If this is a simulation result with SRG2, use the regulated voltage
       if (sourceType === 'simulation' && result.srg2Result && result.srg2Result.nodeId === nodeId) {
         voltage = result.srg2Result.regulatedVoltage;
         isRegulated = result.srg2Result.isActive;
+        console.log('🎯 Using SRG2 regulated voltage for direct node:', { nodeId, voltage, isRegulated });
       } else {
-        // For downstream nodes affected by SRG2, use the calculated voltages from solver
-        // The solver should have already propagated the SRG2 effects via tensionCible pinning
+        // For downstream nodes affected by SRG2, the voltage should already be updated in nodeMetric.V_phase_V
+        // Check if this node is affected by SRG2
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
+        
+        console.log('🔍 Downstream node voltage check:', {
+          nodeId,
+          nodeMetricVoltage: voltage,
+          nodeTensionCible: node?.tensionCible,
+          srg2Applied: (node as any)?.srg2Applied,
+          isRegulated
+        });
+        
+        // If node has tensionCible (pinned by SRG2), use that voltage
+        if (node?.tensionCible && sourceType === 'simulation') {
+          voltage = node.tensionCible;
+          isRegulated = true;
+          console.log('🎯 Using tensionCible for downstream node:', { nodeId, voltage });
+        }
       }
       
       return {

@@ -1829,6 +1829,16 @@ export class ElectricalCalculator {
               ? childNodeObj.tensionCible
               : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
             Vv = C(forcedPhase, 0); // 0° in balanced mode
+            
+            console.log('🎯 SRG2 Voltage Pinning Applied:', {
+              nodeId: v,
+              connectionType: childNodeObj.connectionType,
+              tensionCible: childNodeObj.tensionCible,
+              isThreePhase: isThree,
+              forcedPhase,
+              beforePinning: { re: sub(Vu, mul(Z, Iuv)).re, im: sub(Vu, mul(Z, Iuv)).im },
+              afterPinning: { re: Vv.re, im: Vv.im }
+            });
           }
           V_node.set(v, Vv);
           stack2.push(v);
@@ -2003,6 +2013,20 @@ export class ElectricalCalculator {
         : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
       const V_pu = V_nom_phase ? V_phase_V / V_nom_phase : 0;
       const Iinj = I_inj_node.get(n.id) || C(0, 0);
+      
+      // Debug log for voltage calculation
+      console.log('🔍 NodeMetric calculation:', {
+        nodeId: n.id,
+        connectionType: n.connectionType,
+        isThreePhase,
+        U_nom_line,
+        V_nom_phase,
+        V_node_phasor: { re: Vn.re, im: Vn.im },
+        V_phase_V_calculated: V_phase_V,
+        tensionCible: n.tensionCible,
+        srg2Applied: (n as any).srg2Applied
+      });
+      
       return { nodeId: n.id, V_phase_V, V_pu, I_inj_A: abs(Iinj) };
     });
 

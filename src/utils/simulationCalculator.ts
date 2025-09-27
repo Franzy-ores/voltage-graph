@@ -112,6 +112,14 @@ export class SimulationCalculator extends ElectricalCalculator {
           })
         };
         
+        console.log('🎯 SRG2 Regulated Project Created:', {
+          srg2NodeId,
+          regulatedVoltage: srg2Result.regulatedVoltage,
+          state: srg2Result.state,
+          ratio: srg2Result.ratio,
+          regulatedNodeTensionCible: regulatedProject.nodes.find(n => n.id === srg2NodeId)?.tensionCible
+        });
+        
         if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
       }
     }
@@ -145,6 +153,28 @@ export class SimulationCalculator extends ElectricalCalculator {
     // T1: Return final results when SRG2 active, baseline otherwise
     const useFinal = !!(srg2Result?.isActive && regulatedProject !== cleanProject);
     const resultMetrics = useFinal ? finalResult : baselineResult;
+    
+    console.log('🔍 Final Result Composition:', {
+      useFinal,
+      srg2Active: srg2Result?.isActive,
+      regulatedProjectDifferent: regulatedProject !== cleanProject,
+      finalResultNodeCount: finalResult.nodeMetrics?.length,
+      baselineResultNodeCount: baselineResult.nodeMetrics?.length,
+      srg2NodeId: srg2Result?.nodeId,
+      srg2RegulatedVoltage: srg2Result?.regulatedVoltage
+    });
+    
+    // Debug: Check final nodeMetrics for SRG2 node
+    if (srg2Result?.nodeId) {
+      const finalNodeMetric = finalResult.nodeMetrics?.find(nm => nm.nodeId === srg2Result.nodeId);
+      const baselineNodeMetric = baselineResult.nodeMetrics?.find(nm => nm.nodeId === srg2Result.nodeId);
+      console.log('🔍 SRG2 Node Voltage Comparison:', {
+        nodeId: srg2Result.nodeId,
+        baselineVoltage: baselineNodeMetric?.V_phase_V,
+        finalVoltage: finalNodeMetric?.V_phase_V,
+        expectedVoltage: srg2Result.regulatedVoltage
+      });
+    }
     
     return {
       scenario,
