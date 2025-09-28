@@ -36,12 +36,12 @@ export class SimulationCalculator extends ElectricalCalculator {
         ...node,
         clients: node.clients ? [...node.clients] : [],
         productions: node.productions ? [...node.productions] : [],
-        // ✅ CRITICAL FIX: Don't reset SRG2 properties if they already exist
-        // This preserves SRG2 state during deactivation/reactivation cycles
-        tensionCible: simulationEquipment.srg2?.nodeId === node.id ? node.tensionCible : undefined,
-        srg2Applied: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Applied : false,
-        srg2State: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2State : undefined,
-        srg2Ratio: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Ratio : undefined
+        // ✅ CRITICAL FIX: Only preserve SRG2 properties when SRG2 is enabled AND matches this node
+        // This ensures voltages are cleared when SRG2 is disconnected
+        tensionCible: simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === node.id ? node.tensionCible : undefined,
+        srg2Applied: simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Applied : false,
+        srg2State: simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2State : undefined,
+        srg2Ratio: simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Ratio : undefined
       }))
     };
     
