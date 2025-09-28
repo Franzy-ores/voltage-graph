@@ -360,6 +360,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       equipment
     );
 
+    // Nettoyage des marqueurs SRG2 après calcul
+    this.cleanupSRG2Markers(project.nodes);
+
     return {
       ...simulationResult,
       isSimulation: true,
@@ -533,6 +536,9 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.manualPhaseDistribution
     );
 
+    // Nettoyage des marqueurs SRG2 sur les nœuds de travail
+    this.cleanupSRG2Markers(workingNodes);
+
     return {
       ...finalResult,
       srg2Results: srg2Devices.map(srg2 => ({
@@ -694,6 +700,10 @@ export class SimulationCalculator extends ElectricalCalculator {
       const nodeIndex = nodes.findIndex(n => n.id === nodeId);
       if (nodeIndex === -1) continue;
 
+      // Marquer ce nœud comme source locale SRG2
+      nodes[nodeIndex].isSRG2Source = true;
+      nodes[nodeIndex].srg2OutputVoltage = { ...newVoltages };
+
       if (loadModel === 'monophase_reparti') {
         // Mode monophasé réparti: conserver les tensions par phase dans des propriétés spéciales
         (nodes[nodeIndex] as any).tensionCiblePhaseA = newVoltages.A;
@@ -704,17 +714,17 @@ export class SimulationCalculator extends ElectricalCalculator {
         const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
         nodes[nodeIndex].tensionCible = avgVoltage;
         
-        console.log(`🔧 SRG2 sur nœud ${nodeId} (monophasé): tensions par phase A=${newVoltages.A.toFixed(1)}V, B=${newVoltages.B.toFixed(1)}V, C=${newVoltages.C.toFixed(1)}V, moyenne=${avgVoltage.toFixed(1)}V`);
+        console.log(`🔧 SRG2 source locale sur nœud ${nodeId} (monophasé): tensions A=${newVoltages.A.toFixed(1)}V, B=${newVoltages.B.toFixed(1)}V, C=${newVoltages.C.toFixed(1)}V`);
       } else {
         // Mode polyphasé équilibré: utiliser la moyenne des trois phases
         const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
         nodes[nodeIndex].tensionCible = avgVoltage;
         
-        console.log(`🔧 SRG2 sur nœud ${nodeId} (polyphasé): tension de sortie ${avgVoltage.toFixed(1)}V appliquée pour calculs en aval`);
+        console.log(`🔧 SRG2 source locale sur nœud ${nodeId} (polyphasé): tension de sortie ${avgVoltage.toFixed(1)}V comme nouvelle source locale`);
       }
       
-      // Les calculs suivants utiliseront cette nouvelle tension de référence
-      // pour déterminer les tensions des nœuds en aval de ce SRG2
+      // Ce nœud devient maintenant une source locale pour tous les calculs en aval
+      console.log(`🎯 Nœud ${nodeId} configuré comme source locale SRG2`);
     }
   }
 
@@ -746,6 +756,19 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   // SUPPRIMÉ - Méthodes des régulateurs
+  
+  /**
+   * Nettoie les marqueurs SRG2 après calcul pour éviter les interférences
+   */
+  private cleanupSRG2Markers(nodes: Node[]): void {
+    for (const node of nodes) {
+      if (node.isSRG2Source) {
+        node.isSRG2Source = undefined;
+        node.srg2OutputVoltage = undefined;
+        console.log(`🧹 Nettoyage marqueurs SRG2 pour nœud ${node.id}`);
+      }
+    }
+  }
   
   /**
    * Propose des améliorations de circuit complètes

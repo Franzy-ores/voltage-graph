@@ -86,6 +86,9 @@ export interface Node {
   productions: ProductionPV[];
   isSource?: boolean;
   tensionCible?: number; // tension cible en V (optionnel)
+  // SRG2 local source properties
+  isSRG2Source?: boolean; // indique si ce nœud est une source locale SRG2
+  srg2OutputVoltage?: {A: number, B: number, C: number}; // tensions de sortie SRG2 en V
 }
 
 export interface Cable {

@@ -796,8 +796,33 @@ export class ElectricalCalculator {
               const Z = cableZ_phase.get(cab.id) || C(0, 0);
               const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
-              const Vv = sub(Vu, mul(Z, Iuv));
-              V_node_phase.set(v, Vv);
+              
+              // Vérifier si le nœud de destination est une source SRG2
+              const vNode = nodeById.get(v);
+              if (vNode?.isSRG2Source && vNode.srg2OutputVoltage) {
+                // Pour les nœuds SRG2 en mode déséquilibré, utiliser la tension de la phase correspondante
+                let Vv_srg2: Complex;
+                if (angleDeg === 0) {
+                  // Phase A
+                  Vv_srg2 = C(vNode.srg2OutputVoltage.A, 0);
+                } else if (angleDeg === -120) {
+                  // Phase B
+                  Vv_srg2 = C(vNode.srg2OutputVoltage.B, 0);
+                } else if (angleDeg === 120) {
+                  // Phase C
+                  Vv_srg2 = C(vNode.srg2OutputVoltage.C, 0);
+                } else {
+                  // Fallback: utiliser la moyenne
+                  const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
+                  Vv_srg2 = C(avgVoltage, 0);
+                }
+                V_node_phase.set(v, Vv_srg2);
+                console.log(`🎯 SRG2 source locale ${v} (phase ${angleDeg}°): tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
+              } else {
+                // Calcul normal pour les nœuds non-SRG2
+                const Vv = sub(Vu, mul(Z, Iuv));
+                V_node_phase.set(v, Vv);
+              }
               stack2.push(v);
             }
           }
@@ -1140,8 +1165,29 @@ export class ElectricalCalculator {
           const Z = cableZ_phase.get(cab.id) || C(0, 0);
           const Iuv = I_branch.get(cab.id) || C(0, 0);
           const Vu = V_node.get(u) || Vslack;
-          const Vv = sub(Vu, mul(Z, Iuv));
-          V_node.set(v, Vv);
+          
+          // Vérifier si le nœud de destination est une source SRG2
+          const vNode = nodeById.get(v);
+          if (vNode?.isSRG2Source && vNode.srg2OutputVoltage) {
+            // Pour les nœuds SRG2, utiliser leur tension de sortie régulée
+            let Vv_srg2: Complex;
+            if (isUnbalanced) {
+              // En mode monophasé, utiliser la phase appropriée ou la moyenne
+              // Pour simplifier, utiliser la moyenne des trois phases
+              const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
+              Vv_srg2 = C(avgVoltage, 0);
+            } else {
+              // En mode polyphasé équilibré, utiliser la moyenne
+              const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
+              Vv_srg2 = C(avgVoltage, 0);
+            }
+            V_node.set(v, Vv_srg2);
+            console.log(`🎯 SRG2 source locale ${v}: tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
+          } else {
+            // Calcul normal pour les nœuds non-SRG2
+            const Vv = sub(Vu, mul(Z, Iuv));
+            V_node.set(v, Vv);
+          }
           stack2.push(v);
         }
       }
