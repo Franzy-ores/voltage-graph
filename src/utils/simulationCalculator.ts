@@ -92,6 +92,17 @@ export class SimulationCalculator extends ElectricalCalculator {
           cleanProject.cables, 
           srg2Result.ratio
         );
+        
+        // DIAGNOSTIC CRITIQUE: Vérifier la propagation effective
+        if (DEBUG) {
+          const descendants = this.srg2Regulator.getDescendants(srg2Result.nodeId, cleanProject.nodes, cleanProject.cables);
+          console.log(`🔍 [DIAGNOSTIC] SRG2 ${project.loadModel}: ${descendants.length} descendants trouvés`);
+          
+          descendants.forEach(descendantId => {
+            const node = cleanProject.nodes.find(n => n.id === descendantId);
+            console.log(`  - Node ${descendantId}: tensionCible=${node?.tensionCible?.toFixed(1) || 'UNDEFINED'}, srg2Applied=${(node as any)?.srg2Applied}`);
+          });
+        }
       }
       
       if (srg2Result.isActive && srg2Result.ratio !== 1.0) {
