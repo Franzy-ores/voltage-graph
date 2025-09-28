@@ -447,28 +447,51 @@ export class SimulationCalculator extends ElectricalCalculator {
         if (!srg2Node) continue;
 
         // Lire les tensions du nœud d'installation du SRG2 (tensions d'entrée)
-        const nodeResults = (result as any).nodeResults;
         let nodeVoltages = { A: 230, B: 230, C: 230 }; // Valeurs par défaut
         
-        const nodeResult = nodeResults?.find((nr: any) => nr.nodeId === srg2.nodeId);
-        if (nodeResult) {
-          // Utiliser les tensions calculées du nœud d'installation
+        console.log(`🔍 SRG2 ${srg2.nodeId}: recherche des tensions calculées...`);
+        console.log(`📋 Structure des résultats:`, {
+          hasNodeMetricsPerPhase: !!result.nodeMetricsPerPhase,
+          nodeMetricsPerPhaseCount: result.nodeMetricsPerPhase?.length || 0,
+          hasNodeResults: !!(result as any).nodeResults,
+          nodeResultsCount: (result as any).nodeResults?.length || 0
+        });
+
+        // Priorité 1: Utiliser nodeMetricsPerPhase (structure correcte pour phases A, B, C)
+        const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === srg2.nodeId);
+        if (nodeMetricsPerPhase?.voltagesPerPhase) {
           nodeVoltages = {
-            A: nodeResult.voltageA_V || nodeResult.voltage_V || 230,
-            B: nodeResult.voltageB_V || nodeResult.voltage_V || 230,
-            C: nodeResult.voltageC_V || nodeResult.voltage_V || 230
+            A: nodeMetricsPerPhase.voltagesPerPhase.A,
+            B: nodeMetricsPerPhase.voltagesPerPhase.B,
+            C: nodeMetricsPerPhase.voltagesPerPhase.C
           };
-          console.log(`📊 SRG2 ${srg2.nodeId}: tensions lues A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
-        } else if (srg2Node.tensionCible) {
-          // Utiliser la tension cible du nœud si disponible
-          nodeVoltages = {
-            A: srg2Node.tensionCible,
-            B: srg2Node.tensionCible, 
-            C: srg2Node.tensionCible
-          };
-          console.log(`📊 SRG2 ${srg2.nodeId}: utilise tension cible du nœud ${srg2Node.tensionCible.toFixed(1)}V`);
-        } else {
-          console.warn(`⚠️ SRG2 ${srg2.nodeId}: aucune tension trouvée, utilise valeurs par défaut 230V`);
+          console.log(`✅ SRG2 ${srg2.nodeId}: tensions lues depuis nodeMetricsPerPhase A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+        } 
+        // Priorité 2: Fallback sur nodeResults (structure ancienne)
+        else {
+          const nodeResults = (result as any).nodeResults;
+          const nodeResult = nodeResults?.find((nr: any) => nr.nodeId === srg2.nodeId);
+          if (nodeResult) {
+            nodeVoltages = {
+              A: nodeResult.voltageA_V || nodeResult.voltage_V || 230,
+              B: nodeResult.voltageB_V || nodeResult.voltage_V || 230,
+              C: nodeResult.voltageC_V || nodeResult.voltage_V || 230
+            };
+            console.log(`⚠️ SRG2 ${srg2.nodeId}: tensions lues depuis nodeResults (fallback) A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+          }
+          // Priorité 3: Utiliser la tension cible du nœud si disponible
+          else if (srg2Node.tensionCible) {
+            nodeVoltages = {
+              A: srg2Node.tensionCible,
+              B: srg2Node.tensionCible, 
+              C: srg2Node.tensionCible
+            };
+            console.log(`⚠️ SRG2 ${srg2.nodeId}: utilise tension cible du nœud ${srg2Node.tensionCible.toFixed(1)}V`);
+          } 
+          // Priorité 4: Valeurs par défaut
+          else {
+            console.warn(`❌ SRG2 ${srg2.nodeId}: aucune tension trouvée, utilise valeurs par défaut 230V`);
+          }
         }
 
         // Appliquer la régulation SRG2 sur les tensions lues
