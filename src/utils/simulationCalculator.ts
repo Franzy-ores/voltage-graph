@@ -103,8 +103,9 @@ export class SimulationCalculator extends ElectricalCalculator {
         );
       }
       
-      if (srg2Result.isActive && srg2Result.ratio !== 1.0) {
-        // Create regulated project with SRG2 applied
+      if (srg2Result.isActive) {
+        // ✅ CRITICAL FIX: Always apply SRG2 properties when active, even in BYP mode (ratio = 1.0)
+        // This ensures the star indicator (*) is always shown for configured SRG2 nodes
         regulatedProject = {
           ...cleanProject,
           nodes: cleanProject.nodes.map(node => {
