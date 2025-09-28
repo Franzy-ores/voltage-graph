@@ -59,9 +59,11 @@ describe('SRG2 Unified System', () => {
     ];
     
     testCases.forEach(({ voltage, expectedState, expectedRatio }) => {
-      const { state, ratio } = calculateSRG2Regulation(voltage);
+      const { state, correctedVoltage } = calculateSRG2Regulation(voltage);
       expect(state).toBe(expectedState);
-      expect(ratio).toBe(expectedRatio);
+      // Convert correctedVoltage back to ratio for comparison
+      const ratio = correctedVoltage / voltage;
+      expect(ratio).toBeCloseTo(expectedRatio, 2);
     });
   });
 });

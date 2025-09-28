@@ -167,20 +167,20 @@ export function getSRG2VoltageThresholds() {
 }
 
 /**
- * Calculate SRG2 regulation state and ratio
+ * Calculate SRG2 regulation state and corrected voltage based on input voltage
  */
-export function calculateSRG2Regulation(voltage: number): { state: string; ratio: number } {
+export function calculateSRG2Regulation(voltage: number): { state: string; correctedVoltage: number } {
   const thresholds = getSRG2VoltageThresholds();
   
   if (voltage <= thresholds.BO2_max) {
-    return { state: 'BO2', ratio: 1.10 };
+    return { state: 'BO2', correctedVoltage: 248.4 }; // 230V * 1.08
   } else if (voltage <= thresholds.BO1_max) {
-    return { state: 'BO1', ratio: 1.05 };
+    return { state: 'BO1', correctedVoltage: 239.2 }; // 230V * 1.04
   } else if (voltage >= thresholds.LO2_min) {
-    return { state: 'LO2', ratio: 0.90 };
+    return { state: 'LO2', correctedVoltage: 211.6 }; // 230V * 0.92
   } else if (voltage >= thresholds.LO1_min) {
-    return { state: 'LO1', ratio: 0.95 };
+    return { state: 'LO1', correctedVoltage: 220.8 }; // 230V * 0.96
   } else {
-    return { state: 'BYP', ratio: 1.00 };
+    return { state: 'BYP', correctedVoltage: voltage };
   }
 }

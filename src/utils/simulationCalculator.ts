@@ -83,36 +83,37 @@ export class SimulationCalculator extends ElectricalCalculator {
       (srg2Result as any).downstreamProductions_kVA = bilan.productions_kVA;
       (srg2Result as any).downstreamNet_kVA         = bilan.net_kVA;
       
-      // Propagation des tensions régulées si SRG2 est actif
       if (srg2Result.isActive) {
-        if (DEBUG) console.log(`🔄 Propagation des tensions régulées avec ratio ${srg2Result.ratio.toFixed(3)}`);
-        this.srg2Regulator.propagateVoltageToChildren(
-          srg2Result.nodeId, 
-          cleanProject.nodes, 
-          cleanProject.cables, 
-          srg2Result.ratio
-        );
-      }
-      
-      if (srg2Result.isActive && srg2Result.ratio !== 1.0) {
         // Create regulated project with SRG2 applied
         regulatedProject = {
           ...cleanProject,
           nodes: cleanProject.nodes.map(node => {
             if (node.id === srg2NodeId) {
-              return {
+              const updatedNode = {
                 ...node,
                 srg2Applied: true,
                 srg2State: srg2Result!.state,
-                srg2Ratio: srg2Result!.ratio,
-                tensionCible: srg2Result!.regulatedVoltage
+                srg2Ratio: srg2Result!.ratio
               };
+              
+              // Apply corrected voltage directly based on load model
+              if (cleanProject.loadModel === 'monophase_reparti') {
+                updatedNode.tensionCiblePerPhase = {
+                  A: srg2Result!.regulatedVoltage,
+                  B: srg2Result!.regulatedVoltage,
+                  C: srg2Result!.regulatedVoltage
+                };
+              } else {
+                updatedNode.tensionCible = srg2Result!.regulatedVoltage;
+              }
+              
+              return updatedNode;
             }
             return node;
           })
         };
         
-        if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Ratio: ${srg2Result.ratio.toFixed(3)}`);
+        if (DEBUG) console.log(`✅ SRG2 applied - State: ${srg2Result.state}, Corrected: ${srg2Result.regulatedVoltage.toFixed(1)}V`);
       }
     }
     

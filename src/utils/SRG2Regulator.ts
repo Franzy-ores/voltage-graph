@@ -20,43 +20,47 @@ export class SRG2Regulator {
     if (DEBUG) console.log(`🔧 SRG2 Regulator applying to node ${config.nodeId}, voltage: ${originalVoltage.toFixed(1)}V`);
     
     // Use external unified regulation calculation from voltageDisplay module
-    const { state, ratio } = calculateSRG2Regulation(originalVoltage);
+    const { state, correctedVoltage } = calculateSRG2Regulation(originalVoltage);
     
     if (DEBUG) {
       console.log(`🔧 SRG2 regulation calculated via external voltageDisplay module`);
       console.log(`🔧 SRG2 Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
     }
     
-    // Calculate regulated voltages per phase
-    const { regulatedVoltages, phaseRatios } = this.calculateRegulatedVoltages(
-      originalVoltage, ratio, project.loadModel || 'polyphase_equilibre'
-    );
-    
-    const isActive = state !== 'BYP' && ratio !== 1.0;
+    const isActive = state !== 'BYP' && correctedVoltage !== originalVoltage;
     
     if (DEBUG) {
-      console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
-      console.log(`📊 SRG2 Regulated Voltages: A=${regulatedVoltages.A.toFixed(1)}V, B=${regulatedVoltages.B.toFixed(1)}V, C=${regulatedVoltages.C.toFixed(1)}V`);
+      console.log(`📊 SRG2 Result - State: ${state}, Corrected: ${correctedVoltage.toFixed(1)}V, Active: ${isActive}`);
     }
+    
+    // For monophase_reparti, apply corrected voltage per phase
+    // For polyphase_equilibre, apply uniform corrected voltage
+    const regulatedVoltages = project.loadModel === 'monophase_reparti' ? {
+      A: correctedVoltage,
+      B: correctedVoltage,
+      C: correctedVoltage
+    } : {
+      A: correctedVoltage,
+      B: correctedVoltage,
+      C: correctedVoltage
+    };
     
     return {
       nodeId: config.nodeId,
       state,
-      ratio,
+      ratio: correctedVoltage / originalVoltage, // Keep for backward compatibility
       isActive,
       originalVoltage,
-      regulatedVoltage: regulatedVoltages.A, // Primary voltage for backward compatibility
+      regulatedVoltage: correctedVoltage,
       powerDownstream_kVA: this.calculateDownstreamPower(config.nodeId, project, baselineResult),
       regulatedVoltages,
-      phaseRatios,
+      phaseRatios: { A: 1.0, B: 1.0, C: 1.0 }, // No longer used
       diversifiedLoad_kVA: this.calculateDiversifiedLoad(config.nodeId, project, baselineResult),
       diversifiedProduction_kVA: this.calculateDiversifiedProduction(config.nodeId, project, baselineResult),
       netPower_kVA: this.calculateNetPower(config.nodeId, project, baselineResult),
       networkType: project.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'
     };
   }
-  
-  // T6: Dead code methods removed - regulation logic now handled by voltageDisplay module
   
   /**
    * Get descendants of a node in the network
@@ -88,63 +92,6 @@ export class SRG2Regulator {
     return descendants;
   }
 
-  // T6: determineNetworkType method removed - no longer needed with unified system
-
-  /**
-   * Calculate regulated voltages per phase - simplified signature after dead code removal
-   */
-  private calculateRegulatedVoltages(
-    originalVoltage: number, 
-    ratio: number, 
-    loadModel: LoadModel
-  ): { regulatedVoltages: { A: number; B: number; C: number }; phaseRatios: { A: number; B: number; C: number } } {
-    
-    if (loadModel === 'monophase_reparti') {
-      // For distributed monophase systems, apply regulation individually per phase
-      return {
-        regulatedVoltages: {
-          A: originalVoltage * ratio,
-          B: originalVoltage * ratio,
-          C: originalVoltage * ratio
-        },
-        phaseRatios: {
-          A: ratio,
-          B: ratio, 
-          C: ratio
-        }
-      };
-    } else {
-      // For balanced polyphase systems, apply uniform regulation
-      const regulatedVoltage = originalVoltage * ratio;
-      return {
-        regulatedVoltages: {
-          A: regulatedVoltage,
-          B: regulatedVoltage,
-          C: regulatedVoltage
-        },
-        phaseRatios: {
-          A: ratio,
-          B: ratio,
-          C: ratio
-        }
-      };
-    }
-  }
-
-  /**
-   * Propagate voltage changes to downstream nodes
-   */
-  propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
-    const descendants = this.getDescendants(nodeId, nodes, cables);
-    
-    for (const descendantId of descendants) {
-      const node = nodes.find(n => n.id === descendantId);
-      if (node && node.tensionCible) {
-        node.tensionCible = node.tensionCible * ratio;
-        console.log(`🔄 Propagated voltage to ${descendantId}: ${node.tensionCible.toFixed(1)}V`);
-      }
-    }
-  }
 
   /**
    * Calculate downstream power consumption
