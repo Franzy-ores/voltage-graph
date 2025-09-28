@@ -88,25 +88,13 @@ export function getNodeVoltageInfo(
       let voltage = nodeMetric.V_phase_V;
       let isRegulated = false;
       
-      // ✅ FIXED: Check if this node is the SRG2 node using simulationEquipment directly
-      const isSrg2Node = simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === nodeId;
-      
-      if (isSrg2Node && sourceType === 'simulation') {
-        // For SRG2 node in simulation mode, check if we have SRG2 result
-        if (result.srg2Result && result.srg2Result.nodeId === nodeId) {
-          // ✅ CRITICAL FIX: Always show SRG2 indicator if srg2Result exists for this node
-          voltage = result.srg2Result.regulatedVoltage || nodeMetric.V_phase_V;
-          isRegulated = true; // Always show the * for SRG2 nodes when configured
-        } else {
-          // Fallback: Check if the node has SRG2 properties applied
-          const node = project.nodes.find(n => n.id === nodeId);
-          if (node && ((node as any).srg2Applied || node.tensionCible)) {
-            voltage = nodeMetric.V_phase_V;
-            isRegulated = true;
-          }
-        }
+      // If this is a simulation result with SRG2, use the regulated voltage
+      if (sourceType === 'simulation' && result.srg2Result && result.srg2Result.nodeId === nodeId) {
+        voltage = result.srg2Result.regulatedVoltage;
+        isRegulated = result.srg2Result.isActive;
       } else {
         // For downstream nodes affected by SRG2, use the calculated voltages from solver
+        // The solver should have already propagated the SRG2 effects via tensionCible pinning
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
       }

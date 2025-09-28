@@ -27,24 +27,12 @@ export class SRG2Regulator {
       console.log(`🔧 SRG2 Network: ${project.voltageSystem}, Load Model: ${project.loadModel || 'polyphase_equilibre'}`);
     }
     
-    // Extract per-phase voltages from baseline result
-    const nodeResult = baselineResult.nodeMetricsPerPhase[config.nodeId];
-    const perPhaseVoltages = nodeResult ? {
-      A: nodeResult.A?.voltage || originalVoltage,
-      B: nodeResult.B?.voltage || originalVoltage,
-      C: nodeResult.C?.voltage || originalVoltage
-    } : {
-      A: originalVoltage,
-      B: originalVoltage, 
-      C: originalVoltage
-    };
-    
     // Calculate regulated voltages per phase
     const { regulatedVoltages, phaseRatios } = this.calculateRegulatedVoltages(
-      perPhaseVoltages, ratio, project.loadModel || 'polyphase_equilibre'
+      originalVoltage, ratio, project.loadModel || 'polyphase_equilibre'
     );
     
-    const isActive = state !== 'BYP'; // SRG2 is active only when regulating (not in BYP mode)
+    const isActive = state !== 'BYP' && ratio !== 1.0;
     
     if (DEBUG) {
       console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);
@@ -103,21 +91,21 @@ export class SRG2Regulator {
   // T6: determineNetworkType method removed - no longer needed with unified system
 
   /**
-   * Calculate regulated voltages per phase using individual phase voltages
+   * Calculate regulated voltages per phase - simplified signature after dead code removal
    */
   private calculateRegulatedVoltages(
-    perPhaseVoltages: { A: number; B: number; C: number }, 
+    originalVoltage: number, 
     ratio: number, 
     loadModel: LoadModel
   ): { regulatedVoltages: { A: number; B: number; C: number }; phaseRatios: { A: number; B: number; C: number } } {
     
     if (loadModel === 'monophase_reparti') {
-      // For distributed monophase systems, apply regulation individually to each phase
+      // For distributed monophase systems, apply regulation individually per phase
       return {
         regulatedVoltages: {
-          A: perPhaseVoltages.A * ratio,
-          B: perPhaseVoltages.B * ratio,
-          C: perPhaseVoltages.C * ratio
+          A: originalVoltage * ratio,
+          B: originalVoltage * ratio,
+          C: originalVoltage * ratio
         },
         phaseRatios: {
           A: ratio,
@@ -127,7 +115,7 @@ export class SRG2Regulator {
       };
     } else {
       // For balanced polyphase systems, apply uniform regulation
-      const regulatedVoltage = perPhaseVoltages.A * ratio; // Use phase A as reference
+      const regulatedVoltage = originalVoltage * ratio;
       return {
         regulatedVoltages: {
           A: regulatedVoltage,

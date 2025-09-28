@@ -304,7 +304,7 @@ export const MapView = () => {
     
     if (routingPointsRef.current.length > 1) {
       tempLineRef.current = L.polyline(
-        routingPointsRef.current.map(p => [p.lat, p.lng] as [number, number]),
+        routingPointsRef.current.map(p => [p.lat, p.lng]),
         { 
           color: '#3b82f6', 
           weight: 3, 
@@ -944,8 +944,8 @@ export const MapView = () => {
         }
       }
       
-       const polyline = L.polyline(
-        cable.coordinates.map(coord => [coord.lat, coord.lng] as [number, number]),
+      const polyline = L.polyline(
+        cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
           color: cableColor,
           weight: cableWeight,
