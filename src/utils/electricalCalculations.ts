@@ -906,16 +906,37 @@ export class ElectricalCalculator {
         );
 
         const scaleLine = this.getDisplayLineScale(n.connectionType);
-        const U_node_line_worst = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
+        
+        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
+        // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
+        let U_node_line_tension: number;
+        
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          // Nœud monophasé phase-neutre en système 400V : prendre la phase la plus élevée (EN50160)
+          U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
+          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max utilisé: ${U_node_line_tension.toFixed(1)}V`);
+        } else {
+          // Autres nœuds : garder la logique existante (pire cas = minimum)
+          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
+        }
 
         let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
         if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
 
-        const deltaU_V = U_ref_display - U_node_line_worst;
+        const deltaU_V = U_ref_display - U_node_line_tension;
         const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
 
-        const { U_base: U_nom } = this.getVoltage(n.connectionType);
-        const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_worst) / U_nom) * 100 : 0;
+        // Référence nominale (conformité EN50160): logique spéciale pour MONO_230V_PN en système 400V
+        let U_nom: number;
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
+          U_nom = 230;
+        } else {
+          // Logique standard
+          const { U_base } = this.getVoltage(n.connectionType);
+          U_nom = U_base;
+        }
+        const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_tension) / U_nom) * 100 : 0;
         const absPctNom = Math.abs(deltaU_pct_nominal);
         if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
 
