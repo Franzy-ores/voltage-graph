@@ -22,14 +22,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     const DEBUG = typeof window !== 'undefined' && (window as any).DEBUG_CALC === '1';
     if (DEBUG) console.log('🚀 Starting SIMPLIFIED SRG2 simulation...');
     
-    // Clean all equipment-related properties from nodes
+    // Clean all equipment-related properties from nodes, but preserve source tensionCible
     const cleanProject: Project = {
       ...project,
       nodes: project.nodes.map(node => ({
         ...node,
         clients: node.clients ? [...node.clients] : [],
         productions: node.productions ? [...node.productions] : [],
-        tensionCible: undefined,
+        tensionCible: node.isSource ? node.tensionCible : undefined, // Preserve source node voltage
         srg2Applied: false,
         srg2State: undefined,
         srg2Ratio: undefined

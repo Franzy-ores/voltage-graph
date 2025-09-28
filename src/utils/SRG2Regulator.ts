@@ -137,40 +137,19 @@ export class SRG2Regulator {
   propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
     const descendants = this.getDescendants(nodeId, nodes, cables);
     
-    // Find source node for base voltage reference
-    const sourceNode = nodes.find(n => n.isSource);
-    const sourceVoltage = sourceNode?.tensionCible;
+    console.log(`🔄 SRG2 propagation attempt: ${descendants.length} descendants found for node ${nodeId} with ratio ${ratio.toFixed(3)}`);
     
     for (const descendantId of descendants) {
       const node = nodes.find(n => n.id === descendantId);
-      if (node) {
-        // Initialize tensionCible if missing (after cleanProject)
-        if (!node.tensionCible) {
-          // Calculate base voltage from connection type
-          const connectionType = node.connectionType || 'TRI_400V_3F+N';
-          let baseVoltage: number;
-          
-          if (sourceVoltage) {
-            // Use source voltage as reference
-            baseVoltage = sourceVoltage;
-          } else if (connectionType.includes('230V')) {
-            baseVoltage = 230;
-          } else if (connectionType.includes('400V')) {
-            baseVoltage = 400;
-          } else {
-            // Default fallback based on connection type
-            baseVoltage = connectionType === 'TRI_230V_3F' ? 230 : 400;
-          }
-          
-          node.tensionCible = baseVoltage;
-        }
-        
-        // Apply SRG2 ratio
+      if (node && node.tensionCible) {
+        const oldVoltage = node.tensionCible;
         node.tensionCible = node.tensionCible * ratio;
         (node as any).srg2Applied = true;
         (node as any).srg2Ratio = ratio;
         
-        console.log(`🔄 Propagated SRG2 voltage to ${descendantId}: ${node.tensionCible.toFixed(1)}V (ratio: ${ratio.toFixed(3)})`);
+        console.log(`🔄 Propagated SRG2 voltage to ${descendantId}: ${oldVoltage.toFixed(1)}V → ${node.tensionCible.toFixed(1)}V (ratio: ${ratio.toFixed(3)})`);
+      } else if (node) {
+        console.log(`⚠️ Skipped node ${descendantId}: no tensionCible (${node.tensionCible})`);
       }
     }
   }
