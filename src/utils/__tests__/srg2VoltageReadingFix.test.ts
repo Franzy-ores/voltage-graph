@@ -192,26 +192,26 @@ describe('SRG2 Voltage Reading Fix', () => {
 
   test('SRG2 regulation detects low voltage correctly', () => {
     // Test voltage below BO2 threshold (207V)
-    const { state, correctedVoltage } = calculateSRG2Regulation(200);
+    const { state, ratio } = calculateSRG2Regulation(200);
     
     expect(state).toBe('BO2');
-    expect(correctedVoltage).toBeGreaterThan(200); // Corrected voltage should be higher
+    expect(ratio).toBeGreaterThan(1.0); // Boost ratio
   });
 
   test('SRG2 regulation detects high voltage correctly', () => {
     // Test voltage above LO2 threshold (253V)  
-    const { state, correctedVoltage } = calculateSRG2Regulation(260);
+    const { state, ratio } = calculateSRG2Regulation(260);
     
     expect(state).toBe('LO2');
-    expect(correctedVoltage).toBeLessThan(260); // Corrected voltage should be lower
+    expect(ratio).toBeLessThan(1.0); // Buck ratio
   });
 
   test('SRG2 regulation uses BYP for normal voltage', () => {
     // Test voltage in BYP range (218-241V)
-    const { state, correctedVoltage } = calculateSRG2Regulation(230);
+    const { state, ratio } = calculateSRG2Regulation(230);
     
     expect(state).toBe('BYP');
-    expect(correctedVoltage).toBe(230); // No regulation - voltage unchanged
+    expect(ratio).toBe(1.0); // No regulation
   });
 
   test('SimulationCalculator uses unified SRG2 voltage reading', () => {
