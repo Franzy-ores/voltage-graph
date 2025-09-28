@@ -36,10 +36,12 @@ export class SimulationCalculator extends ElectricalCalculator {
         ...node,
         clients: node.clients ? [...node.clients] : [],
         productions: node.productions ? [...node.productions] : [],
-        tensionCible: undefined,
-        srg2Applied: false,
-        srg2State: undefined,
-        srg2Ratio: undefined
+        // ✅ CRITICAL FIX: Don't reset SRG2 properties if they already exist
+        // This preserves SRG2 state during deactivation/reactivation cycles
+        tensionCible: simulationEquipment.srg2?.nodeId === node.id ? node.tensionCible : undefined,
+        srg2Applied: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Applied : false,
+        srg2State: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2State : undefined,
+        srg2Ratio: simulationEquipment.srg2?.nodeId === node.id ? (node as any).srg2Ratio : undefined
       }))
     };
     
@@ -150,7 +152,9 @@ export class SimulationCalculator extends ElectricalCalculator {
     if (DEBUG) console.log('✅ Simulation completed successfully');
     
     // T1: Return final results when SRG2 active, baseline otherwise
-    const useFinal = !!(srg2Result?.isActive && regulatedProject !== cleanProject);
+    // ✅ CRITICAL FIX: Always return finalResult when SRG2 is configured, not just when active
+    // This ensures srg2Result and node properties are always available for display
+    const useFinal = !!(simulationEquipment.srg2?.enabled && regulatedProject !== cleanProject);
     const resultMetrics = useFinal ? finalResult : baselineResult;
     
     return {

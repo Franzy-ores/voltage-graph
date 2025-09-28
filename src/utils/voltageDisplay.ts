@@ -84,17 +84,6 @@ export function getNodeVoltageInfo(
   if (result.nodeMetrics) {
     const nodeMetric = result.nodeMetrics.find(nm => nm.nodeId === nodeId);
     if (nodeMetric) {
-      // 🔍 DIAGNOSTIC LOGS for SRG2 polyphase debugging
-      console.log(`🔍 Polyphase voltage logic for node ${nodeId}:`, {
-        sourceType,
-        hasResultSrg2: !!result.srg2Result,
-        srg2NodeId: result.srg2Result?.nodeId,
-        srg2RegulatedVoltage: result.srg2Result?.regulatedVoltage,
-        srg2IsActive: result.srg2Result?.isActive,
-        nodeMetricVPhaseV: nodeMetric.V_phase_V,
-        simulationEquipmentSrg2: simulationEquipment.srg2
-      });
-      
       // For polyphase_equilibre with SRG2: check if we have SRG2 regulated voltage
       let voltage = nodeMetric.V_phase_V;
       let isRegulated = false;
@@ -106,17 +95,14 @@ export function getNodeVoltageInfo(
         // For SRG2 node in simulation mode, check if we have SRG2 result
         if (result.srg2Result && result.srg2Result.nodeId === nodeId) {
           // ✅ CRITICAL FIX: Always show SRG2 indicator if srg2Result exists for this node
-          // Even if regulation is inactive (isActive=false), we still want to show the * 
           voltage = result.srg2Result.regulatedVoltage || nodeMetric.V_phase_V;
           isRegulated = true; // Always show the * for SRG2 nodes when configured
-          console.log(`🔧 SRG2 POLYPHASE: Using voltage = ${voltage}V, showing * indicator`);
         } else {
           // Fallback: Check if the node has SRG2 properties applied
           const node = project.nodes.find(n => n.id === nodeId);
           if (node && ((node as any).srg2Applied || node.tensionCible)) {
             voltage = nodeMetric.V_phase_V;
             isRegulated = true;
-            console.log(`🔧 SRG2 POLYPHASE FALLBACK: Node has SRG2 properties, voltage = ${voltage}V`);
           }
         }
       } else {
@@ -124,8 +110,6 @@ export function getNodeVoltageInfo(
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
       }
-      
-      console.log(`🔍 Final polyphase result for node ${nodeId}: voltage=${voltage}V, isRegulated=${isRegulated}`);
       
       return {
         voltage,
