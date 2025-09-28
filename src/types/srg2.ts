@@ -4,6 +4,8 @@
 
 export type SRG2Mode = "AUTO" | "MANUEL";
 export type SRG2Status = "ACTIF" | "INACTIF" | "DEFAUT" | "MAINTENANCE";
+export type SRG2SwitchState = "LO2" | "LO1" | "BYP" | "BO1" | "BO2";
+export type SRG2Type = "SRG2-400" | "SRG2-230"; // 400V phase/neutre ou 230V phase/phase
 
 export interface SRG2Config {
   id: string;
@@ -13,31 +15,64 @@ export interface SRG2Config {
   
   // Configuration technique
   mode: SRG2Mode;
-  tensionConsigne_V: number; // Tension de consigne (V)
-  toléranceTension_V: number; // Tolérance ±V
-  puissanceMax_kVA: number; // Puissance réactive maximale
+  type: SRG2Type; // Type déterminé automatiquement selon voltageSystem
+  tensionConsigne_V: number; // Tension de consigne (toujours 230V)
   
-  // Paramètres de régulation
-  gainProportionnel: number; // Gain P du régulateur
-  tempsIntegral_s: number; // Temps intégral Ti (secondes)
-  seuílActivation_V: number; // Seuil d'activation du SRG2
+  // Seuils de régulation (selon le type)
+  seuilLO2_V: number; // Seuil abaissement complet (246V pour SRG2-400, 214V pour SRG2-230)
+  seuilLO1_V: number; // Seuil abaissement partiel (238V pour SRG2-400, 231V pour SRG2-230)  
+  seuilBO1_V: number; // Seuil augmentation partielle (222V pour SRG2-400, 189V pour SRG2-230)
+  seuilBO2_V: number; // Seuil augmentation complète (214V pour SRG2-400, 182V pour SRG2-230)
   
-  // Limites de fonctionnement
-  tensionMin_V: number; // Tension minimum de fonctionnement
-  tensionMax_V: number; // Tension maximum de fonctionnement
-  temperatureMax_C: number; // Température maximum de fonctionnement
+  // Coefficients de régulation par échelon
+  coefficientLO2: number; // -7% ou -6%
+  coefficientLO1: number; // -3.5% ou -3%
+  coefficientBO1: number; // +3.5% ou +3%  
+  coefficientBO2: number; // +7% ou +6%
+  
+  // Hystérésis et temporisation
+  hysteresis_V: number; // ±2V d'hystérésis
+  temporisation_s: number; // 7s de temporisation
+  
+  // Limites de puissance
+  puissanceMaxInjection_kVA: number; // 85 kVA max injection en aval
+  puissanceMaxPrelevement_kVA: number; // 100 kVA max prélèvement en aval
   
   // État et résultats de simulation
   status?: SRG2Status;
-  tensionMesuree_V?: number; // Tension mesurée au point d'installation
-  puissanceInjectee_kVAr?: number; // Puissance réactive injectée (-) ou absorbée (+)
-  erreurTension_V?: number; // Erreur de tension (consigne - mesurée)
+  
+  // Mesures par phase
+  tensionEntree?: {
+    A: number; // Tension mesurée côté alimentation phase A
+    B: number; // Tension mesurée côté alimentation phase B  
+    C: number; // Tension mesurée côté alimentation phase C
+  };
+  
+  // États des commutateurs par phase
+  etatCommutateur?: {
+    A: SRG2SwitchState;
+    B: SRG2SwitchState; 
+    C: SRG2SwitchState;
+  };
+  
+  // Coefficients appliqués par phase
+  coefficientsAppliques?: {
+    A: number; // Coefficient réellement appliqué sur phase A (%)
+    B: number; // Coefficient réellement appliqué sur phase B (%)
+    C: number; // Coefficient réellement appliqué sur phase C (%)
+  };
+  
+  // Tensions de sortie calculées
+  tensionSortie?: {
+    A: number; // Tension de sortie phase A
+    B: number; // Tension de sortie phase B
+    C: number; // Tension de sortie phase C
+  };
+  
+  // Contraintes et limitations
+  contraintesSRG230?: boolean; // True si contraintes SRG2-230 actives
   limitePuissanceAtteinte?: boolean; // True si limite de puissance atteinte
   defautCode?: string; // Code de défaut éventuel
-  
-  // Historique (pour régulation PI)
-  erreurIntegrale?: number; // Somme des erreurs pour l'intégrale
-  derniereMesure_V?: number; // Dernière tension mesurée
 }
 
 export interface SRG2SimulationResult {
@@ -66,18 +101,44 @@ export interface SRG2Equipment {
   srg2Devices: SRG2Config[];
 }
 
-// Paramètres par défaut pour un SRG2
-export const DEFAULT_SRG2_CONFIG: Partial<SRG2Config> = {
+// Paramètres par défaut pour un SRG2-400 (phase/neutre)
+export const DEFAULT_SRG2_400_CONFIG: Partial<SRG2Config> = {
   mode: "AUTO",
-  tensionConsigne_V: 230, // 230V par défaut pour réseau 400V phase-neutre
-  toléranceTension_V: 5, // ±5V de tolérance
-  puissanceMax_kVA: 50, // 50kVA de puissance réactive max
-  gainProportionnel: 2.0, // Gain proportionnel modéré
-  tempsIntegral_s: 10, // Temps intégral de 10 secondes
-  seuílActivation_V: 10, // Activation si écart > 10V
-  tensionMin_V: 180, // Fonctionnement minimum à 180V
-  tensionMax_V: 280, // Fonctionnement maximum à 280V
-  temperatureMax_C: 70, // Température maximum 70°C
+  type: "SRG2-400",
+  tensionConsigne_V: 230,
+  seuilLO2_V: 246, // Abaissement complet
+  seuilLO1_V: 238, // Abaissement partiel  
+  seuilBO1_V: 222, // Augmentation partielle
+  seuilBO2_V: 214, // Augmentation complète
+  coefficientLO2: -7, // -7%
+  coefficientLO1: -3.5, // -3.5%
+  coefficientBO1: 3.5, // +3.5%
+  coefficientBO2: 7, // +7%
+  hysteresis_V: 2,
+  temporisation_s: 7,
+  puissanceMaxInjection_kVA: 85,
+  puissanceMaxPrelevement_kVA: 100,
+  enabled: true,
+  status: "ACTIF"
+};
+
+// Paramètres par défaut pour un SRG2-230 (phase/phase)  
+export const DEFAULT_SRG2_230_CONFIG: Partial<SRG2Config> = {
+  mode: "AUTO",
+  type: "SRG2-230",
+  tensionConsigne_V: 230,
+  seuilLO2_V: 244, // Abaissement complet (230V + 6%)
+  seuilLO1_V: 237, // Abaissement partiel
+  seuilBO1_V: 223, // Augmentation partielle  
+  seuilBO2_V: 216, // Augmentation complète (230V - 6%)
+  coefficientLO2: -6, // -6%
+  coefficientLO1: -3, // -3%
+  coefficientBO1: 3, // +3%
+  coefficientBO2: 6, // +6%
+  hysteresis_V: 2,
+  temporisation_s: 7,
+  puissanceMaxInjection_kVA: 85,
+  puissanceMaxPrelevement_kVA: 100,
   enabled: true,
   status: "ACTIF"
 };

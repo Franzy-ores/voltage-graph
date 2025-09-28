@@ -83,7 +83,7 @@ export const SRG2Panel = () => {
             </div>
           </div>
           <CardDescription>
-            Nœud: {node?.name || srg2.nodeId} • Mode: {srg2.mode}
+            Nœud: {node?.name || srg2.nodeId} • Mode: {srg2.mode} • Type: {srg2.type || 'Auto'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -104,74 +104,142 @@ export const SRG2Panel = () => {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Tension consigne (V)</Label>
+              <Label className="text-xs">Consigne (230V fixe)</Label>
               <Input
                 type="number"
-                value={srg2.tensionConsigne_V}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  tensionConsigne_V: Number(e.target.value)
-                })}
-                className="h-8"
+                value={230}
+                disabled
+                className="h-8 bg-muted"
               />
             </div>
           </div>
 
+          {/* Seuils de régulation */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Seuils de régulation ({srg2.type}):</Label>
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <Label className="text-xs">LO2 (V)</Label>
+                <Input
+                  type="number"
+                  value={srg2.seuilLO2_V || 246}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    seuilLO2_V: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">LO1 (V)</Label>
+                <Input
+                  type="number"
+                  value={srg2.seuilLO1_V || 238}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    seuilLO1_V: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">BO1 (V)</Label>
+                <Input
+                  type="number"
+                  value={srg2.seuilBO1_V || 222}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    seuilBO1_V: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">BO2 (V)</Label>
+                <Input
+                  type="number"
+                  value={srg2.seuilBO2_V || 214}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    seuilBO2_V: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Coefficients de régulation */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Coefficients (%):</Label>
+            <div className="grid grid-cols-4 gap-2">
+              <div>
+                <Label className="text-xs">LO2</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={srg2.coefficientLO2 || -7}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    coefficientLO2: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">LO1</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={srg2.coefficientLO1 || -3.5}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    coefficientLO1: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">BO1</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={srg2.coefficientBO1 || 3.5}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    coefficientBO1: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">BO2</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={srg2.coefficientBO2 || 7}
+                  onChange={(e) => updateSRG2Device(srg2.id, {
+                    coefficientBO2: Number(e.target.value)
+                  })}
+                  className="h-8"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Limites de puissance */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Tolérance (±V)</Label>
+              <Label className="text-xs">Injection max (kVA)</Label>
               <Input
                 type="number"
-                value={srg2.toléranceTension_V}
+                value={srg2.puissanceMaxInjection_kVA || 85}
                 onChange={(e) => updateSRG2Device(srg2.id, {
-                  toléranceTension_V: Number(e.target.value)
+                  puissanceMaxInjection_kVA: Number(e.target.value)
                 })}
                 className="h-8"
               />
             </div>
             <div>
-              <Label className="text-xs">Puissance max (kVA)</Label>
+              <Label className="text-xs">Prélèvement max (kVA)</Label>
               <Input
                 type="number"
-                value={srg2.puissanceMax_kVA}
+                value={srg2.puissanceMaxPrelevement_kVA || 100}
                 onChange={(e) => updateSRG2Device(srg2.id, {
-                  puissanceMax_kVA: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <Label className="text-xs">Gain P</Label>
-              <Input
-                type="number"
-                step="0.1"
-                value={srg2.gainProportionnel}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  gainProportionnel: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Ti (s)</Label>
-              <Input
-                type="number"
-                value={srg2.tempsIntegral_s}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  tempsIntegral_s: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Seuil (V)</Label>
-              <Input
-                type="number"
-                value={srg2.seuílActivation_V}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  seuílActivation_V: Number(e.target.value)
+                  puissanceMaxPrelevement_kVA: Number(e.target.value)
                 })}
                 className="h-8"
               />
@@ -179,17 +247,62 @@ export const SRG2Panel = () => {
           </div>
 
           {/* Résultats de simulation */}
-          {srg2.tensionMesuree_V !== undefined && (
+          {srg2.tensionEntree && (
             <div className="bg-muted/50 p-2 rounded">
-              <div className="text-xs font-medium mb-1">Résultats simulation:</div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>Tension: {srg2.tensionMesuree_V.toFixed(1)}V</div>
-                <div>Q injecté: {srg2.puissanceInjectee_kVAr?.toFixed(1)}kVAr</div>
-                <div>Erreur: {srg2.erreurTension_V?.toFixed(1)}V</div>
-                <div>Charge: {srg2.puissanceInjectee_kVAr && srg2.puissanceMax_kVA ? 
-                  ((Math.abs(srg2.puissanceInjectee_kVAr) / srg2.puissanceMax_kVA) * 100).toFixed(1) : 0}%
+              <div className="text-xs font-medium mb-1">Résultats de régulation:</div>
+              
+              {/* Tensions d'entrée */}
+              <div className="mb-2">
+                <div className="text-xs text-muted-foreground mb-1">Tensions d'entrée:</div>
+                <div className="grid grid-cols-3 gap-1 text-xs">
+                  <div>A: {srg2.tensionEntree.A.toFixed(1)}V</div>
+                  <div>B: {srg2.tensionEntree.B.toFixed(1)}V</div>
+                  <div>C: {srg2.tensionEntree.C.toFixed(1)}V</div>
                 </div>
               </div>
+
+              {/* États des commutateurs */}
+              {srg2.etatCommutateur && (
+                <div className="mb-2">
+                  <div className="text-xs text-muted-foreground mb-1">États commutateurs:</div>
+                  <div className="grid grid-cols-3 gap-1 text-xs">
+                    <div>A: <Badge variant="outline" className="text-xs">{srg2.etatCommutateur.A}</Badge></div>
+                    <div>B: <Badge variant="outline" className="text-xs">{srg2.etatCommutateur.B}</Badge></div>
+                    <div>C: <Badge variant="outline" className="text-xs">{srg2.etatCommutateur.C}</Badge></div>
+                  </div>
+                </div>
+              )}
+
+              {/* Coefficients appliqués */}
+              {srg2.coefficientsAppliques && (
+                <div className="mb-2">
+                  <div className="text-xs text-muted-foreground mb-1">Coefficients:</div>
+                  <div className="grid grid-cols-3 gap-1 text-xs">
+                    <div>A: {srg2.coefficientsAppliques.A > 0 ? '+' : ''}{srg2.coefficientsAppliques.A.toFixed(1)}%</div>
+                    <div>B: {srg2.coefficientsAppliques.B > 0 ? '+' : ''}{srg2.coefficientsAppliques.B.toFixed(1)}%</div>
+                    <div>C: {srg2.coefficientsAppliques.C > 0 ? '+' : ''}{srg2.coefficientsAppliques.C.toFixed(1)}%</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Tensions de sortie */}
+              {srg2.tensionSortie && (
+                <div className="mb-2">
+                  <div className="text-xs text-muted-foreground mb-1">Tensions de sortie:</div>
+                  <div className="grid grid-cols-3 gap-1 text-xs">
+                    <div>A: {srg2.tensionSortie.A.toFixed(1)}V</div>
+                    <div>B: {srg2.tensionSortie.B.toFixed(1)}V</div>
+                    <div>C: {srg2.tensionSortie.C.toFixed(1)}V</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Contraintes et limitations */}
+              {srg2.contraintesSRG230 && (
+                <Badge variant="secondary" className="mt-1 text-xs">
+                  Contraintes SRG2-230 actives
+                </Badge>
+              )}
               {srg2.limitePuissanceAtteinte && (
                 <Badge variant="destructive" className="mt-1 text-xs">
                   Limite puissance atteinte

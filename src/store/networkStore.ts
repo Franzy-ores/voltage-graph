@@ -1087,21 +1087,21 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const node = currentProject.nodes.find(n => n.id === nodeId);
     const newSRG2: SRG2Config = {
       id: `srg2_${nodeId}_${Date.now()}`,
+  addSRG2Device: (nodeId: string) => {
+    const state = get();
+    if (!state.currentProject) return;
+    
+    // Déterminer le type de SRG2 selon le système de tension
+    const is400V = state.currentProject.voltageSystem === 'TÉTRAPHASÉ_400V';
+    const defaultConfig = is400V ? DEFAULT_SRG2_400_CONFIG : DEFAULT_SRG2_230_CONFIG;
+    
+    const newSRG2: SRG2Config = {
+      id: `srg2-${Date.now()}`,
       nodeId,
-      name: `SRG2-${node?.name || nodeId}`,
+      name: `SRG2-${state.simulationEquipment.srg2Devices.length + 1}`,
       enabled: true,
-      mode: "AUTO",
-      tensionConsigne_V: 230, // 230V par défaut
-      toléranceTension_V: 5,
-      puissanceMax_kVA: 50,
-      gainProportionnel: 2.0,
-      tempsIntegral_s: 10,
-      seuílActivation_V: 10,
-      tensionMin_V: 180,
-      tensionMax_V: 280,
-      temperatureMax_C: 70,
-      status: "ACTIF"
-    };
+      ...defaultConfig
+    } as SRG2Config;
 
     set({
       simulationEquipment: {
@@ -1144,7 +1144,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     });
 
     // Recalculer si modification pertinente
-    if (typeof updates.enabled !== 'undefined' || updates.tensionConsigne_V || updates.puissanceMax_kVA) {
+    if (typeof updates.enabled !== 'undefined' || updates.tensionConsigne_V || updates.puissanceMaxInjection_kVA) {
       if (updates.enabled === true && !simulationMode) {
         set({ simulationMode: true, selectedTool: 'simulation' });
       }
@@ -1316,5 +1316,5 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         isActive: false
       }
     });
-  }
+  },
 }));

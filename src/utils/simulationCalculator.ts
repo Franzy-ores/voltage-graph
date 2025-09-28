@@ -10,9 +10,9 @@ import {
   NeutralCompensator,
   SimulationEquipment,
   SimulationResult,
-  CableUpgrade
+  CableUpgrade,
 } from '@/types/network';
-import { SRG2Config, SRG2SimulationResult } from '@/types/srg2';
+import { SRG2Config, SRG2SimulationResult, SRG2SwitchState, DEFAULT_SRG2_400_CONFIG, DEFAULT_SRG2_230_CONFIG } from '@/types/srg2';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { Complex, C, add, sub, mul, div, abs, fromPolar } from '@/utils/complex';
 
@@ -370,16 +370,132 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Calcule un scénario en intégrant les équipements de simulation
+   * Calcule un scénario en intégrant les équipements de simulation avec mode itératif pour SRG2
    */
   private calculateScenarioWithEquipment(
     project: Project,
     scenario: CalculationScenario,
     equipment: SimulationEquipment
   ): CalculationResult {
-    // Utiliser le scénario de base modifié avec équipements
-    return this.calculateScenario(
-      project.nodes,
+    
+    // Si pas de SRG2 actifs, calcul normal
+    const activeSRG2 = equipment.srg2Devices?.filter(srg2 => srg2.enabled) || [];
+    if (activeSRG2.length === 0) {
+      return this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        project.foisonnementCharges,
+        project.foisonnementProductions,
+        project.transformerConfig,
+        project.loadModel,
+        project.desequilibrePourcent,
+        project.manualPhaseDistribution
+      );
+    }
+
+    // Calcul itératif avec régulation SRG2
+    return this.calculateWithSRG2Regulation(
+      project,
+      scenario,
+      activeSRG2
+    );
+  }
+
+  /**
+   * Calcul itératif avec régulation SRG2
+   */
+  private calculateWithSRG2Regulation(
+    project: Project,
+    scenario: CalculationScenario,
+    srg2Devices: SRG2Config[]
+  ): CalculationResult {
+    let iteration = 0;
+    let converged = false;
+    let previousVoltages: Map<string, {A: number, B: number, C: number}> = new Map();
+    
+    // Copie des nœuds pour modification itérative
+    const workingNodes = JSON.parse(JSON.stringify(project.nodes)) as Node[];
+    
+    while (!converged && iteration < SimulationCalculator.SIM_MAX_ITERATIONS) {
+      iteration++;
+      
+      // Calculer le scénario avec l'état actuel des nœuds
+      const result = this.calculateScenario(
+        workingNodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        project.foisonnementCharges,
+        project.foisonnementProductions,
+        project.transformerConfig,
+        project.loadModel,
+        project.desequilibrePourcent,
+        project.manualPhaseDistribution
+      );
+
+      // Appliquer la régulation SRG2 sur chaque dispositif
+      const voltageChanges = new Map<string, {A: number, B: number, C: number}>();
+      
+      for (const srg2 of srg2Devices) {
+        const nodeIndex = workingNodes.findIndex(n => n.id === srg2.nodeId);
+        if (nodeIndex === -1) continue;
+        
+        let regulationResult;
+        const nodeResults = (result as any).nodeResults;
+        const nodeResult = nodeResults?.find((nr: any) => nr.nodeId === srg2.nodeId);
+        if (!nodeResult) {
+          // Si pas de résultat de nœud, créer un résultat par défaut
+          const defaultResult = {
+            nodeId: srg2.nodeId,
+            voltageA_V: 230,
+            voltageB_V: 230,
+            voltageC_V: 230,
+            voltage_V: 230,
+            voltageDropA_V: 0,
+            voltageDropB_V: 0,
+            voltageDropC_V: 0,
+            voltageDrop_V: 0,
+            voltageDropPercent: 0,
+            totalLoad_kW: 0,
+            totalProduction_kW: 0,
+            totalLoad_kVA: 0,
+            totalProduction_kVA: 0
+          };
+          
+          // Appliquer la régulation SRG2 avec le résultat par défaut
+          regulationResult = this.applySRG2Regulation(srg2, defaultResult, project.voltageSystem);
+        } else {
+          // Appliquer la régulation SRG2
+          regulationResult = this.applySRG2Regulation(srg2, nodeResult, project.voltageSystem);
+        }
+        
+        // Stocker les changements de tension pour ce nœud
+        if (regulationResult.tensionSortie) {
+          voltageChanges.set(srg2.nodeId, regulationResult.tensionSortie);
+          
+          // Mettre à jour les informations du SRG2 pour l'affichage
+          srg2.tensionEntree = regulationResult.tensionEntree;
+          srg2.etatCommutateur = regulationResult.etatCommutateur;
+          srg2.coefficientsAppliques = regulationResult.coefficientsAppliques;
+          srg2.tensionSortie = regulationResult.tensionSortie;
+        }
+      }
+      
+      // Appliquer les modifications de tension aux nœuds en aval de chaque SRG2
+      this.applyVoltageChangesToDownstreamNodes(workingNodes, project.cables, voltageChanges);
+      
+      // Vérifier la convergence
+      converged = this.checkSRG2Convergence(voltageChanges, previousVoltages);
+      previousVoltages = new Map(voltageChanges);
+      
+      console.log(`🔄 SRG2 Iteration ${iteration}: ${converged ? 'Convergé' : 'En cours...'}`);
+    }
+    
+    // Recalculer une dernière fois avec les tensions finales
+    const finalResult = this.calculateScenario(
+      workingNodes,
       project.cables,
       project.cableTypes,
       scenario,
@@ -390,6 +506,198 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.desequilibrePourcent,
       project.manualPhaseDistribution
     );
+
+    return {
+      ...finalResult,
+      srg2Results: srg2Devices.map(srg2 => ({
+        srg2Id: srg2.id,
+        nodeId: srg2.nodeId,
+        tensionAvant_V: srg2.tensionEntree?.A || 0,
+        tensionApres_V: srg2.tensionSortie?.A || 0,
+        puissanceReactive_kVAr: 0,
+        ameliorationTension_V: (srg2.tensionSortie?.A || 0) - (srg2.tensionEntree?.A || 0),
+        erreurRésiduelle_V: Math.abs((srg2.tensionSortie?.A || 0) - 230),
+        efficacite_percent: Math.min(100, Math.max(0, (1 - Math.abs((srg2.tensionSortie?.A || 0) - 230) / 230) * 100)),
+        tauxCharge_percent: 0,
+        regulationActive: srg2.etatCommutateur?.A !== 'BYP',
+        saturePuissance: false,
+        convergence: converged
+      })),
+      convergenceStatus: converged ? 'converged' : 'not_converged',
+      iterations: iteration
+    } as CalculationResult & {
+      srg2Results: SRG2SimulationResult[];
+      convergenceStatus: 'converged' | 'not_converged';
+      iterations: number;
+    };
+  }
+
+  /**
+   * Applique la régulation SRG2 selon les seuils et contraintes
+   */
+  private applySRG2Regulation(
+    srg2: SRG2Config, 
+    nodeResult: any, 
+    voltageSystem: string
+  ): {
+    tensionEntree: {A: number, B: number, C: number},
+    etatCommutateur: {A: SRG2SwitchState, B: SRG2SwitchState, C: SRG2SwitchState},
+    coefficientsAppliques: {A: number, B: number, C: number},
+    tensionSortie: {A: number, B: number, C: number}
+  } {
+    
+    // Tensions d'entrée (côté alimentation)
+    const tensionEntree = {
+      A: nodeResult.voltageA_V || 230,
+      B: nodeResult.voltageB_V || 230, 
+      C: nodeResult.voltageC_V || 230
+    };
+
+    // Déterminer l'état du commutateur pour chaque phase
+    const etatCommutateur = {
+      A: this.determineSwitchState(tensionEntree.A, srg2),
+      B: this.determineSwitchState(tensionEntree.B, srg2),
+      C: this.determineSwitchState(tensionEntree.C, srg2)
+    };
+
+    // Appliquer les contraintes SRG2-230 si nécessaire
+    if (srg2.type === 'SRG2-230') {
+      this.applySRG230Constraints(etatCommutateur, tensionEntree, srg2);
+    }
+
+    // Calculer les coefficients appliqués
+    const coefficientsAppliques = {
+      A: this.getVoltageCoefficient(etatCommutateur.A, srg2),
+      B: this.getVoltageCoefficient(etatCommutateur.B, srg2),
+      C: this.getVoltageCoefficient(etatCommutateur.C, srg2)
+    };
+
+    // Calculer les tensions de sortie
+    const tensionSortie = {
+      A: tensionEntree.A * (1 + coefficientsAppliques.A / 100),
+      B: tensionEntree.B * (1 + coefficientsAppliques.B / 100),
+      C: tensionEntree.C * (1 + coefficientsAppliques.C / 100)
+    };
+
+    return {
+      tensionEntree,
+      etatCommutateur,
+      coefficientsAppliques,
+      tensionSortie
+    };
+  }
+
+  /**
+   * Détermine l'état du commutateur selon les seuils
+   */
+  private determineSwitchState(tension: number, srg2: SRG2Config): SRG2SwitchState {
+    if (tension >= srg2.seuilLO2_V) return 'LO2';
+    if (tension >= srg2.seuilLO1_V) return 'LO1';
+    if (tension >= srg2.seuilBO1_V) return 'BYP';
+    if (tension >= srg2.seuilBO2_V) return 'BO1';
+    return 'BO2';
+  }
+
+  /**
+   * Applique les contraintes du SRG2-230 (si une phase monte, les autres ne peuvent descendre)
+   */
+  private applySRG230Constraints(
+    etatCommutateur: {A: SRG2SwitchState, B: SRG2SwitchState, C: SRG2SwitchState},
+    tensionEntree: {A: number, B: number, C: number},
+    srg2: SRG2Config
+  ): void {
+    const phases = ['A', 'B', 'C'] as const;
+    const etats = [etatCommutateur.A, etatCommutateur.B, etatCommutateur.C];
+    
+    // Vérifier s'il y a des directions opposées
+    const hasBoost = etats.some(etat => etat === 'BO1' || etat === 'BO2');
+    const hasLower = etats.some(etat => etat === 'LO1' || etat === 'LO2');
+    
+    if (hasBoost && hasLower) {
+      // Trouver la phase avec le plus grand écart par rapport à 230V
+      let maxDeviation = 0;
+      let dominantDirection: 'boost' | 'lower' = 'boost';
+      
+      phases.forEach(phase => {
+        const tension = tensionEntree[phase];
+        const deviation = Math.abs(tension - 230);
+        if (deviation > maxDeviation) {
+          maxDeviation = deviation;
+          dominantDirection = tension > 230 ? 'lower' : 'boost';
+        }
+      });
+      
+      // Appliquer la contrainte: bloquer la direction opposée
+      phases.forEach(phase => {
+        const etat = etatCommutateur[phase];
+        if (dominantDirection === 'lower' && (etat === 'BO1' || etat === 'BO2')) {
+          etatCommutateur[phase] = 'BYP';
+        } else if (dominantDirection === 'boost' && (etat === 'LO1' || etat === 'LO2')) {
+          etatCommutateur[phase] = 'BYP';
+        }
+      });
+    }
+  }
+
+  /**
+   * Retourne le coefficient de tension selon l'état du commutateur
+   */
+  private getVoltageCoefficient(etat: SRG2SwitchState, srg2: SRG2Config): number {
+    switch (etat) {
+      case 'LO2': return srg2.coefficientLO2;
+      case 'LO1': return srg2.coefficientLO1;
+      case 'BYP': return 0;
+      case 'BO1': return srg2.coefficientBO1;
+      case 'BO2': return srg2.coefficientBO2;
+    }
+  }
+
+  /**
+   * Applique les changements de tension aux nœuds en aval
+   */
+  private applyVoltageChangesToDownstreamNodes(
+    nodes: Node[],
+    cables: Cable[],
+    voltageChanges: Map<string, {A: number, B: number, C: number}>
+  ): void {
+    
+    for (const [nodeId, newVoltages] of voltageChanges) {
+      const nodeIndex = nodes.findIndex(n => n.id === nodeId);
+      if (nodeIndex === -1) continue;
+
+      // Mettre à jour la tension de référence du nœud SRG2
+      nodes[nodeIndex].tensionCible = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
+      
+      // Cette tension sera utilisée comme référence pour les calculs suivants
+      // Les nœuds en aval hériteront de cette nouvelle tension de référence
+    }
+  }
+
+  /**
+   * Vérifie la convergence de la régulation SRG2
+   */
+  private checkSRG2Convergence(
+    currentVoltages: Map<string, {A: number, B: number, C: number}>,
+    previousVoltages: Map<string, {A: number, B: number, C: number}>
+  ): boolean {
+    
+    if (previousVoltages.size === 0) return false;
+    
+    for (const [nodeId, current] of currentVoltages) {
+      const previous = previousVoltages.get(nodeId);
+      if (!previous) return false;
+      
+      const deltaA = Math.abs(current.A - previous.A);
+      const deltaB = Math.abs(current.B - previous.B);  
+      const deltaC = Math.abs(current.C - previous.C);
+      
+      const tolerance = SimulationCalculator.SIM_CONVERGENCE_TOLERANCE_PHASE_V;
+      if (deltaA > tolerance || deltaB > tolerance || deltaC > tolerance) {
+        return false;
+      }
+    }
+    
+    return true;
   }
 
   // SUPPRIMÉ - Méthodes des régulateurs
