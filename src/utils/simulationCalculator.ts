@@ -477,58 +477,90 @@ export class SimulationCalculator extends ElectricalCalculator {
           }
         }
 
-        // Lecture des tensions calculées - essayer les deux sources pour plus de robustesse
+        // Lecture des tensions calculées - diagnostic complet et correction robuste
         let voltagesFound = false;
         
-        console.log(`🔍 SRG2 ${srg2.nodeId}: recherche des tensions calculées`);
+        console.log(`🔍 SRG2 ${srg2.nodeId}: DIAGNOSTIC COMPLET`);
         console.log(`📊 Nombre de nodeMetricsPerPhase:`, result.nodeMetricsPerPhase?.length || 0);
-        console.log(`📊 IDs disponibles dans nodeMetricsPerPhase:`, result.nodeMetricsPerPhase?.map(np => np.nodeId) || []);
+        console.log(`📊 Nombre de nodeMetrics:`, result.nodeMetrics?.length || 0);
+        console.log(`🎯 IDs disponibles dans nodeMetricsPerPhase:`, result.nodeMetricsPerPhase?.map(np => np.nodeId) || []);
+        console.log(`🎯 IDs disponibles dans nodeMetrics:`, result.nodeMetrics?.map(nm => nm.nodeId) || []);
         
-        // 1. Essayer d'abord nodeMetricsPerPhase (tensions par phase séparées)
+        // Diagnostic: vérifier si l'ID du SRG2 correspond exactement
+        console.log(`🔍 ID SRG2 recherché: "${srg2.nodeId}" (type: ${typeof srg2.nodeId})`);
+        
+        // 1. Essayer d'abord nodeMetricsPerPhase (tensions par phase séparées) - PRIORITÉ ABSOLUE
         const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(np => np.nodeId === srg2.nodeId);
         console.log(`🔍 NodeMetricsPerPhase trouvé pour ${srg2.nodeId}:`, !!nodeMetricsPerPhase);
-        if (nodeMetricsPerPhase) {
-          console.log(`📊 Tensions disponibles:`, nodeMetricsPerPhase.voltagesPerPhase);
-        }
         
         if (nodeMetricsPerPhase?.voltagesPerPhase) {
-          nodeVoltages = {
-            A: nodeMetricsPerPhase.voltagesPerPhase.A,
-            B: nodeMetricsPerPhase.voltagesPerPhase.B,
-            C: nodeMetricsPerPhase.voltagesPerPhase.C
-          };
-          voltagesFound = true;
-          console.log(`✅ SRG2 ${srg2.nodeId}: tensions par phase trouvées A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+          const volts = nodeMetricsPerPhase.voltagesPerPhase;
+          console.log(`📊 Tensions par phase trouvées:`, volts);
+          
+          // VALIDATION: vérifier que les tensions sont réalistes (> 200V et < 300V)
+          if (volts.A > 200 && volts.A < 300 && volts.B > 200 && volts.B < 300 && volts.C > 200 && volts.C < 300) {
+            nodeVoltages = { A: volts.A, B: volts.B, C: volts.C };
+            voltagesFound = true;
+            console.log(`✅ SRG2 ${srg2.nodeId}: TENSIONS RÉELLES UTILISÉES - A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+          } else {
+            console.warn(`⚠️ SRG2 ${srg2.nodeId}: tensions par phase non réalistes:`, volts);
+          }
         }
         
-        // 2. Fallback sur nodeMetrics (tension unique) si pas trouvé dans nodeMetricsPerPhase
+        // 2. Fallback sur nodeMetrics seulement si nodeMetricsPerPhase n'existe pas
         if (!voltagesFound) {
+          console.log(`🔄 SRG2 ${srg2.nodeId}: recherche dans nodeMetrics...`);
           const nodeMetrics = result.nodeMetrics?.find(nm => nm.nodeId === srg2.nodeId);
+          console.log(`🔍 NodeMetrics trouvé:`, !!nodeMetrics);
+          
           if (nodeMetrics?.V_phase_V !== undefined) {
             const voltage = nodeMetrics.V_phase_V;
-            nodeVoltages = { A: voltage, B: voltage, C: voltage };
-            voltagesFound = true;
-            console.log(`✅ SRG2 ${srg2.nodeId}: tension unique trouvée ${voltage.toFixed(1)}V appliquée aux 3 phases`);
+            console.log(`📊 Tension unique disponible: ${voltage.toFixed(3)}V`);
+            
+            // VALIDATION: vérifier que la tension est réaliste
+            if (voltage > 200 && voltage < 300) {
+              nodeVoltages = { A: voltage, B: voltage, C: voltage };
+              voltagesFound = true;
+              console.log(`✅ SRG2 ${srg2.nodeId}: TENSION UNIQUE RÉELLE UTILISÉE ${voltage.toFixed(1)}V sur les 3 phases`);
+            } else {
+              console.warn(`⚠️ SRG2 ${srg2.nodeId}: tension unique non réaliste: ${voltage}V`);
+            }
           }
         }
         
-        // 3. Avertissement si aucune tension calculée trouvée
+        // 3. FORCER LA RECHERCHE dans toutes les métriques si pas encore trouvé
         if (!voltagesFound) {
-          console.log(`⚠️ SRG2 ${srg2.nodeId}: aucune tension calculée trouvée, utilisation des valeurs par défaut (230V)`);
-        }
-
-        // Fallback: utiliser la tension cible du nœud si aucune tension calculée trouvée
-        if (nodeVoltages.A === 230 && nodeVoltages.B === 230 && nodeVoltages.C === 230) {
-          if (srg2Node.tensionCible) {
-            nodeVoltages = {
-              A: srg2Node.tensionCible,
-              B: srg2Node.tensionCible, 
-              C: srg2Node.tensionCible
-            };
-            console.log(`⚠️ SRG2 ${srg2.nodeId}: utilise tension cible du nœud ${srg2Node.tensionCible.toFixed(1)}V`);
-          } else {
-            console.warn(`❌ SRG2 ${srg2.nodeId}: aucune tension trouvée, utilise valeurs par défaut 230V`);
+          console.log(`🚨 SRG2 ${srg2.nodeId}: RECHERCHE FORCÉE dans toutes les métriques`);
+          
+          // Recherche exhaustive dans nodeMetricsPerPhase avec correspondance partielle
+          const partialMatch = result.nodeMetricsPerPhase?.find(np => 
+            np.nodeId?.toString().includes(srg2.nodeId) || srg2.nodeId.includes(np.nodeId?.toString())
+          );
+          
+          if (partialMatch?.voltagesPerPhase) {
+            const volts = partialMatch.voltagesPerPhase;
+            console.log(`🎯 Correspondance partielle trouvée: ID=${partialMatch.nodeId}, tensions:`, volts);
+            
+            if (volts.A > 200 && volts.A < 300) {
+              nodeVoltages = { A: volts.A, B: volts.B, C: volts.C };
+              voltagesFound = true;
+              console.log(`✅ SRG2 ${srg2.nodeId}: TENSIONS TROUVÉES par correspondance partielle - A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+            }
           }
+        }
+        
+        // 4. ERREUR CRITIQUE si aucune tension réaliste trouvée - NE PLUS UTILISER tensionCible
+        if (!voltagesFound) {
+          console.error(`❌ ERREUR CRITIQUE SRG2 ${srg2.nodeId}: aucune tension calculée trouvée dans les résultats de simulation`);
+          console.error(`📋 Données disponibles:`, { 
+            nodeMetricsPerPhase: result.nodeMetricsPerPhase?.length, 
+            nodeMetrics: result.nodeMetrics?.length,
+            srg2NodeExists: !!srg2Node,
+            tensionCibleNode: srg2Node?.tensionCible 
+          });
+          
+          // ABANDON de tensionCible - forcer l'erreur pour debug
+          throw new Error(`SRG2 ${srg2.nodeId}: impossible de lire les tensions calculées. Vérifiez que le nœud existe dans les résultats de simulation.`);
         }
 
         // Appliquer la régulation SRG2 sur les tensions lues
