@@ -442,34 +442,33 @@ export class SimulationCalculator extends ElectricalCalculator {
         const nodeIndex = workingNodes.findIndex(n => n.id === srg2.nodeId);
         if (nodeIndex === -1) continue;
         
-        let regulationResult;
+        // Trouver le nœud SRG2 et récupérer ses tensions actuelles
+        const srg2Node = workingNodes.find(n => n.id === srg2.nodeId);
+        if (!srg2Node) continue;
+
+        // Lire les tensions du nœud d'installation du SRG2 (tensions d'entrée)
         const nodeResults = (result as any).nodeResults;
+        let nodeVoltages = { A: 230, B: 230, C: 230 }; // Valeurs par défaut
+        
         const nodeResult = nodeResults?.find((nr: any) => nr.nodeId === srg2.nodeId);
-        if (!nodeResult) {
-          // Si pas de résultat de nœud, créer un résultat par défaut
-          const defaultResult = {
-            nodeId: srg2.nodeId,
-            voltageA_V: 230,
-            voltageB_V: 230,
-            voltageC_V: 230,
-            voltage_V: 230,
-            voltageDropA_V: 0,
-            voltageDropB_V: 0,
-            voltageDropC_V: 0,
-            voltageDrop_V: 0,
-            voltageDropPercent: 0,
-            totalLoad_kW: 0,
-            totalProduction_kW: 0,
-            totalLoad_kVA: 0,
-            totalProduction_kVA: 0
+        if (nodeResult) {
+          // Utiliser les tensions calculées du nœud d'installation
+          nodeVoltages = {
+            A: nodeResult.voltageA_V || nodeResult.voltage_V || 230,
+            B: nodeResult.voltageB_V || nodeResult.voltage_V || 230,
+            C: nodeResult.voltageC_V || nodeResult.voltage_V || 230
           };
-          
-          // Appliquer la régulation SRG2 avec le résultat par défaut
-          regulationResult = this.applySRG2Regulation(srg2, defaultResult, project.voltageSystem);
-        } else {
-          // Appliquer la régulation SRG2
-          regulationResult = this.applySRG2Regulation(srg2, nodeResult, project.voltageSystem);
+        } else if (srg2Node.tensionCible) {
+          // Utiliser la tension cible du nœud si disponible
+          nodeVoltages = {
+            A: srg2Node.tensionCible,
+            B: srg2Node.tensionCible, 
+            C: srg2Node.tensionCible
+          };
         }
+
+        // Appliquer la régulation SRG2 sur les tensions lues
+        const regulationResult = this.applySRG2Regulation(srg2, nodeVoltages, project.voltageSystem);
         
         // Stocker les changements de tension pour ce nœud
         if (regulationResult.tensionSortie) {
@@ -537,7 +536,7 @@ export class SimulationCalculator extends ElectricalCalculator {
    */
   private applySRG2Regulation(
     srg2: SRG2Config, 
-    nodeResult: any, 
+    nodeVoltages: {A: number, B: number, C: number}, 
     voltageSystem: string
   ): {
     tensionEntree: {A: number, B: number, C: number},
@@ -546,12 +545,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     tensionSortie: {A: number, B: number, C: number}
   } {
     
-    // Tensions d'entrée (côté alimentation)
-    const tensionEntree = {
-      A: nodeResult.voltageA_V || 230,
-      B: nodeResult.voltageB_V || 230, 
-      C: nodeResult.voltageC_V || 230
-    };
+    // Tensions d'entrée lues au nœud d'installation
+    const tensionEntree = { ...nodeVoltages };
 
     // Déterminer l'état du commutateur pour chaque phase
     const etatCommutateur = {
@@ -665,11 +660,16 @@ export class SimulationCalculator extends ElectricalCalculator {
       const nodeIndex = nodes.findIndex(n => n.id === nodeId);
       if (nodeIndex === -1) continue;
 
-      // Mettre à jour la tension de référence du nœud SRG2
-      nodes[nodeIndex].tensionCible = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
+      // Mettre à jour la tension de référence du nœud SRG2 avec la tension de sortie régulée
+      const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
+      nodes[nodeIndex].tensionCible = avgVoltage;
       
-      // Cette tension sera utilisée comme référence pour les calculs suivants
-      // Les nœuds en aval hériteront de cette nouvelle tension de référence
+      // Marquer ce nœud comme ayant une tension régulée par SRG2
+      // Ceci sera utilisé comme nouvelle référence pour calculer les chutes de tension en aval
+      console.log(`🔧 SRG2 sur nœud ${nodeId}: tension de sortie ${avgVoltage.toFixed(1)}V appliquée pour calculs en aval`);
+      
+      // Les calculs suivants utiliseront cette nouvelle tension de référence
+      // pour déterminer les tensions des nœuds en aval de ce SRG2
     }
   }
 
