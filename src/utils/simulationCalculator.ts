@@ -449,47 +449,47 @@ export class SimulationCalculator extends ElectricalCalculator {
         // Lire les tensions du nœud d'installation du SRG2 (tensions d'entrée)
         let nodeVoltages = { A: 230, B: 230, C: 230 }; // Valeurs par défaut
         
-        console.log(`🔍 SRG2 ${srg2.nodeId}: recherche des tensions calculées...`);
+        console.log(`🔍 SRG2 ${srg2.nodeId}: mode ${project.loadModel}, recherche des tensions calculées...`);
         console.log(`📋 Structure des résultats:`, {
+          loadModel: project.loadModel,
+          hasNodeMetrics: !!result.nodeMetrics,
+          nodeMetricsCount: result.nodeMetrics?.length || 0,
           hasNodeMetricsPerPhase: !!result.nodeMetricsPerPhase,
-          nodeMetricsPerPhaseCount: result.nodeMetricsPerPhase?.length || 0,
-          hasNodeResults: !!(result as any).nodeResults,
-          nodeResultsCount: (result as any).nodeResults?.length || 0
+          nodeMetricsPerPhaseCount: result.nodeMetricsPerPhase?.length || 0
         });
 
-        // Priorité 1: Utiliser nodeMetricsPerPhase (structure correcte pour phases A, B, C)
-        const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === srg2.nodeId);
-        if (nodeMetricsPerPhase?.voltagesPerPhase) {
-          nodeVoltages = {
-            A: nodeMetricsPerPhase.voltagesPerPhase.A,
-            B: nodeMetricsPerPhase.voltagesPerPhase.B,
-            C: nodeMetricsPerPhase.voltagesPerPhase.C
-          };
-          console.log(`✅ SRG2 ${srg2.nodeId}: tensions lues depuis nodeMetricsPerPhase A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
-        } 
-        // Priorité 2: Fallback sur nodeResults (structure ancienne)
-        else {
-          const nodeResults = (result as any).nodeResults;
-          const nodeResult = nodeResults?.find((nr: any) => nr.nodeId === srg2.nodeId);
-          if (nodeResult) {
+        // Lecture différente selon le mode de charge
+        if (project.loadModel === 'monophase_reparti') {
+          // Mode monophasé réparti: utiliser nodeMetricsPerPhase (phases A, B, C séparées)
+          const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === srg2.nodeId);
+          if (nodeMetricsPerPhase?.voltagesPerPhase) {
             nodeVoltages = {
-              A: nodeResult.voltageA_V || nodeResult.voltage_V || 230,
-              B: nodeResult.voltageB_V || nodeResult.voltage_V || 230,
-              C: nodeResult.voltageC_V || nodeResult.voltage_V || 230
+              A: nodeMetricsPerPhase.voltagesPerPhase.A,
+              B: nodeMetricsPerPhase.voltagesPerPhase.B,
+              C: nodeMetricsPerPhase.voltagesPerPhase.C
             };
-            console.log(`⚠️ SRG2 ${srg2.nodeId}: tensions lues depuis nodeResults (fallback) A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+            console.log(`✅ SRG2 ${srg2.nodeId} (monophasé): tensions par phase A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
           }
-          // Priorité 3: Utiliser la tension cible du nœud si disponible
-          else if (srg2Node.tensionCible) {
+        } else {
+          // Mode polyphasé équilibré: utiliser nodeMetrics (tension unique par nœud)
+          const nodeMetrics = result.nodeMetrics?.find(nm => nm.nodeId === srg2.nodeId);
+          if (nodeMetrics?.V_phase_V) {
+            const voltage = nodeMetrics.V_phase_V;
+            nodeVoltages = { A: voltage, B: voltage, C: voltage };
+            console.log(`✅ SRG2 ${srg2.nodeId} (polyphasé): tension unique ${voltage.toFixed(1)}V appliquée aux 3 phases`);
+          }
+        }
+
+        // Fallback: utiliser la tension cible du nœud si aucune tension calculée trouvée
+        if (nodeVoltages.A === 230 && nodeVoltages.B === 230 && nodeVoltages.C === 230) {
+          if (srg2Node.tensionCible) {
             nodeVoltages = {
               A: srg2Node.tensionCible,
               B: srg2Node.tensionCible, 
               C: srg2Node.tensionCible
             };
             console.log(`⚠️ SRG2 ${srg2.nodeId}: utilise tension cible du nœud ${srg2Node.tensionCible.toFixed(1)}V`);
-          } 
-          // Priorité 4: Valeurs par défaut
-          else {
+          } else {
             console.warn(`❌ SRG2 ${srg2.nodeId}: aucune tension trouvée, utilise valeurs par défaut 230V`);
           }
         }
@@ -510,7 +510,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
       
       // Appliquer les modifications de tension aux nœuds en aval de chaque SRG2
-      this.applyVoltageChangesToDownstreamNodes(workingNodes, project.cables, voltageChanges);
+      this.applyVoltageChangesToDownstreamNodes(workingNodes, project.cables, voltageChanges, project.loadModel);
       
       // Vérifier la convergence
       converged = this.checkSRG2Convergence(voltageChanges, previousVoltages);
@@ -686,20 +686,32 @@ export class SimulationCalculator extends ElectricalCalculator {
   private applyVoltageChangesToDownstreamNodes(
     nodes: Node[],
     cables: Cable[],
-    voltageChanges: Map<string, {A: number, B: number, C: number}>
+    voltageChanges: Map<string, {A: number, B: number, C: number}>,
+    loadModel: string = 'polyphase_equilibre'
   ): void {
     
     for (const [nodeId, newVoltages] of voltageChanges) {
       const nodeIndex = nodes.findIndex(n => n.id === nodeId);
       if (nodeIndex === -1) continue;
 
-      // Mettre à jour la tension de référence du nœud SRG2 avec la tension de sortie régulée
-      const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
-      nodes[nodeIndex].tensionCible = avgVoltage;
-      
-      // Marquer ce nœud comme ayant une tension régulée par SRG2
-      // Ceci sera utilisé comme nouvelle référence pour calculer les chutes de tension en aval
-      console.log(`🔧 SRG2 sur nœud ${nodeId}: tension de sortie ${avgVoltage.toFixed(1)}V appliquée pour calculs en aval`);
+      if (loadModel === 'monophase_reparti') {
+        // Mode monophasé réparti: conserver les tensions par phase dans des propriétés spéciales
+        (nodes[nodeIndex] as any).tensionCiblePhaseA = newVoltages.A;
+        (nodes[nodeIndex] as any).tensionCiblePhaseB = newVoltages.B;
+        (nodes[nodeIndex] as any).tensionCiblePhaseC = newVoltages.C;
+        
+        // Utiliser la moyenne pour tensionCible (compatibilité)
+        const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
+        nodes[nodeIndex].tensionCible = avgVoltage;
+        
+        console.log(`🔧 SRG2 sur nœud ${nodeId} (monophasé): tensions par phase A=${newVoltages.A.toFixed(1)}V, B=${newVoltages.B.toFixed(1)}V, C=${newVoltages.C.toFixed(1)}V, moyenne=${avgVoltage.toFixed(1)}V`);
+      } else {
+        // Mode polyphasé équilibré: utiliser la moyenne des trois phases
+        const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
+        nodes[nodeIndex].tensionCible = avgVoltage;
+        
+        console.log(`🔧 SRG2 sur nœud ${nodeId} (polyphasé): tension de sortie ${avgVoltage.toFixed(1)}V appliquée pour calculs en aval`);
+      }
       
       // Les calculs suivants utiliseront cette nouvelle tension de référence
       // pour déterminer les tensions des nœuds en aval de ce SRG2
