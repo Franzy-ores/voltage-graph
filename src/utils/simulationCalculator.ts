@@ -477,31 +477,35 @@ export class SimulationCalculator extends ElectricalCalculator {
           }
         }
 
-        // Lecture différente selon le mode de charge
-        if (project.loadModel === 'monophase_reparti') {
-          // Mode monophasé réparti: utiliser nodeMetricsPerPhase (phases A, B, C séparées)
-          const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === srg2.nodeId);
-          if (nodeMetricsPerPhase?.voltagesPerPhase) {
-            nodeVoltages = {
-              A: nodeMetricsPerPhase.voltagesPerPhase.A,
-              B: nodeMetricsPerPhase.voltagesPerPhase.B,
-              C: nodeMetricsPerPhase.voltagesPerPhase.C
-            };
-            console.log(`✅ SRG2 ${srg2.nodeId} (monophasé): tensions par phase A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
-          } else {
-            console.log(`❌ SRG2 ${srg2.nodeId} (monophasé): pas de voltagesPerPhase trouvées`);
-          }
-        } else {
-          // Mode polyphasé équilibré: utiliser nodeMetrics (tension unique par nœud)
+        // Lecture des tensions calculées - essayer les deux sources pour plus de robustesse
+        let voltagesFound = false;
+        
+        // 1. Essayer d'abord nodeMetricsPerPhase (tensions par phase séparées)
+        const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(np => np.nodeId === srg2.nodeId);
+        if (nodeMetricsPerPhase?.voltagesPerPhase) {
+          nodeVoltages = {
+            A: nodeMetricsPerPhase.voltagesPerPhase.A,
+            B: nodeMetricsPerPhase.voltagesPerPhase.B,
+            C: nodeMetricsPerPhase.voltagesPerPhase.C
+          };
+          voltagesFound = true;
+          console.log(`✅ SRG2 ${srg2.nodeId}: tensions par phase trouvées A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+        }
+        
+        // 2. Fallback sur nodeMetrics (tension unique) si pas trouvé dans nodeMetricsPerPhase
+        if (!voltagesFound) {
           const nodeMetrics = result.nodeMetrics?.find(nm => nm.nodeId === srg2.nodeId);
-          if (nodeMetrics?.V_phase_V) {
+          if (nodeMetrics?.V_phase_V !== undefined) {
             const voltage = nodeMetrics.V_phase_V;
             nodeVoltages = { A: voltage, B: voltage, C: voltage };
-            console.log(`✅ SRG2 ${srg2.nodeId} (polyphasé): tension unique ${voltage.toFixed(1)}V appliquée aux 3 phases`);
-            console.log(`📊 Détails tension nœud: V_phase_V=${voltage.toFixed(3)}V, diff consigne=${(voltage-230).toFixed(2)}V`);
-          } else {
-            console.log(`❌ SRG2 ${srg2.nodeId} (polyphasé): pas de V_phase_V trouvée dans nodeMetrics`);
+            voltagesFound = true;
+            console.log(`✅ SRG2 ${srg2.nodeId}: tension unique trouvée ${voltage.toFixed(1)}V appliquée aux 3 phases`);
           }
+        }
+        
+        // 3. Avertissement si aucune tension calculée trouvée
+        if (!voltagesFound) {
+          console.log(`⚠️ SRG2 ${srg2.nodeId}: aucune tension calculée trouvée, utilisation des valeurs par défaut (230V)`);
         }
 
         // Fallback: utiliser la tension cible du nœud si aucune tension calculée trouvée
@@ -643,14 +647,40 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Détermine l'état du commutateur selon les seuils
+   * Détermine l'état du commutateur selon les seuils de tension
+   * Logique: évaluer dans l'ordre pour déterminer l'action nécessaire
    */
   private determineSwitchState(tension: number, srg2: SRG2Config): SRG2SwitchState {
-    if (tension >= srg2.seuilLO2_V) return 'LO2';
-    if (tension >= srg2.seuilLO1_V) return 'LO1';
-    if (tension >= srg2.seuilBO1_V) return 'BYP';
-    if (tension >= srg2.seuilBO2_V) return 'BO1';
-    return 'BO2';
+    console.log(`🔍 SRG2 ${srg2.id}: Évaluation seuils pour tension=${tension.toFixed(1)}V`);
+    console.log(`📋 Seuils: LO2=${srg2.seuilLO2_V}V, LO1=${srg2.seuilLO1_V}V, BO1=${srg2.seuilBO1_V}V, BO2=${srg2.seuilBO2_V}V`);
+    
+    // Tensions trop hautes (abaissement nécessaire)
+    if (tension >= srg2.seuilLO2_V) {
+      console.log(`➡️ Tension ${tension.toFixed(1)}V >= ${srg2.seuilLO2_V}V → LO2 (abaissement complet)`);
+      return 'LO2';
+    }
+    if (tension >= srg2.seuilLO1_V) {
+      console.log(`➡️ Tension ${tension.toFixed(1)}V >= ${srg2.seuilLO1_V}V → LO1 (abaissement partiel)`);
+      return 'LO1';
+    }
+    
+    // Tensions trop basses (boost nécessaire)  
+    if (tension <= srg2.seuilBO2_V) {
+      console.log(`➡️ Tension ${tension.toFixed(1)}V <= ${srg2.seuilBO2_V}V → BO2 (boost complet)`);
+      return 'BO2';
+    }
+    if (tension < srg2.seuilLO1_V && tension > srg2.seuilBO1_V) {
+      console.log(`➡️ Tension ${tension.toFixed(1)}V entre ${srg2.seuilBO1_V}V et ${srg2.seuilLO1_V}V → BYP (plage acceptable)`);
+      return 'BYP';
+    }
+    if (tension <= srg2.seuilBO1_V) {
+      console.log(`➡️ Tension ${tension.toFixed(1)}V <= ${srg2.seuilBO1_V}V → BO1 (boost partiel)`);
+      return 'BO1';
+    }
+    
+    // Fallback (ne devrait pas arriver)
+    console.log(`⚠️ Tension ${tension.toFixed(1)}V - cas non prévu → BYP (fallback)`);
+    return 'BYP';
   }
 
   /**
