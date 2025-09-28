@@ -13,6 +13,7 @@ import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { ForcedModePanel } from "@/components/ForcedModePanel";
 import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
+import { SRG2Panel } from "@/components/SRG2Panel";
 import { 
   Settings, 
   TrendingUp, 
@@ -23,7 +24,8 @@ import {
   Plus,
   AlertTriangle,
   CheckCircle,
-  Target
+  Target,
+  Activity
 } from "lucide-react";
 
 export const SimulationPanel = () => {
@@ -293,10 +295,14 @@ export const SimulationPanel = () => {
       <ScrollArea className="flex-1">
         <div className="p-4">
           <Tabs defaultValue="calibration" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 text-xs">
+            <TabsList className="grid w-full grid-cols-4 text-xs">
               <TabsTrigger value="calibration" className="text-xs">
                 <Target className="h-3 w-3 mr-1" />
                 Calibration
+              </TabsTrigger>
+              <TabsTrigger value="srg2" className="text-xs">
+                <Activity className="h-3 w-3 mr-1" />
+                SRG2
               </TabsTrigger>
               <TabsTrigger value="compensators" className="text-xs">
                 <Settings className="h-3 w-3 mr-1" />
@@ -310,6 +316,10 @@ export const SimulationPanel = () => {
 
             <TabsContent value="calibration" className="mt-4">
               <ForcedModePanel />
+            </TabsContent>
+
+            <TabsContent value="srg2" className="mt-4">
+              <SRG2Panel />
             </TabsContent>
 
             <TabsContent value="compensators" className="mt-4">

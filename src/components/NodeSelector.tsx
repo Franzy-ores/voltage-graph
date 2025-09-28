@@ -14,7 +14,6 @@ interface NodeSelectorProps {
   trigger?: React.ReactNode;
   title: string;
   description?: string;
-  getRegulatorTypeForSource?: (sourceVoltage: number) => string;
   // Ajout pour connaître le contexte du projet
   voltageSystem?: 'TRIPHASÉ_230V' | 'TÉTRAPHASÉ_400V';
   loadModel?: 'monophase_reparti' | 'polyphase_equilibre';
@@ -27,7 +26,6 @@ export const NodeSelector = ({
   trigger, 
   title,
   description,
-  getRegulatorTypeForSource,
   voltageSystem = 'TÉTRAPHASÉ_400V',
   loadModel = 'polyphase_equilibre'
 }: NodeSelectorProps) => {
@@ -44,19 +42,7 @@ export const NodeSelector = ({
     }
   };
 
-  // Déterminer le type de régulateur pour affichage
-  const getRegulatorInfo = () => {
-    if (!getRegulatorTypeForSource) return null;
-    
-    // Trouver le nœud source pour déterminer la tension
-    const sourceNode = nodes.find(n => n.isSource);
-    const sourceVoltage = sourceNode?.tensionCible || 230; // Par défaut 230V
-    const regulatorType = getRegulatorTypeForSource(sourceVoltage);
-    
-    return regulatorType;
-  };
-
-  const regulatorInfo = getRegulatorInfo();
+  // SUPPRIMÉ - code des régulateurs
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -73,11 +59,6 @@ export const NodeSelector = ({
           <DialogTitle>{title}</DialogTitle>
           {description && (
             <DialogDescription>{description}</DialogDescription>
-          )}
-          {regulatorInfo && (
-            <Badge variant="secondary" className="w-fit">
-              Type: {regulatorInfo}
-            </Badge>
           )}
         </DialogHeader>
         <div className="space-y-4">

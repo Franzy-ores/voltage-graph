@@ -12,6 +12,7 @@ import {
   SimulationResult,
   CableUpgrade
 } from '@/types/network';
+import { SRG2Config, SRG2SimulationResult } from '@/types/srg2';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { Complex, C, add, sub, mul, div, abs, fromPolar } from '@/utils/complex';
 

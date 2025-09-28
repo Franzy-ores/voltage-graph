@@ -22,7 +22,8 @@ const Index = () => {
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
-  const activeEquipmentCount = simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
+                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
 

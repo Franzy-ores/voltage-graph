@@ -15,6 +15,7 @@ import {
   CableUpgrade,
   SimulationEquipment
 } from '@/types/network';
+import { SRG2Config } from '@/types/srg2';
 import { NodeWithConnectionType, getNodeConnectionType, addConnectionTypeToNodes } from '@/utils/nodeConnectionType';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
@@ -105,7 +106,11 @@ interface NetworkActions {
   toggleSimulationMode: () => void;
   updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
   clearSimulationPreview: () => void;
-  // SUPPRIMÉ - Méthodes des régulateurs
+  // Méthodes SRG2
+  addSRG2Device: (nodeId: string) => void;
+  removeSRG2Device: (srg2Id: string) => void;
+  updateSRG2Device: (srg2Id: string, updates: Partial<SRG2Config>) => void;
+  // Méthodes compensateur de neutre
   addNeutralCompensator: (nodeId: string) => void;
   removeNeutralCompensator: (compensatorId: string) => void;
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => void;
@@ -275,6 +280,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   showVoltages: false,
   simulationMode: false,
   simulationEquipment: {
+    srg2Devices: [],
     neutralCompensators: [],
     cableUpgrades: []
   },
@@ -304,6 +310,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
+        srg2Devices: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -364,6 +371,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
+        srg2Devices: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -850,7 +858,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
             const simResult = simCalculator.calculateWithSimulation(
               currentProject,
               'FORCÉ',
-              { neutralCompensators: [], cableUpgrades: [] }
+              { srg2Devices: [], neutralCompensators: [], cableUpgrades: [] }
             );
             return simResult.baselineResult || simResult;
           } catch (error) {
@@ -1057,13 +1065,94 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       },
       // Désactiver tous les équipements de simulation quand on quitte le mode simulation
       simulationEquipment: newSimulationMode ? simulationEquipment : {
+        srg2Devices: simulationEquipment.srg2Devices?.map(s => ({ ...s, enabled: false })) || [],
         neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
         cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
   },
 
-  // SUPPRIMÉ - Toutes les méthodes des régulateurs
+  // Méthodes SRG2
+  addSRG2Device: (nodeId: string) => {
+    const { simulationEquipment, currentProject } = get();
+    if (!currentProject) return;
+    
+    // Vérifier qu'il n'y a pas déjà un SRG2 sur ce nœud
+    const existingSRG2 = simulationEquipment.srg2Devices?.find(s => s.nodeId === nodeId);
+    if (existingSRG2) {
+      toast.error('Un SRG2 existe déjà sur ce nœud');
+      return;
+    }
+
+    const node = currentProject.nodes.find(n => n.id === nodeId);
+    const newSRG2: SRG2Config = {
+      id: `srg2_${nodeId}_${Date.now()}`,
+      nodeId,
+      name: `SRG2-${node?.name || nodeId}`,
+      enabled: true,
+      mode: "AUTO",
+      tensionConsigne_V: 230, // 230V par défaut
+      toléranceTension_V: 5,
+      puissanceMax_kVA: 50,
+      gainProportionnel: 2.0,
+      tempsIntegral_s: 10,
+      seuílActivation_V: 10,
+      tensionMin_V: 180,
+      tensionMax_V: 280,
+      temperatureMax_C: 70,
+      status: "ACTIF"
+    };
+
+    set({
+      simulationEquipment: {
+        ...simulationEquipment,
+        srg2Devices: [...(simulationEquipment.srg2Devices || []), newSRG2]
+      }
+    });
+    
+    toast.success(`SRG2 ${newSRG2.name} ajouté`);
+    
+    // Recalculer automatiquement la simulation
+    get().runSimulation();
+  },
+
+  removeSRG2Device: (srg2Id: string) => {
+    const { simulationEquipment } = get();
+    const srg2 = simulationEquipment.srg2Devices?.find(s => s.id === srg2Id);
+    
+    set({
+      simulationEquipment: {
+        ...simulationEquipment,
+        srg2Devices: (simulationEquipment.srg2Devices || []).filter(s => s.id !== srg2Id)
+      }
+    });
+    
+    toast.success(`SRG2 ${srg2?.name} supprimé`);
+    get().runSimulation();
+  },
+
+  updateSRG2Device: (srg2Id: string, updates: Partial<SRG2Config>) => {
+    const { simulationEquipment, simulationMode } = get();
+    
+    set({
+      simulationEquipment: {
+        ...simulationEquipment,
+        srg2Devices: (simulationEquipment.srg2Devices || []).map(s => 
+          s.id === srg2Id ? { ...s, ...updates } : s
+        )
+      }
+    });
+
+    // Recalculer si modification pertinente
+    if (typeof updates.enabled !== 'undefined' || updates.tensionConsigne_V || updates.puissanceMax_kVA) {
+      if (updates.enabled === true && !simulationMode) {
+        set({ simulationMode: true, selectedTool: 'simulation' });
+      }
+      get().runSimulation();
+    } else if (simulationMode) {
+      get().runSimulation();
+    }
+  },
   
   addNeutralCompensator: (nodeId: string) => {
     const { simulationEquipment, currentProject } = get();
@@ -1200,7 +1289,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       // Mettre à jour l'état avec les résultats de simulation
       set({ simulationResults: newSimulationResults });
       
-  const activeEquipmentCount = simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+      const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
+                                   simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
       
       toast.success(`Simulation recalculée avec ${activeEquipmentCount} équipement(s) actif(s)`);
     } catch (error) {

@@ -57,7 +57,8 @@ export const MapView = () => {
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
-  const activeEquipmentCount = simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
+                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   console.log('🐛 MapView results logic:', {
     simulationMode,

@@ -14,6 +14,9 @@ export type CalculationScenario = "PRÉLÈVEMENT" | "MIXTE" | "PRODUCTION" | "FO
 
 export type LoadModel = 'monophase_reparti' | 'polyphase_equilibre';
 
+// Import du type SRG2Config
+import { SRG2Config } from './srg2';
+
 // Types pour le transformateur HT1/BT
 export type TransformerRating = "160kVA" | "250kVA" | "400kVA" | "630kVA";
 
@@ -210,6 +213,7 @@ export interface CableUpgrade {
 }
 
 export interface SimulationEquipment {
+  srg2Devices: SRG2Config[]; // Nouveau: dispositifs SRG2
   neutralCompensators: NeutralCompensator[];
   cableUpgrades: CableUpgrade[];
 }
