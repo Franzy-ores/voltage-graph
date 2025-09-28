@@ -480,8 +480,17 @@ export class SimulationCalculator extends ElectricalCalculator {
         // Lecture des tensions calculées - essayer les deux sources pour plus de robustesse
         let voltagesFound = false;
         
+        console.log(`🔍 SRG2 ${srg2.nodeId}: recherche des tensions calculées`);
+        console.log(`📊 Nombre de nodeMetricsPerPhase:`, result.nodeMetricsPerPhase?.length || 0);
+        console.log(`📊 IDs disponibles dans nodeMetricsPerPhase:`, result.nodeMetricsPerPhase?.map(np => np.nodeId) || []);
+        
         // 1. Essayer d'abord nodeMetricsPerPhase (tensions par phase séparées)
         const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(np => np.nodeId === srg2.nodeId);
+        console.log(`🔍 NodeMetricsPerPhase trouvé pour ${srg2.nodeId}:`, !!nodeMetricsPerPhase);
+        if (nodeMetricsPerPhase) {
+          console.log(`📊 Tensions disponibles:`, nodeMetricsPerPhase.voltagesPerPhase);
+        }
+        
         if (nodeMetricsPerPhase?.voltagesPerPhase) {
           nodeVoltages = {
             A: nodeMetricsPerPhase.voltagesPerPhase.A,
