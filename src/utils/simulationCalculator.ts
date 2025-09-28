@@ -11,7 +11,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * SIMPLIFIED SRG2 FLOW: Clean separation of electrical calculation and equipment application
+   * Main simulation entry point - handles forced mode, SRG2, and standard calculations
    */
   calculateWithSimulation(
     project: Project,
@@ -20,7 +20,14 @@ export class SimulationCalculator extends ElectricalCalculator {
     forcedModeConfig?: any
   ): SimulationResult {
     const DEBUG = typeof window !== 'undefined' && (window as any).DEBUG_CALC === '1';
-    if (DEBUG) console.log('🚀 Starting SIMPLIFIED SRG2 simulation...');
+    
+    // T4: Handle forced mode if configured
+    if (scenario === 'FORCÉ' && project.forcedModeConfig) {
+      if (DEBUG) console.log('🎯 Running forced mode calibration...');
+      return this.runForcedModeSimulation(project, scenario, simulationEquipment);
+    }
+    
+    if (DEBUG) console.log('🚀 Starting SRG2/standard simulation...');
     
     // Clean all equipment-related properties from nodes
     const cleanProject: Project = {
@@ -284,6 +291,226 @@ export class SimulationCalculator extends ElectricalCalculator {
     });
     
     return upgrades;
+  }
+
+  /**
+   * T1: Two-phase forced mode simulation - calibration + imbalance calculation
+   */
+  private runForcedModeSimulation(
+    project: Project, 
+    scenario: CalculationScenario, 
+    simulationEquipment: SimulationEquipment
+  ): SimulationResult {
+    const DEBUG = typeof window !== 'undefined' && (window as any).DEBUG_CALC === '1';
+    const config = project.forcedModeConfig!;
+    
+    if (DEBUG) console.log('🎯 Phase 1: Calibrating foisonnement charges...');
+    
+    // Phase 1: Binary search calibration for foisonnementCharges
+    let converged = false;
+    let iterations = 0;
+    let calibratedFoisonnement = project.foisonnementCharges || 100;
+    let voltageError = 0;
+    
+    if (config.targetVoltage && config.targetVoltage > 0) {
+      let low = 0;
+      let high = 100;
+      const tolerance = 0.1; // ±0.1V tolerance
+      const maxIterations = 20;
+      
+      while (iterations < maxIterations && (high - low) > 0.1) {
+        iterations++;
+        const testFoisonnement = (low + high) / 2;
+        
+        // Test calculation with current foisonnement
+        const testProject = {
+          ...project,
+          foisonnementCharges: testFoisonnement,
+          foisonnementProductions: 100,
+          loadModel: 'monophase_reparti' as LoadModel,
+          manualPhaseDistribution: {
+            charges: { A: 33.33, B: 33.33, C: 33.33 },
+            productions: { A: 33.33, B: 33.33, C: 33.33 },
+            constraints: { min: 25, max: 50, total: 100 }
+          }
+        };
+        
+        const testResult = this.calculateScenarioWithHTConfig(
+          testProject, scenario, testFoisonnement, 100
+        );
+        
+        // Get voltage at measurement node
+        const nodeMetric = testResult.nodeMetricsPerPhase?.find(
+          m => m.nodeId === config.measurementNodeId
+        );
+        
+        if (nodeMetric) {
+          // Use average of three phases for comparison
+          const avgVoltage = (nodeMetric.voltagesPerPhase.A + 
+                             nodeMetric.voltagesPerPhase.B + 
+                             nodeMetric.voltagesPerPhase.C) / 3;
+          voltageError = Math.abs(avgVoltage - config.targetVoltage);
+          
+          if (voltageError <= tolerance) {
+            converged = true;
+            calibratedFoisonnement = testFoisonnement;
+            if (DEBUG) console.log(`✅ Converged: foisonnement=${testFoisonnement.toFixed(1)}%, voltage=${avgVoltage.toFixed(1)}V`);
+            break;
+          }
+          
+          if (avgVoltage < config.targetVoltage) {
+            high = testFoisonnement; // Reduce load
+          } else {
+            low = testFoisonnement; // Increase load
+          }
+          
+          if (DEBUG) console.log(`  Iter ${iterations}: foisonnement=${testFoisonnement.toFixed(1)}%, voltage=${avgVoltage.toFixed(1)}V, target=${config.targetVoltage}V`);
+        }
+      }
+    } else {
+      // No calibration - use manual foisonnement
+      converged = true;
+      calibratedFoisonnement = project.foisonnementCharges || 100;
+    }
+    
+    if (DEBUG) console.log('🎯 Phase 2: Computing production distribution from measured voltages...');
+    
+    // Phase 2: Compute per-phase production distribution from measured voltages
+    const { U1, U2, U3 } = config.measuredVoltages;
+    const minVoltage = Math.min(U1, U2, U3);
+    
+    // Calculate elevations and normalize to production percentages
+    const elevA = U1 - minVoltage;
+    const elevB = U2 - minVoltage;  
+    const elevC = U3 - minVoltage;
+    const totalElev = elevA + elevB + elevC;
+    
+    let prodA = 33.33, prodB = 33.33, prodC = 33.33;
+    
+    if (totalElev > 0.01) { // Avoid division by zero
+      prodA = (elevA / totalElev) * 100;
+      prodB = (elevB / totalElev) * 100;
+      prodC = (elevC / totalElev) * 100;
+      
+      // Clamp to constraints [25%, 50%]
+      prodA = Math.max(25, Math.min(50, prodA));
+      prodB = Math.max(25, Math.min(50, prodB));
+      prodC = Math.max(25, Math.min(50, prodC));
+      
+      // Renormalize to 100%
+      const total = prodA + prodB + prodC;
+      prodA = (prodA / total) * 100;
+      prodB = (prodB / total) * 100;
+      prodC = (prodC / total) * 100;
+    }
+    
+    if (DEBUG) console.log(`  Production distribution: A=${prodA.toFixed(1)}%, B=${prodB.toFixed(1)}%, C=${prodC.toFixed(1)}%`);
+    
+    // Final simulation with calibrated parameters
+    const finalProject = {
+      ...project,
+      foisonnementCharges: calibratedFoisonnement,
+      foisonnementProductions: 100,
+      loadModel: 'monophase_reparti' as LoadModel,
+      manualPhaseDistribution: {
+        charges: { A: 33.33, B: 33.33, C: 33.33 },
+        productions: { A: prodA, B: prodB, C: prodC },
+        constraints: { min: 25, max: 50, total: 100 }
+      }
+    };
+    
+    const finalResult = this.calculateScenarioWithHTConfig(
+      finalProject, scenario, calibratedFoisonnement, 100, finalProject.manualPhaseDistribution
+    );
+    
+    // Calculate voltage errors at measurement node
+    const finalNodeMetric = finalResult.nodeMetricsPerPhase?.find(
+      m => m.nodeId === config.measurementNodeId
+    );
+    
+    let voltageErrors = { A: 0, B: 0, C: 0 };
+    if (finalNodeMetric) {
+      voltageErrors = {
+        A: Math.abs(finalNodeMetric.voltagesPerPhase.A - U1),
+        B: Math.abs(finalNodeMetric.voltagesPerPhase.B - U2),
+        C: Math.abs(finalNodeMetric.voltagesPerPhase.C - U3)
+      };
+    }
+    
+    // T5: Return consistent results with forced mode extensions
+    const extendedResult: CalculationResult = {
+      ...finalResult,
+      convergenceStatus: converged ? 'converged' : 'not_converged',
+      finalLoadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
+      finalProductionDistribution: { A: prodA, B: prodB, C: prodC },
+      calibratedFoisonnementCharges: calibratedFoisonnement,
+      optimizedPhaseDistribution: finalProject.manualPhaseDistribution
+    };
+    
+    return {
+      scenario,
+      cables: extendedResult.cables,
+      totalLoads_kVA: extendedResult.totalLoads_kVA,
+      totalProductions_kVA: extendedResult.totalProductions_kVA,
+      globalLosses_kW: extendedResult.globalLosses_kW,
+      maxVoltageDropPercent: extendedResult.maxVoltageDropPercent,
+      compliance: extendedResult.compliance,
+      nodeMetrics: extendedResult.nodeMetrics || [],
+      nodeMetricsPerPhase: extendedResult.nodeMetricsPerPhase || [],
+      convergenceInfo: {
+        converged,
+        iterations,
+        maxIterations: 20
+      },
+      convergenceStatus: converged ? 'converged' : 'not_converged',
+      finalLoadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
+      finalProductionDistribution: { A: prodA, B: prodB, C: prodC },
+      calibratedFoisonnementCharges: calibratedFoisonnement,
+      optimizedPhaseDistribution: finalProject.manualPhaseDistribution,
+      isSimulation: true,
+      equipment: simulationEquipment
+    };
+  }
+
+  /**
+   * T2: HT-aware scenario calculation wrapper (restores legacy calculateScenarioWithHTConfig)
+   */
+  private calculateScenarioWithHTConfig(
+    project: Project,
+    scenario: CalculationScenario, 
+    foisonnementCharges: number,
+    foisonnementProductions: number,
+    manualPhaseDistribution?: any
+  ): CalculationResult {
+    // Clone nodes to avoid modifying original project
+    let modifiedNodes = project.nodes.map(node => ({ ...node }));
+    
+    // Apply HT voltage configuration if present
+    if (project.htVoltageConfig && project.transformerConfig) {
+      const sourceNode = modifiedNodes.find(n => n.isSource);
+      if (sourceNode && !sourceNode.tensionCible) {
+        // Calculate realistic source voltage from HT measurement
+        const { nominalVoltageHT_V, nominalVoltageBT_V, measuredVoltageHT_V } = project.htVoltageConfig;
+        const voltageRatio = measuredVoltageHT_V / nominalVoltageHT_V;
+        const realisticSourceVoltage = nominalVoltageBT_V * voltageRatio;
+        
+        sourceNode.tensionCible = realisticSourceVoltage;
+        console.log(`🔧 HT-aware source voltage: ${realisticSourceVoltage.toFixed(1)}V (ratio: ${voltageRatio.toFixed(3)})`);
+      }
+    }
+    
+    return this.calculateScenario(
+      modifiedNodes,
+      project.cables,
+      project.cableTypes,
+      scenario,
+      foisonnementCharges,
+      foisonnementProductions,
+      project.transformerConfig,
+      project.loadModel || 'polyphase_equilibre',
+      project.desequilibrePourcent || 0,
+      manualPhaseDistribution
+    );
   }
 
   runForcedModeConvergence(
