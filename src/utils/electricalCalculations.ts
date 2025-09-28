@@ -1821,15 +1821,28 @@ export class ElectricalCalculator {
           const Vu = V_node.get(u) || Vslack;
           let Vv = sub(Vu, mul(Z, Iuv));
           
-          // T3: Pin SRG2 setpoint during Forward sweep (balanced)
           const childNodeObj = nodeById.get(v);
+          const parentNodeObj = nodeById.get(u);
+          
+          // Cas 1: Nœud enfant avec tension forcée explicite (SRG2 ou manuel)
           if (childNodeObj?.tensionCible && childNodeObj.tensionCible > 0) {
             const isThree = this.getVoltage(childNodeObj.connectionType).isThreePhase;
             const forcedPhase = childNodeObj.connectionType === 'TRI_230V_3F'
               ? childNodeObj.tensionCible
               : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
-            Vv = C(forcedPhase, 0); // 0° in balanced mode
+            // FIX: Utiliser fromPolar pour cohérence d'angle avec mode déséquilibré
+            Vv = fromPolar(forcedPhase, 0); // 0° en mode équilibré mais angle cohérent
+            
+            if (console) console.log(`🔧 [EQUILIBRE] Node ${v} tension forcée: ${childNodeObj.tensionCible.toFixed(1)}V (${childNodeObj.srg2Applied ? 'SRG2' : 'MANUAL'})`);
           }
+          // Cas 2: NOUVEAU - Propagation SRG2 depuis parent
+          else if (parentNodeObj?.srg2Applied && parentNodeObj.srg2Ratio && parentNodeObj.srg2Ratio !== 1.0) {
+            // Appliquer le ratio SRG2 du parent au calcul normal de tension
+            Vv = scale(Vv, parentNodeObj.srg2Ratio);
+            
+            if (console) console.log(`⚡ [EQUILIBRE-SRG2] Node ${v} propagation SRG2 depuis ${u}, ratio: ${parentNodeObj.srg2Ratio.toFixed(3)}, tension: ${abs(Vv).toFixed(1)}V`);
+          }
+          
           V_node.set(v, Vv);
           stack2.push(v);
         }
