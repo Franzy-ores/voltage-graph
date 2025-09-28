@@ -453,13 +453,29 @@ export class SimulationCalculator extends ElectricalCalculator {
         let nodeVoltages = { A: 230, B: 230, C: 230 }; // Valeurs par défaut
         
         console.log(`🔍 SRG2 ${srg2.nodeId}: mode ${project.loadModel}, recherche des tensions calculées...`);
-        console.log(`📋 Structure des résultats:`, {
+        
+        // Debug détaillé de la structure des résultats
+        const debugInfo = {
           loadModel: project.loadModel,
           hasNodeMetrics: !!result.nodeMetrics,
           nodeMetricsCount: result.nodeMetrics?.length || 0,
           hasNodeMetricsPerPhase: !!result.nodeMetricsPerPhase,
-          nodeMetricsPerPhaseCount: result.nodeMetricsPerPhase?.length || 0
-        });
+          nodeMetricsPerPhaseCount: result.nodeMetricsPerPhase?.length || 0,
+          iteration: iteration
+        };
+        console.log(`📋 Structure des résultats:`, debugInfo);
+
+        // Debug: afficher tous les nodeMetrics pour vérifier les données disponibles
+        if (result.nodeMetrics) {
+          const targetNodeMetrics = result.nodeMetrics.find(nm => nm.nodeId === srg2.nodeId);
+          console.log(`🔍 Métriques du nœud ${srg2.nodeId}:`, targetNodeMetrics);
+          if (targetNodeMetrics) {
+            console.log(`📊 Tension disponible: V_phase_V=${targetNodeMetrics.V_phase_V?.toFixed(3)}V`);
+          } else {
+            console.log(`❌ Aucune métrique trouvée pour le nœud ${srg2.nodeId}`);
+            console.log(`📋 Nœuds disponibles:`, result.nodeMetrics.map(nm => nm.nodeId));
+          }
+        }
 
         // Lecture différente selon le mode de charge
         if (project.loadModel === 'monophase_reparti') {
@@ -472,6 +488,8 @@ export class SimulationCalculator extends ElectricalCalculator {
               C: nodeMetricsPerPhase.voltagesPerPhase.C
             };
             console.log(`✅ SRG2 ${srg2.nodeId} (monophasé): tensions par phase A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
+          } else {
+            console.log(`❌ SRG2 ${srg2.nodeId} (monophasé): pas de voltagesPerPhase trouvées`);
           }
         } else {
           // Mode polyphasé équilibré: utiliser nodeMetrics (tension unique par nœud)
@@ -480,6 +498,9 @@ export class SimulationCalculator extends ElectricalCalculator {
             const voltage = nodeMetrics.V_phase_V;
             nodeVoltages = { A: voltage, B: voltage, C: voltage };
             console.log(`✅ SRG2 ${srg2.nodeId} (polyphasé): tension unique ${voltage.toFixed(1)}V appliquée aux 3 phases`);
+            console.log(`📊 Détails tension nœud: V_phase_V=${voltage.toFixed(3)}V, diff consigne=${(voltage-230).toFixed(2)}V`);
+          } else {
+            console.log(`❌ SRG2 ${srg2.nodeId} (polyphasé): pas de V_phase_V trouvée dans nodeMetrics`);
           }
         }
 
