@@ -1946,9 +1946,21 @@ export class ElectricalCalculator {
       const scaleLine = this.getDisplayLineScale(n.connectionType);
       const U_node_line = abs(Vn) * scaleLine;
 
-      // Référence d'affichage: tension cible source si fournie, sinon base de ce type de connexion
+      // CORRECTION SRG2: Référence d'affichage adaptée à la régulation
       let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
       if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
+      
+      // NOUVEAU: Si le nœud a un SRG2 appliqué, ajuster la référence d'affichage
+      if (n.srg2Applied && n.srg2Ratio && n.srg2Ratio !== 1.0) {
+        // Pour les nœuds SRG2 directs, la référence est la tension cible
+        if (n.tensionCible) {
+          U_ref_display = n.tensionCible;
+        } else {
+          // Pour la propagation SRG2, ajuster la référence par le ratio
+          U_ref_display = U_ref_display * n.srg2Ratio;
+        }
+        console.log(`🔧 [DISPLAY] Node ${n.id} SRG2: ref=${U_ref_display.toFixed(1)}V, calculé=${U_node_line.toFixed(1)}V, ratio=${n.srg2Ratio.toFixed(3)}`);
+      }
 
       const deltaU_V = U_ref_display - U_node_line;
       const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
@@ -2010,13 +2022,30 @@ export class ElectricalCalculator {
       const Vn = V_node.get(n.id) || Vslack;
       const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
       const V_phase_V = abs(Vn);
+      
+      // CORRECTION SRG2: Utiliser la tension réellement calculée pour l'affichage
+      const scaleLine = this.getDisplayLineScale(n.connectionType);
+      const U_node_line_calculated = V_phase_V * scaleLine;
+      
+      // Pour l'affichage: utiliser la tension calculée au lieu d'une valeur de phase pure
       // Pour TRI_230V_3F, pas de conversion car travail direct en composé
+      const displayVoltage = n.connectionType === 'TRI_230V_3F' 
+        ? V_phase_V // 230V composée directement
+        : U_node_line_calculated; // Conversion ligne appropriée
+      
+      // Pour V_pu, utiliser la référence nominale appropriée
       const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
         ? U_nom_line // 230V composée directement
         : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
       const V_pu = V_nom_phase ? V_phase_V / V_nom_phase : 0;
       const Iinj = I_inj_node.get(n.id) || C(0, 0);
-      return { nodeId: n.id, V_phase_V, V_pu, I_inj_A: abs(Iinj) };
+      
+      // Debug pour nœuds SRG2
+      if (n.srg2Applied || n.tensionCible) {
+        console.log(`📊 [METRICS] Node ${n.id}: tension affichée=${displayVoltage.toFixed(1)}V, phasor=${V_phase_V.toFixed(1)}V, V_pu=${V_pu.toFixed(3)}`);
+      }
+      
+      return { nodeId: n.id, V_phase_V: displayVoltage, V_pu, I_inj_A: abs(Iinj) };
     });
 
     // ---- Export phasors nodaux pour debug/analyse ----
