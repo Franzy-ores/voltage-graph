@@ -84,20 +84,49 @@ export function getNodeVoltageInfo(
   if (result.nodeMetrics) {
     const nodeMetric = result.nodeMetrics.find(nm => nm.nodeId === nodeId);
     if (nodeMetric) {
+      // 🔍 DIAGNOSTIC LOGS for SRG2 polyphase debugging
+      console.log(`🔍 Polyphase voltage logic for node ${nodeId}:`, {
+        sourceType,
+        hasResultSrg2: !!result.srg2Result,
+        srg2NodeId: result.srg2Result?.nodeId,
+        srg2RegulatedVoltage: result.srg2Result?.regulatedVoltage,
+        srg2IsActive: result.srg2Result?.isActive,
+        nodeMetricVPhaseV: nodeMetric.V_phase_V,
+        simulationEquipmentSrg2: simulationEquipment.srg2
+      });
+      
       // For polyphase_equilibre with SRG2: check if we have SRG2 regulated voltage
       let voltage = nodeMetric.V_phase_V;
       let isRegulated = false;
       
-      // If this is a simulation result with SRG2, use the regulated voltage
-      if (sourceType === 'simulation' && result.srg2Result && result.srg2Result.nodeId === nodeId) {
-        voltage = result.srg2Result.regulatedVoltage;
-        isRegulated = result.srg2Result.isActive;
+      // ✅ FIXED: Check if this node is the SRG2 node using simulationEquipment directly
+      const isSrg2Node = simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === nodeId;
+      
+      if (isSrg2Node && sourceType === 'simulation') {
+        // For SRG2 node in simulation mode, try to get the regulated voltage
+        if (result.srg2Result && result.srg2Result.regulatedVoltage) {
+          voltage = result.srg2Result.regulatedVoltage;
+          isRegulated = result.srg2Result.isActive;
+          console.log(`🔧 SRG2 POLYPHASE: Using srg2Result.regulatedVoltage = ${voltage}V`);
+        } else {
+          // Fallback: if srg2Result not in result, but we know it's an SRG2 node,
+          // the voltage in nodeMetric should already be the regulated one from pinning
+          const node = project.nodes.find(n => n.id === nodeId);
+          if (node?.tensionCible && node.tensionCible > 0) {
+            // Use the target voltage that was set for SRG2
+            voltage = nodeMetric.V_phase_V; // This should be the pinned value
+            isRegulated = true;
+            console.log(`🔧 SRG2 POLYPHASE FALLBACK: Using pinned voltage = ${voltage}V`);
+          }
+        }
       } else {
         // For downstream nodes affected by SRG2, use the calculated voltages from solver
         // The solver should have already propagated the SRG2 effects via tensionCible pinning
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
       }
+      
+      console.log(`🔍 Final polyphase result for node ${nodeId}: voltage=${voltage}V, isRegulated=${isRegulated}`);
       
       return {
         voltage,
