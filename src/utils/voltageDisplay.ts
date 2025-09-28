@@ -88,15 +88,19 @@ export function getNodeVoltageInfo(
       let voltage = nodeMetric.V_phase_V;
       let isRegulated = false;
       
-      // If this is a simulation result with SRG2, use the regulated voltage
+      // CRITICAL FIX: For SRG2 nodes in polyphase, use the actual regulated voltage from simulation result
       if (sourceType === 'simulation' && result.srg2Result && result.srg2Result.nodeId === nodeId) {
         voltage = result.srg2Result.regulatedVoltage;
         isRegulated = result.srg2Result.isActive;
+        
+        console.log(`🔧 [POLYPHASE-FIX] Node ${nodeId} using SRG2 regulated voltage: ${voltage.toFixed(2)}V instead of nodeMetric: ${nodeMetric.V_phase_V.toFixed(2)}V`);
       } else {
         // For downstream nodes affected by SRG2, use the calculated voltages from solver
         // The solver should have already propagated the SRG2 effects via tensionCible pinning
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
+        
+        console.log(`🔧 [POLYPHASE-DEBUG] Node ${nodeId} using nodeMetric voltage: ${voltage.toFixed(2)}V (srg2Applied: ${isRegulated})`);
       }
       
       return {
