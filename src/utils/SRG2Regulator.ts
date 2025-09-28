@@ -32,7 +32,7 @@ export class SRG2Regulator {
       originalVoltage, ratio, project.loadModel || 'polyphase_equilibre'
     );
     
-    const isActive = true; // ✅ CRITICAL FIX: SRG2 is always active when configured, even in BYP mode
+    const isActive = state !== 'BYP'; // SRG2 is active only when regulating (not in BYP mode)
     
     if (DEBUG) {
       console.log(`📊 SRG2 Result - State: ${state}, Ratio: ${ratio.toFixed(3)}, Active: ${isActive}`);

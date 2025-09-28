@@ -110,13 +110,27 @@ export class SimulationCalculator extends ElectricalCalculator {
           ...cleanProject,
           nodes: cleanProject.nodes.map(node => {
             if (node.id === srg2NodeId) {
-              return {
-                ...node,
-                srg2Applied: true,
-                srg2State: srg2Result!.state,
-                srg2Ratio: srg2Result!.ratio,
-                tensionCible: srg2Result!.regulatedVoltage
-              };
+              // Apply SRG2 voltages according to loadModel
+              const loadModel = project.loadModel || 'polyphase_equilibre';
+              if (loadModel === 'monophase_reparti') {
+                // Monophase: Apply regulated voltages per phase
+                return {
+                  ...node,
+                  srg2Applied: true,
+                  srg2State: srg2Result!.state,
+                  srg2Ratio: srg2Result!.ratio,
+                  tensionCiblePerPhase: srg2Result!.regulatedVoltages
+                };
+              } else {
+                // Polyphase: Apply single regulated voltage
+                return {
+                  ...node,
+                  srg2Applied: true,
+                  srg2State: srg2Result!.state,
+                  srg2Ratio: srg2Result!.ratio,
+                  tensionCible: srg2Result!.regulatedVoltage
+                };
+              }
             }
             return node;
           })
