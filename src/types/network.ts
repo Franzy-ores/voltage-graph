@@ -83,11 +83,6 @@ export interface Node {
   productions: ProductionPV[];
   isSource?: boolean;
   tensionCible?: number; // tension cible en V (optionnel)
-  isVoltageRegulator?: boolean; // Marqueur pour les nœuds régulateurs
-  // SRG2 regulation properties (nouveau système uniquement)
-  srg2Applied?: boolean;
-  srg2State?: string;
-  srg2Ratio?: number;
 }
 
 export interface Cable {
@@ -196,7 +191,6 @@ export interface NeutralCompensator {
   compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase (si modélisé)
   reductionPercent?: number; // Pourcentage de réduction du courant de neutre
   isLimited?: boolean; // True si limitation par puissance atteinte
-  overloadReason?: string; // Raison de la surcharge
   // Sorties additionnelles EQUI8
   iN_initial_A?: number;    // Courant de neutre initial (A)
   iN_absorbed_A?: number;   // Courant de neutre absorbé (A)
@@ -228,38 +222,8 @@ export interface CableUpgrade {
   };
 }
 
-// SRG2 Regulator types
-export interface SRG2Config {
-  nodeId: string;
-  enabled: boolean;
-  // networkType is derived from project.voltageSystem, no longer configurable
-  // Fixed power limits: 85 kVA injection, 100 kVA consumption
-}
-
-export interface SRG2Result {
-  nodeId: string;
-  originalVoltage: number;
-  regulatedVoltage: number;
-  regulatedVoltages?: { A: number; B: number; C: number }; // Tensions par phase régulées
-  state: string;
-  ratio: number;
-  phaseRatios?: { A: number; B: number; C: number };
-  powerDownstream_kVA: number;
-  diversifiedLoad_kVA?: number;        // Charge foisonnée
-  diversifiedProduction_kVA?: number;  // Production foisonnée  
-  netPower_kVA?: number;              // Puissance nette downstream
-  networkType?: string;               // Type réseau dérivé (flexible string)
-  isActive: boolean;
-  limitReason?: string;
-  errorMessage?: string;              // Message d'erreur si le régulateur ne peut pas fonctionner
-  // T1: Foisonné downstream balance fields (backward compatible)
-  downstreamLoads_kVA?: number;
-  downstreamProductions_kVA?: number;
-  downstreamNet_kVA?: number;
-}
-
 export interface SimulationEquipment {
-  srg2: SRG2Config | null; // Single SRG2 configuration
+  regulators: VoltageRegulator[];
   neutralCompensators: NeutralCompensator[];
   cableUpgrades: CableUpgrade[];
 }
@@ -267,15 +231,8 @@ export interface SimulationEquipment {
 export interface SimulationResult extends CalculationResult {
   isSimulation: boolean;
   equipment?: SimulationEquipment;
-  baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison  
+  baselineResult?: CalculationResult; // Résultats sans équipements pour comparaison
   convergenceStatus?: 'converged' | 'not_converged';
-  srg2Result?: SRG2Result; // SRG2 regulation result
-  cableUpgradeProposals?: CableUpgrade[]; // Cable upgrade proposals
-  convergenceInfo?: {
-    converged: boolean;
-    iterations: number;
-    maxIterations: number;
-  };
 }
 
 export interface CalculationResult {
@@ -294,18 +251,7 @@ export interface CalculationResult {
   nodeMetricsPerPhase?: { 
     nodeId: string; 
     voltagesPerPhase: { A: number; B: number; C: number };
-    calculatedVoltagesPerPhase?: { A: number; B: number; C: number };
-    calculatedVoltagesComposed?: { AB: number; BC: number; CA: number };
     voltageDropsPerPhase: { A: number; B: number; C: number };
-    currentPerPhase?: { A: number; B: number; C: number };
-    powerPerPhase?: { A: number; B: number; C: number };
-    equi8?: {
-      UEQUI8: { A: number; B: number; C: number };
-      I_EQUI8: number;
-      dU_init: number;
-      dU_EQUI8: number;
-      ratios: { A: number; B: number; C: number };
-    };
   }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel

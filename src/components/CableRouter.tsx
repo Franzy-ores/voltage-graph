@@ -95,7 +95,7 @@ export const CableRouter = ({ map, isActive, fromNodeId, toNodeId, onRouteComple
       
       if (routingPointsRef.current.length > 1) {
         tempLineRef.current = L.polyline(
-          routingPointsRef.current.map(p => [p.lat, p.lng] as [number, number]),
+          routingPointsRef.current.map(p => [p.lat, p.lng]),
           { 
             color: '#3b82f6', 
             weight: 3, 

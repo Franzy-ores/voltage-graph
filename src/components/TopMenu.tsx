@@ -150,8 +150,32 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
       {/* Controls - When Project Exists */}
       {currentProject && (
         <div className="px-6 py-2 space-y-2">
-          {/* First Row: Voltage Controls and System Info */}
+          {/* First Row: Scenario, System Info, Voltage Switch */}
           <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              {/* Scenario Selector */}
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Scénario:</Label>
+                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
+                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-[10000]">
+                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
+                    <SelectItem value="MIXTE">Mixte</SelectItem>
+                    <SelectItem value="PRODUCTION">Production</SelectItem>
+                    <SelectItem value="FORCÉ">Forcé</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* System Info */}
+              <div className="text-xs text-primary-foreground/80">
+                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
+                Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
+              </div>
+            </div>
+
             <div className="flex items-center gap-4">
               {/* Voltage Display Switch */}
               <div className="flex items-center gap-2">
@@ -173,14 +197,6 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               >
                 {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
               </Button>
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* System Info */}
-              <div className="text-sm text-primary-foreground/120">
-                <span className="font-bold">{currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'}</span> - cos φ = {currentProject.cosPhi} - 
-                Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
-              </div>
             </div>
           </div>
 
@@ -240,9 +256,9 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
           {/* Phase Distribution Display */}
           <PhaseDistributionDisplay />
 
-          {/* Third Row: Load Model, Scenario and Controls */}
+          {/* Third Row: Load Model and Controls */}
           <div className="flex items-center justify-between gap-4">
-            {/* Load Model and Scenario Controls */}
+            {/* Load Model Controls */}
             <div className="flex items-center gap-4">
               {/* Load Model Selector */}
               <div className="flex items-center gap-2">
@@ -259,22 +275,6 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                   <SelectContent className="bg-background border z-[10000]">
                     <SelectItem value="polyphase_equilibre">Polyphasé équilibré</SelectItem>
                     <SelectItem value="monophase_reparti">Monophasé réparti</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Scenario Selector */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Scénario:</Label>
-                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
-                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border z-[10000]">
-                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
-                    <SelectItem value="MIXTE">Mixte</SelectItem>
-                    <SelectItem value="PRODUCTION">Production</SelectItem>
-                    <SelectItem value="FORCÉ">Forcé</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

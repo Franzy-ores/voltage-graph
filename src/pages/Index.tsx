@@ -18,30 +18,14 @@ const Index = () => {
     createNewProject,
     loadProject,
     openEditPanel,
-    calculateAll,
-    simulationMode,
-    getActiveEquipmentCount
+    calculateAll
   } = useNetworkStore();
 
-  // Calculer le nombre d'équipements actifs de manière réactive
-  const activeEquipmentCount = getActiveEquipmentCount();
+  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
+                              simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  console.log('🏠 Index.tsx results selection:', {
-    simulationMode,
-    activeEquipmentCount,
-    hasSimulationResults: !!simulationResults,
-    hasCalculationResults: !!calculationResults,
-    selectedScenario,
-    simulationResultsForScenario: !!simulationResults?.[selectedScenario],
-    calculationResultsForScenario: !!calculationResults?.[selectedScenario],
-    usingSimulation: simulationMode && activeEquipmentCount > 0,
-    equipmentDetails: {
-      srg2: simulationEquipment.srg2 ? { nodeId: simulationEquipment.srg2.nodeId, enabled: simulationEquipment.srg2.enabled } : null,
-      compensators: simulationEquipment.neutralCompensators.map(c => ({ id: c.id, enabled: c.enabled }))
-    }
-  });
-  
-  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
+  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
 
   const handleNewNetwork = () => {
     createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");

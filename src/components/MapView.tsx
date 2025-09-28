@@ -57,29 +57,17 @@ export const MapView = () => {
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
-  const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
+  const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
                               simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   console.log('🐛 MapView results logic:', {
     simulationMode,
     activeEquipmentCount,
     usingSimulation: simulationMode && activeEquipmentCount > 0,
-    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION',
-    hasSimulationResults: !!simulationResults,
-    hasCalculationResults: !!calculationResults,
-    selectedScenario,
-    simulationResultsForScenario: !!simulationResults?.[selectedScenario],
-    calculationResultsForScenario: !!calculationResults?.[selectedScenario]
+    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION'
   });
   
   const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
-  
-  console.log('🐛 MapView final results selection:', {
-    resultsToUse: resultsToUse === simulationResults ? 'SIMULATION' : 'CALCULATION',
-    hasResultsForScenario: !!resultsToUse?.[selectedScenario],
-    hasNodeMetricsPerPhase: !!resultsToUse?.[selectedScenario]?.nodeMetricsPerPhase,
-    nodeMetricsPerPhaseCount: resultsToUse?.[selectedScenario]?.nodeMetricsPerPhase?.length || 0
-  });
 
   // Fonction pour zoomer sur le projet chargé
   const zoomToProject = (event?: CustomEvent) => {
@@ -304,7 +292,7 @@ export const MapView = () => {
     
     if (routingPointsRef.current.length > 1) {
       tempLineRef.current = L.polyline(
-        routingPointsRef.current.map(p => [p.lat, p.lng] as [number, number]),
+        routingPointsRef.current.map(p => [p.lat, p.lng]),
         { 
           color: '#3b82f6', 
           weight: 3, 
@@ -576,32 +564,6 @@ export const MapView = () => {
       // Obtenir le numéro de circuit
       const circuitNumber = getNodeCircuit(node.id);
       
-      // PHASE 3: Check for active equipment on this node
-      const activeCompensator = simulationEquipment.neutralCompensators.find(c => c.nodeId === node.id && c.enabled);
-      const activeSRG2 = simulationEquipment.srg2?.nodeId === node.id && simulationEquipment.srg2?.enabled;
-      
-      // Ensure no old regulator references exist
-      console.log('🔍 Equipment check for node:', node.id, { activeCompensator: !!activeCompensator, activeSRG2 });
-      
-      // Determine equipment status
-      let equipmentIndicator = '';
-      let equipmentStatus = '';
-      
-      if (activeCompensator) {
-        const isOverloaded = (activeCompensator as any).isLimited;
-        const statusColor = isOverloaded ? 'text-red-500' : 'text-green-500';
-        equipmentIndicator = `<div class="text-[8px] ${statusColor} font-bold">⚖️</div>`;
-        equipmentStatus = isOverloaded ? ' SURCHARGÉ' : ' COMPENSATEUR';
-      }
-      
-      if (activeSRG2) {
-        const srg2Result = simulationResults?.[selectedScenario]?.srg2Result;
-        const statusColor = srg2Result?.isActive ? 'text-green-500' : 'text-gray-500';
-        const srg2Icon = equipmentIndicator ? `<div class="text-[8px] ${statusColor} font-bold">🔧</div>` : `<div class="text-[8px] ${statusColor} font-bold">🔧</div>`;
-        equipmentIndicator = equipmentIndicator + srg2Icon;
-        equipmentStatus += (srg2Result?.isActive ? ' SRG2 ACTIF' : ' SRG2');
-      }
-      
       // Déterminer si on affiche du texte (charge/production uniquement si > 0)
       const hasDisplayableLoad = !node.isSource && totalCharge > 0;
       const hasDisplayableProduction = !node.isSource && totalPV > 0;
@@ -631,9 +593,7 @@ export const MapView = () => {
                   activeEquipmentCount,
                   usingSimulation: isUsingSimulation,
                   hasPhaseMetrics: !!phaseMetrics,
-                  voltages: phaseMetrics?.voltagesPerPhase,
-                  resultsSourceType: results === simulationResults?.[selectedScenario] ? 'SIMULATION' : 'CALCULATION',
-                  compensators: simulationEquipment.neutralCompensators.filter(c => c.enabled).map(c => c.nodeId)
+                  voltages: phaseMetrics?.voltagesPerPhase
                 });
                 
                 // Comparaison spéciale pour le nœud compensateur
@@ -656,55 +616,16 @@ export const MapView = () => {
                 }
                 
                 if (phaseMetrics) {
-                  // Use calculatedVoltagesPerPhase if available (from SRG2), otherwise voltagesPerPhase
-                  const voltages = phaseMetrics.calculatedVoltagesPerPhase || phaseMetrics.voltagesPerPhase;
-                  const vA = voltages.A.toFixed(1);
-                  const vB = voltages.B.toFixed(1);
-                  const vC = voltages.C.toFixed(1);
-                  
-                  // Add SRG2 indicator if regulated
-                  const isRegulated = !!phaseMetrics.calculatedVoltagesPerPhase;
-                  const regulatedIndicator = isRegulated ? '★' : '';
-                  
-                  return `<span class="text-black">A:${vA}V${regulatedIndicator}</span><br><span class="text-black">B:${vB}V${regulatedIndicator}</span><br><span class="text-black">C:${vC}V${regulatedIndicator}</span>`;
+                  const vA = phaseMetrics.voltagesPerPhase.A.toFixed(1);
+                  const vB = phaseMetrics.voltagesPerPhase.B.toFixed(1);
+                  const vC = phaseMetrics.voltagesPerPhase.C.toFixed(1);
+                  return `<span class="text-black">A:${vA}V</span><br><span class="text-black">B:${vB}V</span><br><span class="text-black">C:${vC}V</span>`;
                 } else {
                   return `A:${nodeVoltage.toFixed(0)}V<br>B:${nodeVoltage.toFixed(0)}V<br>C:${nodeVoltage.toFixed(0)}V`;
                 }
               } else {
                 // Mode normal : afficher une seule tension
-                // En mode polyphasé équilibré avec système 400V, afficher la tension phase-neutre
-                // CORRECTION: Pour les sources monophasées en réseau 400V, afficher aussi phase-neutre
-                let displayVoltage = nodeVoltage;
-                let voltageLabel = 'V';
-                let isRegulated = false;
-                
-                // Check for SRG2 regulated voltage for single phase display
-                const results = resultsToUse[selectedScenario];
-                if (results?.nodeMetricsPerPhase) {
-                  const phaseMetrics = results.nodeMetricsPerPhase.find(n => n.nodeId === node.id);
-                  if (phaseMetrics?.calculatedVoltagesPerPhase) {
-                    // Use the A-phase voltage from SRG2 regulation
-                    displayVoltage = phaseMetrics.calculatedVoltagesPerPhase.A;
-                    isRegulated = true;
-                  }
-                }
-                
-                const shouldDisplayPhaseNeutral = (
-                  // Cas 1: Mode polyphasé équilibré avec système 400V (comportement existant)
-                  (currentProject.loadModel === 'polyphase_equilibre' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') ||
-                  // Cas 2: Source monophasée dans un réseau 400V (nouveau comportement)
-                  (node.isSource && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && 
-                   (connectionType === 'MONO_230V_PN' || connectionType === 'MONO_230V_PP'))
-                );
-                
-                if (shouldDisplayPhaseNeutral && !isRegulated) {
-                  // Convertir de phase-phase vers phase-neutre pour l'affichage
-                  displayVoltage = nodeVoltage / Math.sqrt(3);
-                  voltageLabel = 'V (PN)';
-                }
-                
-                const regulatedIndicator = isRegulated ? '★' : '';
-                let displayText = `${displayVoltage.toFixed(0)}${voltageLabel}${regulatedIndicator}`;
+                let displayText = `${nodeVoltage.toFixed(0)}V`;
                 if (hasDisplayableLoad) {
                   displayText += `<br>${(totalCharge * (currentProject.foisonnementCharges / 100)).toFixed(1)}kVA`;
                 }
@@ -726,35 +647,12 @@ export const MapView = () => {
         iconAnchor: anchorPoint
       });
 
-      // Create popup content with equipment status
-      let popupContent = `<div class="font-bold">${node.name}</div>`;
-      
-      if (activeCompensator) {
-        const isOverloaded = (activeCompensator as any).isLimited;
-        const statusText = isOverloaded ? 'SURCHARGÉ' : 'ACTIF';
-        const statusColor = isOverloaded ? 'red' : 'green';
-        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">⚖️ Compensateur ${statusText}</div>`;
-        if (isOverloaded && (activeCompensator as any).overloadReason) {
-          popupContent += `<div style="color: red; font-size: 12px;">${(activeCompensator as any).overloadReason}</div>`;
-        }
-      }
-      
-      if (activeSRG2) {
-        const srg2Result = simulationResults?.[selectedScenario]?.srg2Result;
-        const statusText = srg2Result?.isActive ? 'ACTIF' : 'INACTIF';
-        const statusColor = srg2Result?.isActive ? 'green' : 'gray';
-        popupContent += `<div style="color: ${statusColor}; font-weight: bold;">🔧 SRG2 ${statusText}</div>`;
-        if (srg2Result?.state) {
-          popupContent += `<div style="color: ${statusColor}; font-size: 12px;">État: ${srg2Result.state}</div>`;
-        }
-      }
-
       const marker = L.marker([node.lat, node.lng], { 
         icon,
         draggable: selectedTool === 'move'
       })
         .addTo(map)
-        .bindPopup(popupContent);
+        .bindPopup(node.name);
 
       marker.on('click', (e) => {
         L.DomEvent.stopPropagation(e);
@@ -945,7 +843,7 @@ export const MapView = () => {
       }
       
       const polyline = L.polyline(
-        cable.coordinates.map(coord => [coord.lat, coord.lng] as [number, number]),
+        cable.coordinates.map(coord => [coord.lat, coord.lng]),
         { 
           color: cableColor,
           weight: cableWeight,

@@ -122,38 +122,48 @@ export const ForcedModePanel = () => {
       const sourceNode = currentProject.nodes.find(n => n.isSource);
       const sourceVoltage = localConfig.targetVoltage > 0 ? localConfig.targetVoltage : (sourceNode?.tensionCible || 230);
       
-      // Create forced voltages map
-      const forcedVoltages = new Map<string, number>();
-      forcedVoltages.set(localConfig.measurementNodeId, (U1 + U2 + U3) / 3);
-      
       // Lancer la simulation forcée avec algorithme de convergence
-      const result = calculator.runForcedModeConvergence(
+      const result = await calculator.runForcedModeConvergence(
         currentProject,
-        'FORCÉ',
-        forcedVoltages
+        { U1, U2, U3 },
+        localConfig.measurementNodeId,
+        sourceVoltage
       );
       
-      // Simple success handling - store the result directly
-      setSimulationResults_local({
-        ...result,
-        convergenceStatus: 'converged',
-        finalLoadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-        finalProductionDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-        calibratedFoisonnementCharges: currentProject.foisonnementCharges || 0.8,
-        iterations: 5
-      });
-      
-      // Mettre à jour le preview dans the store
-      updateSimulationPreview({
-        foisonnementCharges: currentProject.foisonnementCharges || 0.8,
-        loadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-        productionDistribution: { A: 33.33, B: 33.33, C: 33.33 }
-      });
-
-      toast.success("Simulation forcée terminée!");
+      if (result.result) {
+        // Stocker les résultats de la simulation
+        const enhancedResult = {
+          ...result.result,
+          convergenceStatus: result.convergenceStatus,
+          voltageErrors: result.voltageErrors,
+          iterations: result.iterations,
+          finalLoadDistribution: result.finalLoadDistribution,
+          finalProductionDistribution: result.finalProductionDistribution,
+          calibratedFoisonnementCharges: result.calibratedFoisonnementCharges
+        };
         
-      // Débloquer les curseurs après la simulation
-      clearSimulationPreview();
+        setSimulationResults_local(enhancedResult);
+        
+        // Mettre à jour le preview dans the store
+        updateSimulationPreview({
+          foisonnementCharges: result.calibratedFoisonnementCharges || result.foisonnementCharges,
+          loadDistribution: result.finalLoadDistribution,
+          productionDistribution: result.finalProductionDistribution,
+          desequilibrePourcent: result.desequilibrePourcent
+        });
+
+        // Message de succès/échec
+        if (result.convergenceStatus === 'converged') {
+          toast.success(`Simulation convergée en ${result.iterations} itérations !`);
+        } else {
+          toast.warning("Simulation terminée sans convergence complète");
+        }
+        
+        // Débloquer les curseurs après la simulation
+        clearSimulationPreview();
+      } else {
+        toast.error("Échec de la simulation forcée");
+      }
       
     } catch (error) {
       console.error('Erreur simulation forcée:', error);

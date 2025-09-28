@@ -15,34 +15,13 @@ import {
   NeutralCompensator,
   CableUpgrade,
   RegulatorType,
-  SimulationEquipment,
-  SRG2Config
+  SimulationEquipment
 } from '@/types/network';
 import { NodeWithConnectionType, getNodeConnectionType, addConnectionTypeToNodes } from '@/utils/nodeConnectionType';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
 import { SimulationCalculator } from '@/utils/simulationCalculator';
-import { calculatorManager } from '@/utils/calculatorSingleton';
-import { nodeUtilities } from '@/utils/nodeUtilities';
-import { executeAllScenarioCalculations, executeAllScenariosWithForcedMode } from '@/utils/scenarioRunner';
 import { toast } from 'sonner';
-
-// Fonction helper commune pour préparer les nœuds avec tension HT réaliste
-const prepareNodesWithHT = (project: Project, calculator: ElectricalCalculator): Node[] => {
-  if (!project.htVoltageConfig || !project.transformerConfig) return project.nodes;
-  
-  const sourceNode = project.nodes.find(n => n.isSource);
-  if (!sourceNode || sourceNode.tensionCible) return project.nodes;
-  
-  const realisticVoltage = calculator.calculateSourceVoltage(
-    project.transformerConfig,
-    project.htVoltageConfig.measuredVoltageHT_V,
-    project.htVoltageConfig.nominalVoltageHT_V,
-    project.htVoltageConfig.nominalVoltageBT_V
-  );
-  
-  return project.nodes.map(n => n.id === sourceNode.id ? {...n, tensionCible: realisticVoltage} : n);
-};
 
 // Fonction pour calculer les bounds géographiques d'un projet
 const calculateProjectBounds = (nodes: Node[]) => {
@@ -128,18 +107,15 @@ interface NetworkActions {
   toggleSimulationMode: () => void;
   updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
   clearSimulationPreview: () => void;
-  addSRG2Regulator: (nodeId: string) => void;
-  removeSRG2Regulator: () => void;
-  updateSRG2Config: (updates: Partial<SRG2Config>) => void;
+  addVoltageRegulator: (nodeId: string) => void;
+  removeVoltageRegulator: (regulatorId: string) => void;
+  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => void;
   addNeutralCompensator: (nodeId: string) => void;
   removeNeutralCompensator: (compensatorId: string) => void;
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => void;
   proposeCableUpgrades: (threshold?: number) => void;
   toggleCableUpgrade: (upgradeId: string) => void;
   runSimulation: () => void;
-  
-  // Reactive getters
-  getActiveEquipmentCount: () => number;
   
   // Validation
   validateConnectionType: (connectionType: ConnectionType, voltageSystem: VoltageSystem) => boolean;
@@ -302,11 +278,11 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   editTarget: null,
   showVoltages: false,
   simulationMode: false,
-      simulationEquipment: {
-        srg2: null,
-        neutralCompensators: [],
-        cableUpgrades: []
-      },
+  simulationEquipment: {
+    regulators: [],
+    neutralCompensators: [],
+    cableUpgrades: []
+  },
 
   // Actions
   createNewProject: (name, voltageSystem) => {
@@ -333,7 +309,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        srg2: null,
+        regulators: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -394,7 +370,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        srg2: null,
+        regulators: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -748,21 +724,38 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       return;
     }
 
-    const calculator = calculatorManager.getElectricalCalculator(currentProject.cosPhi);
-    const modifiedNodes = nodeUtilities.prepareNodesWithHT(currentProject, calculator);
+    const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
-    const results = executeAllScenarioCalculations(
-      calculator,
-      modifiedNodes,
-      currentProject.cables,
-      currentProject.cableTypes,
-      currentProject.foisonnementCharges,
-      currentProject.foisonnementProductions,
-      currentProject.transformerConfig,
-      currentProject.loadModel ?? 'polyphase_equilibre',
-      currentProject.desequilibrePourcent ?? 0,
-      currentProject.manualPhaseDistribution
-    );
+    const results = {
+      PRÉLÈVEMENT: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'PRÉLÈVEMENT',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      MIXTE: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'MIXTE',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      PRODUCTION: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'PRODUCTION',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      FORCÉ: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'FORCÉ',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      )
+    };
 
     set({ calculationResults: results });
   },
@@ -832,17 +825,63 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     // Appliquer la renumérotation
     renumberCables();
 
-    // Use centralized calculation logic with proper FORCÉ handling
-    const calculator = calculatorManager.getElectricalCalculator(currentProject.cosPhi);
-    const simulationCalculator = calculatorManager.getSimulationCalculator(currentProject.cosPhi);
-    const modifiedNodes = nodeUtilities.prepareNodesWithHT(currentProject, calculator);
+    const calculator = new ElectricalCalculator(currentProject.cosPhi);
     
-    const results = executeAllScenariosWithForcedMode(
-      currentProject,
-      calculator,
-      simulationCalculator,
-      modifiedNodes
-    );
+    const results = {
+      PRÉLÈVEMENT: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'PRÉLÈVEMENT',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      MIXTE: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'MIXTE',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      PRODUCTION: calculator.calculateScenarioWithHTConfig(
+        currentProject,
+        'PRODUCTION',
+        currentProject.foisonnementCharges,
+        currentProject.foisonnementProductions,
+        currentProject.manualPhaseDistribution
+      ),
+      FORCÉ: (() => {
+        // Pour le mode FORCÉ, utiliser la simulation avec convergence
+        if (currentProject.forcedModeConfig) {
+          try {
+            const simCalculator = new SimulationCalculator(currentProject.cosPhi);
+            const simResult = simCalculator.calculateWithSimulation(
+              currentProject,
+              'FORCÉ',
+              { regulators: [], neutralCompensators: [], cableUpgrades: [] }
+            );
+            return simResult.baselineResult || simResult;
+          } catch (error) {
+            console.error('Erreur simulation mode FORCÉ:', error);
+            // Fallback vers calcul standard
+            return calculator.calculateScenarioWithHTConfig(
+              currentProject,
+              'FORCÉ',
+              currentProject.foisonnementCharges,
+              currentProject.foisonnementProductions,
+              currentProject.manualPhaseDistribution
+            );
+          }
+        } else {
+          return calculator.calculateScenarioWithHTConfig(
+            currentProject,
+            'FORCÉ',
+            currentProject.foisonnementCharges,
+            currentProject.foisonnementProductions,
+            currentProject.manualPhaseDistribution
+          );
+        }
+      })()
+    };
 
     set({ calculationResults: results });
   },
@@ -921,7 +960,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     const { currentProject, selectedScenario } = get();
     if (!currentProject) return;
 
-    const calculator = calculatorManager.getElectricalCalculator(currentProject.cosPhi);
+    const calculator = new ElectricalCalculator(currentProject.cosPhi);
     let bestFoisonnement = 100;
     let bestVoltage = 0;
     let minDiff = Infinity;
@@ -940,12 +979,12 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         foisonnementProductions: 0 // Ignorer les productions pour tension cible
       };
 
-      const testNodes = prepareNodesWithHT(tempProject, calculator);
-      const result = calculator.calculateScenario(
-        testNodes, tempProject.cables, tempProject.cableTypes, selectedScenario,
-        testFoisonnement, 0, tempProject.transformerConfig,
-        tempProject.loadModel ?? 'polyphase_equilibre',
-        tempProject.desequilibrePourcent ?? 0, tempProject.manualPhaseDistribution
+      const result = calculator.calculateScenarioWithHTConfig(
+        tempProject,
+        selectedScenario,
+        testFoisonnement,
+        0, // Ignorer les productions pour tension cible
+        tempProject.manualPhaseDistribution
       );
 
       const nodeData = result.nodeVoltageDrops?.find(n => n.nodeId === nodeId);
@@ -1025,59 +1064,61 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       },
       // Désactiver tous les équipements de simulation quand on quitte le mode simulation
       simulationEquipment: newSimulationMode ? simulationEquipment : {
-        srg2: simulationEquipment.srg2 ? { ...simulationEquipment.srg2, enabled: false } : null,
+        regulators: simulationEquipment.regulators.map(r => ({ ...r, enabled: false })),
         neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
         cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
   },
 
-  addSRG2Regulator: (nodeId: string) => {
+  addVoltageRegulator: (nodeId: string) => {
     const { simulationEquipment, currentProject } = get();
     if (!currentProject) return;
     
-    // Vérifier qu'il n'y a pas déjà un régulateur SRG2
-    if (simulationEquipment.srg2) {
-      toast.error('Un régulateur SRG2 existe déjà dans le projet');
+    // Vérifier qu'il n'y a pas déjà un régulateur sur ce nœud
+    const existingRegulator = simulationEquipment.regulators.find(r => r.nodeId === nodeId);
+    if (existingRegulator) {
+      toast.error('Un régulateur de tension existe déjà sur ce nœud');
       return;
     }
 
-    // Utiliser le calculateur pour créer la configuration SRG2
+    // Utiliser le calculateur pour créer le régulateur avec la tension du transformateur
     const calculator = new SimulationCalculator();
-    const newSRG2Config = calculator.createDefaultSRG2Config(nodeId);
+    const sourceVoltage = currentProject.transformerConfig.nominalVoltage_V;
+    const newRegulator = calculator.createDefaultRegulator(nodeId, sourceVoltage);
 
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        srg2: newSRG2Config
+        regulators: [...simulationEquipment.regulators, newRegulator]
       }
     });
     
-    toast.success('Régulateur SRG2 ajouté');
+    toast.success(`Armoire de régulation ${newRegulator.type} ajoutée`);
     
     // Recalculer automatiquement la simulation
     get().runSimulation();
   },
 
-  removeSRG2Regulator: () => {
+  removeVoltageRegulator: (regulatorId: string) => {
     const { simulationEquipment } = get();
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        srg2: null
+        regulators: simulationEquipment.regulators.filter(r => r.id !== regulatorId)
       }
     });
-    toast.success('Régulateur SRG2 supprimé');
+    toast.success('Régulateur de tension supprimé');
   },
 
-  updateSRG2Config: (updates: Partial<SRG2Config>) => {
+  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => {
     const { simulationEquipment, simulationMode } = get();
-    if (!simulationEquipment.srg2) return;
-
     set({
       simulationEquipment: {
         ...simulationEquipment,
-        srg2: { ...simulationEquipment.srg2, ...updates }
+        regulators: simulationEquipment.regulators.map(r => 
+          r.id === regulatorId ? { ...r, ...updates } : r
+        )
       }
     });
 
@@ -1088,6 +1129,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
       get().runSimulation();
     } else if (simulationMode) {
+      // Si on est déjà en mode simulation, recalculer sur tout autre paramètre (tension cible, puissance max, etc.)
       get().runSimulation();
     }
   },
@@ -1172,9 +1214,9 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
     
     // Optimisation par circuit en un seul passage avec seuil paramétrable (par défaut 8%)
     const upgrades = calculator.proposeFullCircuitReinforcement(
-      currentProject,
-      selectedScenario,
-      result
+      currentProject.cables,
+      defaultCableTypes,
+      threshold ?? 8.0 // Seuil paramétrable pour la chute de tension
     );
 
     set({
@@ -1227,7 +1269,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       // Mettre à jour l'état avec les résultats de simulation
       set({ simulationResults: newSimulationResults });
       
-      const activeEquipmentCount = (simulationEquipment.srg2?.enabled ? 1 : 0) + 
+      const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
                                   simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
       
       toast.success(`Simulation recalculée avec ${activeEquipmentCount} équipement(s) actif(s)`);
@@ -1254,18 +1296,5 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         isActive: false
       }
     });
-  },
-
-  // Reactive getters
-  getActiveEquipmentCount: () => {
-    const state = get();
-    const count = (state.simulationEquipment.srg2?.enabled ? 1 : 0) + 
-                 state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
-    console.log('📊 Active equipment count calculated:', count, {
-      enabledSRG2: state.simulationEquipment.srg2?.enabled || false,
-      enabledCompensators: state.simulationEquipment.neutralCompensators.filter(c => c.enabled).length,
-      totalCompensators: state.simulationEquipment.neutralCompensators.length
-    });
-    return count;
   }
 }));

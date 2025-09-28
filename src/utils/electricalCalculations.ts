@@ -1,16 +1,4 @@
-// ============= ARCHITECTURE NOTES =============
-// NETTOYAGE SRG2: Simplification des méthodes d'impédance
-// 
-// calculateNetworkImpedances(): Conservée uniquement pour EQUI8 avec valeurs par défaut
-// recalculateNetworkFromNode(): SUPPRIMÉE - Remplacée par la boucle de convergence
-// 
-// LOGIQUE MODERNE:
-// - Tous les calculs réseau passent par calculateScenario() complet
-// - SimulationCalculator gère la convergence itérative
-// - Pas de recalcul partiel pour éviter les incohérences
-// ============= END ARCHITECTURE NOTES =============
-
-import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel, NeutralCompensator, VoltageRegulator } from '@/types/network';
+import { Node, Cable, Project, CalculationResult, CalculationScenario, ConnectionType, CableType, TransformerConfig, VirtualBusbar, LoadModel } from '@/types/network';
 import { getConnectedNodes } from '@/utils/networkConnectivity';
 import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/utils/complex';
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
@@ -24,8 +12,6 @@ export class ElectricalCalculator {
   private static readonly VOLTAGE_400V_THRESHOLD = 350;
   private static readonly MIN_VOLTAGE_SAFETY = 1e-6;
   private static readonly SMALL_IMPEDANCE_SAFETY = 1e-12;
-
-  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
 
   constructor(cosPhi: number = 0.95) {
     this.validateCosPhi(cosPhi);
@@ -146,15 +132,6 @@ export class ElectricalCalculator {
   // ---- utilitaires ----
   private deg2rad(deg: number) { return deg * Math.PI / 180; }
 
-  // NOUVEAUX UTILITAIRES: Conversions phase ↔ ligne
-  private toPhaseVoltage(U_line: number): number {
-    return U_line / Math.sqrt(3);
-  }
-
-  private toLineVoltage(U_phase: number): number {
-    return U_phase * Math.sqrt(3);
-  }
-
   static calculateGeodeticDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -186,17 +163,12 @@ export class ElectricalCalculator {
   private getVoltageConfig(connectionType: ConnectionType): { U: number; isThreePhase: boolean; useR0: boolean } {
     switch (connectionType) {
       case 'MONO_230V_PN':
-        // Phase-neutre 230V: CORRECTION - utilise maintenant R12/X12 pour chute de phase
-        // R0/X0 seulement pour courant de neutre, pas pour chute de tension
-        return { U: 230, isThreePhase: false, useR0: false };
+        return { U: 230, isThreePhase: false, useR0: true }; // Phase-neutre = 230V
       case 'MONO_230V_PP':
-        // Phase-phase 230V: utilise R12/X12 car pas de neutre
         return { U: 230, isThreePhase: false, useR0: false };
       case 'TRI_230V_3F':
-        // Triphasé 230V équilibré: utilise R12/X12 (séquence directe)
         return { U: 230, isThreePhase: true, useR0: false };
       case 'TÉTRA_3P+N_230_400V':
-        // Tétraphasé 400V: utilise R12/X12 pour calculs équilibrés
         return { U: 400, isThreePhase: true, useR0: false };
       default:
         return { U: 230, isThreePhase: true, useR0: false };
@@ -228,69 +200,48 @@ export class ElectricalCalculator {
     }
   }
 
-  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number, R0:number, X0:number } {
+  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
     const { useR0 } = this.getVoltageConfig(connectionType);
-    
-    // CORRECTION: Toujours fournir R12/X12 pour phase ET R0/X0 pour neutre
-    const result = {
-      R: cableType.R12_ohm_per_km,    // Résistance de phase (toujours R12)
-      X: cableType.X12_ohm_per_km,    // Réactance de phase (toujours X12)
-      R0: cableType.R0_ohm_per_km,    // Résistance homopolaire (pour neutre)
-      X0: cableType.X0_ohm_per_km     // Réactance homopolaire (pour neutre)
-    };
-    
-    // Logs désactivés pour éviter la redondance (6x le même log)
-    
-    return result;
+    return useR0
+      ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
+      : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
   /**
    * Calcule le courant RMS par phase (A) à partir de la puissance apparente S_kVA.
-   * Conventions physiques corrigées et uniformisées:
-   * - Triphasé équilibré: I = |S_kVA| * 1000 / (√3 · U_line)
+   * Conventions:
+   * - Triphasé: I = |S_kVA| * 1000 / (√3 · U_line)
    * - Monophasé: I = |S_kVA| * 1000 / U_phase
    * S_kVA est la puissance apparente totale (kVA), positive en consommation, négative en injection.
    * sourceVoltage, s'il est fourni, est interprété comme U_line (tri) ou U_phase (mono).
    */
   private calculateCurrentA(S_kVA: number, connectionType: ConnectionType, sourceVoltage?: number): number {
-    // ROBUSTESSE: Validation des entrées
-    if (!isFinite(S_kVA)) {
-      console.warn(`⚠️ Puissance S_kVA invalide: ${S_kVA}, retour 0A`);
-      return 0;
-    }
-
     let { U_base, isThreePhase } = this.getVoltage(connectionType);
 
     if (sourceVoltage) {
-      if (!isFinite(sourceVoltage) || sourceVoltage <= 0) {
-        console.warn(`⚠️ Tension source invalide: ${sourceVoltage}V, utilisation U_base=${U_base}V`);
-      } else {
-        U_base = sourceVoltage;
-      }
-    }
-
-    // ROBUSTESSE: Validation de la tension de base
-    if (!isFinite(U_base) || U_base <= 0) {
-      throw new Error(`Tension de base invalide: U_base=${U_base}V, connectionType=${connectionType}`);
+      U_base = sourceVoltage;
     }
 
     const Sabs_kVA = Math.abs(S_kVA);
     
-    // FORMULES UNIFORMISÉES selon les conventions physiques
-    const denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
-    const current = (Sabs_kVA * 1000) / denom;
+    // Correction pour le calcul du courant selon le type de connexion
+    let denom: number;
+    if (connectionType === 'MONO_230V_PN') {
+      denom = U_base; // I = S / 230V pour monophasé phase-neutre
+    } else if (connectionType === 'MONO_230V_PP') {
+      denom = U_base; // I = S / tension_entre_phases
+    } else if (connectionType === 'TRI_230V_3F') {
+      // Pour TRI_230V_3F : pas de √3, calcul direct en tension composée
+      denom = U_base; // I = S / 230V directement (pas de √3)
+    } else {
+      denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
+    }
     
-    // Log de débogage détaillé
-    const formula = isThreePhase 
-      ? `S / (√3 × U) = ${Sabs_kVA} kVA / (√3 × ${U_base}V) = ${Sabs_kVA} / ${denom.toFixed(1)}`
-      : `S / U = ${Sabs_kVA} kVA / ${U_base}V`;
-    
-    console.log(`🔌 Calcul courant [${connectionType}]:`);
-    console.log(`   - Formule: ${formula}`);
-    console.log(`   - Résultat: I = ${current.toFixed(2)}A`);
-    console.log(`   - isThreePhase: ${isThreePhase}, U_base: ${U_base}V`);
-    
-    return current;
+    if (!isFinite(denom) || denom <= 0) {
+      console.warn(`⚠️ Dénominateur invalide pour le calcul du courant: ${denom}, connectionType: ${connectionType}`);
+      return 0;
+    }
+    return (Sabs_kVA * 1000) / denom;
   }
 
   private getComplianceStatus(voltageDropPercent: number): 'normal'|'warning'|'critical' {
@@ -304,6 +255,7 @@ export class ElectricalCalculator {
   // Les calculs transfo sont désormais exclusivement phasoriels via Ztr_phase et I_source_net.
 
 
+  // Calcul du jeu de barres virtuel (phasors) avec analyse par départ
   private calculateVirtualBusbar(
     transformerConfig: TransformerConfig,
     totalLoads_kVA: number,
@@ -315,7 +267,6 @@ export class ElectricalCalculator {
     I_source_net: Complex,
     Ztr_phase: Complex | null,
     cableIndexByPair: Map<string, Cable>,
-    nodeById: Map<string, Node>, // T4: Add nodeById parameter for correct connectionType lookup
     I_source_net_phases?: { A: Complex; B: Complex; C: Complex } // Pour I_N en mode déséquilibré
   ): VirtualBusbar {
     const { U_base: U_nom_source, isThreePhase: isSourceThree } = this.getVoltage(source.connectionType);
@@ -388,9 +339,10 @@ export class ElectricalCalculator {
       for (const nid of subtreeNodes) {
         const nV = V_node.get(nid);
         if (!nV) continue;
-        // T4: Use correct connectionType per node, not source's type
-        const node = nodeById.get(nid);
-        const nodeConnType: ConnectionType = node?.connectionType ?? source.connectionType;
+        // Conversion ligne/phase basée sur le type de connexion (fallback: type de la source)
+        const nodeConnType: ConnectionType = nid === source.id
+          ? source.connectionType
+          : source.connectionType;
         const isThree = this.getVoltage(nodeConnType).isThreePhase;
         const scaleLine = this.getDisplayLineScale(nodeConnType);
         const U_node_line = abs(nV) * scaleLine;
@@ -430,455 +382,69 @@ export class ElectricalCalculator {
   }
 
   /**
-   * Calcul d'impédance réseau simplifié pour EQUI8
-   * NOTE: Les calculs détaillés sont gérés par la boucle de convergence de SimulationCalculator
-   * @param nodeId ID du nœud compensateur
-   * @param nodes Liste des nœuds (non utilisée - implémentation simplifiée)
-   * @param cables Liste des câbles (non utilisée - implémentation simplifiée)
-   * @param cableTypes Types de câbles (non utilisée - implémentation simplifiée)
+   * Version étendue de calculateScenario avec support de la configuration HT
+   * @param project Projet contenant la configuration HT
+   * @param scenario Scénario de calcul
+   * @param foisonnementCharges Foisonnement des charges
+   * @param foisonnementProductions Foisonnement des productions
+   * @param manualPhaseDistribution Distribution manuelle des phases (optionnel)
    */
-  private calculateNetworkImpedances(
-    nodeId: string,
-    nodes: Node[],
-    cables: Cable[],
-    cableTypes: CableType[]
-  ): { Zph: number; Zn: number } {
-    // Valeurs d'impédance par défaut pour EQUI8 uniquement
-    // Le calcul réseau complet est géré par SimulationCalculator
-    return { Zph: 0.2, Zn: 0.3 };
-  }
-
-  // SUPPRIMÉ: recalculateNetworkFromNode - méthode obsolète
-  // Remplacée par la boucle de convergence de SimulationCalculator
-  // Les recalculs de réseau doivent passer par calculateWithSimulation()
-
-  /**
-   * Calcule la charge totale en aval d'un nœud pour validation SRG2
-   */
-  private calculateDownstreamLoad(nodeId: string, nodes: Node[], cables: Cable[], foisonnement: number): number {
-    const visited = new Set<string>();
-    const queue = [nodeId];
-    let totalLoad = 0;
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-      
-      const node = nodes.find(n => n.id === currentId);
-      if (node) {
-        const nodeLoad = (node.clients || []).reduce((sum, client) => sum + client.S_kVA, 0);
-        totalLoad += nodeLoad * (foisonnement / 100);
-      }
-      
-      const downstreamCables = cables.filter(cable =>
-        (cable.nodeAId === currentId || cable.nodeBId === currentId) && 
-        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
-      );
-      
-      downstreamCables.forEach(cable => {
-        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
-        if (!visited.has(nextNodeId)) queue.push(nextNodeId);
-      });
-    }
-    
-    return totalLoad;
-  }
-
-  /**
-   * Calcule la production totale en aval d'un nœud pour validation SRG2
-   */
-  private calculateDownstreamProduction(nodeId: string, nodes: Node[], cables: Cable[], foisonnement: number): number {
-    const visited = new Set<string>();
-    const queue = [nodeId];
-    let totalProduction = 0;
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      if (visited.has(currentId)) continue;
-      visited.add(currentId);
-      
-      const node = nodes.find(n => n.id === currentId);
-      if (node) {
-        const nodeProduction = (node.productions || []).reduce((sum, prod) => sum + prod.S_kVA, 0);
-        totalProduction += nodeProduction * (foisonnement / 100);
-      }
-      
-      const downstreamCables = cables.filter(cable =>
-        (cable.nodeAId === currentId || cable.nodeBId === currentId) && 
-        !visited.has(cable.nodeAId) && !visited.has(cable.nodeBId)
-      );
-      
-      downstreamCables.forEach(cable => {
-        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
-        if (!visited.has(nextNodeId)) queue.push(nextNodeId);
-      });
-    }
-    
-    return totalProduction;
-  }
-
-  /**
-   * SYSTÈME UNIFIÉ : Applique tous les régulateurs de tension (SRG2 et classiques) avec recalcul complet du réseau
-   * Remplace l'ancienne approche de modification directe des tensions par un système de tension de référence
-   * @param nodes Liste des nœuds du réseau
-   * @param cables Liste des câbles du réseau
-   * @param regulators Liste des régulateurs actifs
-   * @param baseResult Résultats de base avant régulation
-   * @param cableTypes Types de câbles disponibles
-   * @param project Configuration du projet (pour détection réseau)
-   * @returns Résultats avec régulateurs appliqués via recalcul complet
-   */
-  applyAllVoltageRegulators(
-    nodes: Node[],
-    cables: Cable[],
-    regulators: VoltageRegulator[],
-    baseResult: CalculationResult,
-    cableTypes: CableType[],
+  calculateScenarioWithHTConfig(
     project: Project,
-    scenario: CalculationScenario = 'MIXTE'
+    scenario: CalculationScenario,
+    foisonnementCharges: number = 100,
+    foisonnementProductions: number = 100,
+    manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
   ): CalculationResult {
-    if (!regulators || regulators.length === 0) {
-      console.log('🔧 No voltage regulators provided, returning base result');
-      return baseResult;
-    }
-
-    const activeRegulators = regulators.filter(r => r.enabled);
-    if (activeRegulators.length === 0) {
-      console.log('🔧 No active voltage regulators, returning base result');
-      return baseResult;
-    }
-
-    console.log(`🔧 UNIFIED SYSTEM: Processing ${activeRegulators.length} voltage regulators with complete network recalculation`);
+    // Si configuration HT disponible, ajuster la tension de la source
+    let modifiedNodes = [...project.nodes];
     
-    // Détecter le type de réseau
-    const networkDetection = this.detectNetworkType(project);
-    
-    // Créer une copie des nœuds pour modification
-    const modifiedNodes = JSON.parse(JSON.stringify(nodes)) as Node[];
-    let hasRegulatorChanges = false;
+    if (project.htVoltageConfig && project.transformerConfig) {
+      const {
+        nominalVoltageHT_V,
+        nominalVoltageBT_V,
+        measuredVoltageHT_V
+      } = project.htVoltageConfig;
 
-    // Traiter chaque régulateur séquentiellement
-    for (const regulator of activeRegulators) {
-      const nodeIndex = modifiedNodes.findIndex(n => n.id === regulator.nodeId);
-      if (nodeIndex === -1) {
-        console.warn(`⚠️ Node ${regulator.nodeId} not found for regulator ${regulator.id}`);
-        continue;
-      }
+      const sourceNode = modifiedNodes.find(n => n.isSource);
+      if (sourceNode && !sourceNode.tensionCible) {
+        // Calculer la tension source réaliste
+        const realisticVoltage = this.calculateSourceVoltage(
+          project.transformerConfig,
+          measuredVoltageHT_V,
+          nominalVoltageHT_V,
+          nominalVoltageBT_V
+        );
 
-      console.log(`🔧 Processing regulator ${regulator.id} at node ${regulator.nodeId}`);
+        // Créer une copie du nœud source avec la tension calculée
+        const modifiedSourceNode = {
+          ...sourceNode,
+          tensionCible: realisticVoltage
+        };
 
-      // Récupérer la tension actuelle du nœud régulateur
-      const nodeMetrics = baseResult.nodeMetricsPerPhase?.find(n => n.nodeId === regulator.nodeId);
-      if (!nodeMetrics) {
-        console.warn(`⚠️ No voltage data found for regulator node ${regulator.nodeId}`);
-        continue;
-      }
+        // Remplacer le nœud source dans la liste
+        modifiedNodes = modifiedNodes.map(n => 
+          n.id === sourceNode.id ? modifiedSourceNode : n
+        );
 
-      const currentVoltages = {
-        A: nodeMetrics.voltagesPerPhase.A,
-        B: nodeMetrics.voltagesPerPhase.B,
-        C: nodeMetrics.voltagesPerPhase.C
-      };
-
-      console.log(`📊 DIAGNOSTIC ${regulator.id}:`);
-      console.log(`  - Node: ${regulator.nodeId}`);
-      console.log(`  - Initial voltages: A=${currentVoltages.A.toFixed(1)}V, B=${currentVoltages.B.toFixed(1)}V, C=${currentVoltages.C.toFixed(1)}V`);
-      console.log(`  - Network type: ${networkDetection.type}`);
-
-      // Phase 2 - Exclure les nœuds SRG2 du traitement des régulateurs classiques
-      console.log(`[INTERFERENCE-CHECK] Checking if node ${regulator.nodeId} is SRG2 node...`);
-      
-      // Vérifier si ce nœud est géré par SRG2 (chercher dans les nœuds modifiés)
-      const nodeHasSRG2Applied = modifiedNodes[nodeIndex].srg2Applied === true;
-      if (nodeHasSRG2Applied) {
-        console.log(`⏭️ [INTERFERENCE-FIX] Skipping SRG2 node ${regulator.nodeId} from classical regulator processing`);
-        console.log(`   - Node already regulated by SRG2 with tensionCible=${modifiedNodes[nodeIndex].tensionCible.toFixed(1)}V`);
-        continue;
-      }
-
-      // Régulateur classique uniquement - SRG2 géré par SRG2Regulator
-      const avgCurrentVoltage = (currentVoltages.A + currentVoltages.B + currentVoltages.C) / 3;
-      const targetVoltage = regulator.targetVoltage_V;
-      
-      if (Math.abs(targetVoltage - avgCurrentVoltage) > 1.0) {
-        console.log(`[INTERFERENCE-TRACE] Classical regulator setting tensionCible: ${targetVoltage}V (was: ${modifiedNodes[nodeIndex].tensionCible?.toFixed(1) || 'undefined'}V)`);
-        modifiedNodes[nodeIndex].tensionCible = targetVoltage;
-        modifiedNodes[nodeIndex].isVoltageRegulator = true;
-        
-        console.log(`🔧 Classical regulator: Setting node ${regulator.nodeId} target voltage to ${targetVoltage}V`);
-        
-        hasRegulatorChanges = true;
-      } else {
-        console.log(`✅ Classical regulator ${regulator.id}: voltage already at target`);
+        console.log(`🔌 Application tension source HT réaliste: ${realisticVoltage.toFixed(1)}V`);
       }
     }
 
-    // RECALCUL COMPLET DU RÉSEAU si des modifications ont été apportées
-    if (!hasRegulatorChanges) {
-      console.log('✅ No regulator changes needed, returning base result');
-      return baseResult;
-    }
-
-    console.log('🔧 Recalculating network with modified regulators');
-
-    // Créer un projet temporaire avec les nœuds modifiés
-    const tempProject = {
-      ...project,
-      nodes: modifiedNodes
-    };
-
-    // Relancer un calcul complet du réseau avec les nouvelles tensions de référence
-    const recalculatedResult = this.calculateScenario(
+    // Appeler la méthode standard avec les nœuds modifiés
+    return this.calculateScenario(
       modifiedNodes,
       project.cables,
       project.cableTypes,
       scenario,
-      100, // foisonnementCharges par défaut
-      100, // foisonnementProductions par défaut
+      foisonnementCharges,
+      foisonnementProductions,
       project.transformerConfig,
       project.loadModel ?? 'polyphase_equilibre',
       project.desequilibrePourcent ?? 0,
-      undefined // manualPhaseDistribution
+      manualPhaseDistribution
     );
-
-    console.log('✅ UNIFIED SYSTEM: Complete network recalculation completed');
-    
-    // DIAGNOSTIC : Vérifier que le recalcul a bien les nodeMetricsPerPhase
-    if (!recalculatedResult.nodeMetricsPerPhase) {
-      console.error('❌ CRITICAL: Recalculated result missing nodeMetricsPerPhase!');
-      console.log('📊 Recalculated result keys:', Object.keys(recalculatedResult));
-      console.log('📊 Base result had nodeMetricsPerPhase:', !!baseResult.nodeMetricsPerPhase);
-      // Fallback: utiliser le baseResult si le recalcul échoue
-      return baseResult;
-    }
-    
-    console.log('✅ Recalculated result has nodeMetricsPerPhase:', recalculatedResult.nodeMetricsPerPhase.length, 'nodes');
-    return recalculatedResult;
   }
-
-  /**
-   * Détection du type de réseau basé sur les tensions nominales des transformateurs
-   */
-  protected detectNetworkType(project: Project): { type: '400V' | '230V', confidence: number } {
-    const transformer = project.transformerConfig;
-    if (!transformer) {
-      console.log('📊 No transformer found, defaulting to 400V network');
-      return { type: '400V', confidence: 0.5 };
-    }
-
-    const nominalVoltage = transformer.nominalVoltage_V;
-    if (nominalVoltage >= 380 && nominalVoltage <= 420) {
-      console.log(`📊 Detected 400V network (transformer: ${nominalVoltage}V)`);
-      return { type: '400V', confidence: 1.0 };
-    } else if (nominalVoltage >= 220 && nominalVoltage <= 240) {
-      console.log(`📊 Detected 230V network (transformer: ${nominalVoltage}V)`);
-      return { type: '230V', confidence: 1.0 };
-    } else {
-      console.log(`📊 Unknown voltage ${nominalVoltage}V, defaulting to 400V network`);
-      return { type: '400V', confidence: 0.3 };
-    }
-  }
-
-  // Ancien système SRG2 supprimé - utiliser SRG2Regulator uniquement
-
-  /**
-   * Fonction de calcul EQUI8 selon les formules exactes du constructeur
-   * @param Uinit Tensions initiales [ph1, ph2, ph3] en V
-   * @param Zph Impédance de phase en Ω
-   * @param Zn Impédance de neutre en Ω
-   * @returns Résultats EQUI8 complets
-   */
-  computeEqui8(
-    Uinit: [number, number, number], 
-    Zph: number, 
-    Zn: number
-  ): {
-    UEQUI8: [number, number, number];
-    I_EQUI8: number;
-    dU_init: number;
-    dU_EQUI8: number;
-    ratios: [number, number, number];
-    warning?: string;
-  } {
-    const [U1, U2, U3] = Uinit;
-    
-    // Validation du domaine de validité
-    if (Zph <= 0.15 || Zn <= 0.15) {
-      const warning = `⚠️ Impédances hors domaine de validité fournisseur: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω (min: 0.15Ω)`;
-      console.warn(warning);
-    }
-
-    // Calcul des statistiques initiales
-    const Umoy = (U1 + U2 + U3) / 3;
-    const Umax = Math.max(U1, U2, U3);
-    const Umin = Math.min(U1, U2, U3);
-    const dU_init = Umax - Umin;
-
-    // Calcul des ratios par phase
-    const ratio1 = dU_init > 0 ? (U1 - Umoy) / dU_init : 0;
-    const ratio2 = dU_init > 0 ? (U2 - Umoy) / dU_init : 0;
-    const ratio3 = dU_init > 0 ? (U3 - Umoy) / dU_init : 0;
-
-    // Formule EQUI8 pour (Umax-Umin)EQUI8
-    const logarithmicTerm = 0.9119 * Math.log(Zph) + 3.8654;
-    const impedanceRatio = (2 * Zph) / (Zph + Zn);
-    const dU_EQUI8 = (1 / logarithmicTerm) * dU_init * impedanceRatio;
-
-    // Calcul des tensions corrigées UEQUI8
-    const UEQUI8_1 = Umoy + ratio1 * dU_EQUI8;
-    const UEQUI8_2 = Umoy + ratio2 * dU_EQUI8;  
-    const UEQUI8_3 = Umoy + ratio3 * dU_EQUI8;
-
-    // Calcul du courant neutre EQUI8
-    const I_EQUI8 = (0.392 / Math.pow(Zph, 0.8065)) * dU_init * impedanceRatio;
-
-    return {
-      UEQUI8: [UEQUI8_1, UEQUI8_2, UEQUI8_3],
-      I_EQUI8,
-      dU_init,
-      dU_EQUI8,
-      ratios: [ratio1, ratio2, ratio3],
-      warning: (Zph <= 0.15 || Zn <= 0.15) ? 
-        `Impédances hors domaine: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω` : undefined
-    };
-  }
-
-  /**
-   * Applique les compensateurs de neutre EQUI8 aux résultats de calcul
-   * Implémentation avec modèle EQUI8 constructeur et deux modes d'intégration
-   * @param nodes Liste des nœuds du réseau
-   * @param cables Liste des câbles du réseau
-   * @param compensators Liste des compensateurs actifs
-   * @param baseResult Résultats de base avant compensation
-   * @param cableTypes Types de câbles disponibles
-   * @returns Résultats modifiés avec compensateurs appliqués
-   */
-  applyNeutralCompensation(
-    nodes: Node[],
-    cables: Cable[],
-    compensators: NeutralCompensator[],
-    baseResult: CalculationResult,
-    cableTypes: CableType[]
-  ): CalculationResult {
-    if (!compensators || compensators.length === 0) {
-      console.log('🔧 No compensators provided, returning base result');
-      return baseResult;
-    }
-
-    const activeCompensators = compensators.filter(c => c.enabled);
-    if (activeCompensators.length === 0) {
-      console.log('🔧 No active compensators, returning base result');
-      return baseResult;
-    }
-
-    console.log(`🔧 Applying ${activeCompensators.length} EQUI8 neutral compensators`);
-
-    let result: CalculationResult = JSON.parse(JSON.stringify(baseResult));
-
-    // Apply each compensator
-    for (const compensator of activeCompensators) {
-      const node = nodes.find(n => n.id === compensator.nodeId);
-      if (!node) {
-        console.warn(`⚠️ Node ${compensator.nodeId} not found for compensator ${compensator.id}`);
-        continue;
-      }
-
-      // Check kVA limit against downstream load
-      const downstreamLoad_kVA = this.calculateDownstreamLoad(compensator.nodeId, nodes, cables, 100);
-      console.log(`🔧 Compensator at node ${compensator.nodeId}: Downstream load=${downstreamLoad_kVA.toFixed(1)}kVA, Limit=${compensator.maxPower_kVA}kVA`);
-      
-      if (downstreamLoad_kVA > compensator.maxPower_kVA) {
-        console.warn(`⚠️ Compensateur ${compensator.id} surchargé! Charge=${downstreamLoad_kVA.toFixed(1)}kVA > Limite=${compensator.maxPower_kVA}kVA`);
-        (compensator as any).isLimited = true;
-        (compensator as any).currentIN_A = 0;
-        (compensator as any).reductionPercent = 0;
-        (compensator as any).overloadReason = `Charge aval (${downstreamLoad_kVA.toFixed(1)}kVA) dépasse la limite (${compensator.maxPower_kVA}kVA)`;
-        continue;
-      }
-      
-      (compensator as any).isLimited = false;
-
-      // Get node voltages
-      const nodeMetricIndex = result.nodeMetricsPerPhase?.findIndex(nm => nm.nodeId === compensator.nodeId) ?? -1;
-      
-      if (nodeMetricIndex < 0 || !result.nodeMetricsPerPhase) {
-        console.warn(`⚠️ Node ${compensator.nodeId} not found in nodeMetricsPerPhase array`);
-        continue;
-      }
-
-      const nodeMetricPerPhase = result.nodeMetricsPerPhase[nodeMetricIndex];
-      
-      if (!nodeMetricPerPhase?.voltagesPerPhase) {
-        console.warn(`⚠️ No voltage data available for node ${compensator.nodeId}`);
-        continue;
-      }
-
-      const { A: U1, B: U2, C: U3 } = nodeMetricPerPhase.voltagesPerPhase;
-      console.log(`📊 Initial voltages: A=${U1.toFixed(1)}V, B=${U2.toFixed(1)}V, C=${U3.toFixed(1)}V`);
-
-      // Calculate network impedances
-      const { Zph, Zn } = this.calculateNetworkImpedances(compensator.nodeId, nodes, cables, cableTypes);
-      console.log(`⚡ Network impedances: Zph=${Zph.toFixed(3)}Ω, Zn=${Zn.toFixed(3)}Ω`);
-
-      // Apply EQUI8 computation
-      const equi8Result = this.computeEqui8([U1, U2, U3], Zph, Zn);
-      
-      if (equi8Result.warning) {
-        console.warn(equi8Result.warning);
-      }
-
-      console.log(`📊 EQUI8 result: [${equi8Result.UEQUI8.map(v => v.toFixed(1)).join(', ')}]V, I_N=${equi8Result.I_EQUI8.toFixed(1)}A`);
-
-      // Update compensator status with EQUI8 results
-      (compensator as any).currentIN_A = Math.round(equi8Result.I_EQUI8 * 10) / 10;
-      (compensator as any).reductionPercent = Math.min(100, ((equi8Result.dU_init - equi8Result.dU_EQUI8) / equi8Result.dU_init) * 100);
-      (compensator as any).u1p_V = Math.round(equi8Result.UEQUI8[0] * 10) / 10;
-      (compensator as any).u2p_V = Math.round(equi8Result.UEQUI8[1] * 10) / 10;
-      (compensator as any).u3p_V = Math.round(equi8Result.UEQUI8[2] * 10) / 10;
-
-      // Store EQUI8 results for post-processing display (Mode fournisseur par défaut)
-      if (!result.nodeMetricsPerPhase[nodeMetricIndex].equi8) {
-        result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {
-          UEQUI8: { A: 0, B: 0, C: 0 },
-          I_EQUI8: 0,
-          dU_init: 0,
-          dU_EQUI8: 0,
-          ratios: { A: 0, B: 0, C: 0 }
-        };
-      }
-      result.nodeMetricsPerPhase[nodeMetricIndex].equi8 = {
-        UEQUI8: { A: equi8Result.UEQUI8[0], B: equi8Result.UEQUI8[1], C: equi8Result.UEQUI8[2] },
-        I_EQUI8: equi8Result.I_EQUI8,
-        dU_init: equi8Result.dU_init,
-        dU_EQUI8: equi8Result.dU_EQUI8,
-        ratios: { A: equi8Result.ratios[0], B: equi8Result.ratios[1], C: equi8Result.ratios[2] }
-      };
-
-      // Mode intégré si applyToFlow=true (approximatif)
-      if ((compensator as any).applyToFlow) {
-        console.log(`🔧 Mode intégré activé pour compensateur ${compensator.id}`);
-        
-        const compensatedVoltages = {
-          A: equi8Result.UEQUI8[0],
-          B: equi8Result.UEQUI8[1], 
-          C: equi8Result.UEQUI8[2]
-        };
-
-        // Update voltages and recalculate downstream (approximation)
-        result.nodeMetricsPerPhase[nodeMetricIndex].voltagesPerPhase = compensatedVoltages;
-        
-        // Note: Dans une vraie implémentation, il faudrait recalculer avec injection équivalente
-        console.log(`⚠️ Mode intégré approximatif - les inductances ne sont pas prises en compte`);
-      }
-
-      console.log(`✅ EQUI8 compensator applied: ${(equi8Result.dU_init - equi8Result.dU_EQUI8).toFixed(1)}V improvement`);
-    }
-    
-    return result;
-  }
-
-  // SUPPRIMÉ: Méthode wrapper redondante - intégration HT directement dans calculateScenario
   calculateScenario(
     nodes: Node[],
     cables: Cable[],
@@ -891,16 +457,15 @@ export class ElectricalCalculator {
     desequilibrePourcent: number = 0,
     manualPhaseDistribution?: { charges: {A:number;B:number;C:number}; productions: {A:number;B:number;C:number} }
   ): CalculationResult {
-    // Ancien système SRG2 supprimé - validation simplifiée
-    if (!nodes?.length) throw new Error('Aucun nœud fourni');
-    if (!cables?.length) throw new Error('Aucun câble fourni');
+    // Validation robuste des entrées
+    this.validateInputs(nodes, cables, cableTypes, foisonnementCharges, foisonnementProductions, desequilibrePourcent);
     
-    console.log('⚡ Calculating scenario:', scenario);
+    console.log('🔄 calculateScenario started for scenario:', scenario, 'with nodes:', nodes.length, 'cables:', cables.length);
     const nodeById = new Map(nodes.map(n => [n.id, n] as const));
     const cableTypeById = new Map(cableTypes.map(ct => [ct.id, ct] as const));
 
     const sources = nodes.filter(n => n.isSource);
-    console.log('📍 Sources found:', sources.length);
+    console.log('🔄 Found sources:', sources.length);
     if (sources.length !== 1) throw new Error('Le réseau doit avoir exactement une source.');
     const source = sources[0];
 
@@ -1025,26 +590,7 @@ export class ElectricalCalculator {
     const VcfgSrc = this.getVoltage(source.connectionType);
     let U_line_base = VcfgSrc.U_base;
     if (transformerConfig?.nominalVoltage_V) U_line_base = transformerConfig.nominalVoltage_V;
-    
-    // Phase 2 - Correction du bloc problématique SRG2
-    console.log(`[INTERFERENCE-TRACE] calculateScenario source analysis: isVoltageRegulator=${source.isVoltageRegulator}, srg2Applied=${source.srg2Applied}, tensionCible=${source.tensionCible?.toFixed(1)}`);
-    
-    if (source.srg2Applied === true) {
-      // Nœud SRG2 : utiliser tensionCible définie par SRG2Regulator
-      if (source.tensionCible) {
-        U_line_base = source.tensionCible;
-        console.log(`✅ [SRG2-CLEAN] Using SRG2 tensionCible: ${U_line_base.toFixed(1)}V for node ${source.id}`);
-      } else {
-        console.warn(`⚠️ [SRG2-ERROR] SRG2 node without tensionCible, using transformer voltage`);
-        if (transformerConfig?.nominalVoltage_V) {
-          U_line_base = transformerConfig.nominalVoltage_V;
-        }
-      }
-    } else if (source.tensionCible) {
-      U_line_base = source.tensionCible;
-      console.log(`✅ [CLASSICAL] Using classical tensionCible: ${U_line_base.toFixed(1)}V for node ${source.id}`);
-    }
-    
+    if (source.tensionCible) U_line_base = source.tensionCible;
     const isSrcThree = VcfgSrc.isThreePhase;
 
     if (!isFinite(U_line_base) || U_line_base <= 0) {
@@ -1072,8 +618,8 @@ export class ElectricalCalculator {
       // Ztr (Ω/phase) à partir de Ucc% (en p.u.) et du ratio X/R si fourni
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
-      // CORRECTION: Zbase (Ω) en utilisant U_ligne^2 / Sbase, sans √3 incorrect
-      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
+      // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
+      const Zbase = (U_line_base * U_line_base) / (Sbase_VA * Math.sqrt(3)); // Ω
       const Zmag = Zpu * Zbase; // |Z|
 
       const xOverR = transformerConfig.xOverR;
@@ -1092,23 +638,7 @@ export class ElectricalCalculator {
     }
 
     const V_node = new Map<string, Complex>();
-    // CORRECTION SRG2: Initialiser les tensions avec SRG2 si applicable
-    for (const n of nodes) {
-      let nodeVoltage = Vslack;
-      
-      // ÉTENDRE LA RECONNAISSANCE DES NŒUDS À TENSION FORCÉE
-      if (n.tensionCible && n.tensionCible > 0) {
-        const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
-        const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
-          ? n.tensionCible 
-          : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
-        
-        nodeVoltage = C(phaseVoltage, 0);
-        console.log(`🔧 [TENSION-FORCEE] Node ${n.id} voltage forced to ${n.tensionCible.toFixed(1)}V (${n.srg2Applied ? 'SRG2' : 'MANUAL'})`);
-      }
-      
-      V_node.set(n.id, nodeVoltage);
-    }
+    for (const n of nodes) V_node.set(n.id, Vslack);
 
     // Sécurité: cosΦ dans [0,1]
     const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
@@ -1212,52 +742,23 @@ export class ElectricalCalculator {
         const I_inj_node_phase = new Map<string, Complex>();
 
         const Vslack_phase_ph = fromPolar(Vslack_phase, this.deg2rad(angleDeg));
-        // CORRECTION SRG2: Initialiser les tensions avec SRG2 si applicable
-        for (const n of nodes) {
-          let nodeVoltage = Vslack_phase_ph;
-          
-          // ÉTENDRE LA RECONNAISSANCE DES NŒUDS À TENSION FORCÉE
-          if (n.tensionCible && n.tensionCible > 0) {
-            const isThreePhase = this.getVoltage(n.connectionType).isThreePhase;
-            const phaseVoltage = n.connectionType === 'TRI_230V_3F' 
-              ? n.tensionCible 
-              : n.tensionCible / (isThreePhase ? Math.sqrt(3) : 1);
-            
-            nodeVoltage = fromPolar(phaseVoltage, this.deg2rad(angleDeg));
-            console.log(`🔧 [TENSION-FORCEE] Node ${n.id} voltage forced to ${n.tensionCible.toFixed(1)}V (${n.srg2Applied ? 'SRG2' : 'MANUAL'})`);
-          }
-          
-          V_node_phase.set(n.id, nodeVoltage);
-        }
+        for (const n of nodes) V_node_phase.set(n.id, Vslack_phase_ph);
 
         let iter2 = 0;
         let converged2 = false;
-        while (iter2 < ElectricalCalculator.MAX_ITERATIONS && !converged2) {
+        while (iter2 < ElectricalCalculator.MAX_ITERATIONS) {
           iter2++;
           const V_prev2 = new Map(V_node_phase);
-          console.log(`🔄 BFS iteration ${iter2}/${ElectricalCalculator.MAX_ITERATIONS} for phase ${angleDeg}°`);
 
           I_branch_phase.clear();
           I_inj_node_phase.clear();
 
-          // SRG2 FIX: Enhanced logging to trace node processing in BFS
-          console.log(`🔍 Processing ${nodes.length} nodes in BFS iteration ${iter2}`);
-          const srg2Nodes = nodes.filter(n => n.srg2Applied || n.tensionCible);
-          if (srg2Nodes.length > 0) {
-            console.log(`📊 SRG2 nodes detected: ${srg2Nodes.map(n => `${n.id}(${n.srg2Applied ? 'applied' : 'target:' + n.tensionCible})`).join(', ')}`);
-          }
-          
           for (const n of nodes) {
             const Vn = V_node_phase.get(n.id) || Vslack_phase_ph;
             const Sph = S_map.get(n.id) || C(0, 0);
             const Vsafe = abs(Vn) > ElectricalCalculator.MIN_VOLTAGE_SAFETY ? Vn : Vslack_phase_ph;
             const Iinj = conj(div(Sph, Vsafe));
             I_inj_node_phase.set(n.id, Iinj);
-            
-            // SRG2 FIX: Log voltage data for SRG2 nodes specifically
-            if (n.srg2Applied || n.tensionCible) {
-              console.log(`  ⚡ Node ${n.id}: V=${abs(Vn).toFixed(2)}V, S=${abs(Sph).toFixed(2)}VA, Iinj=${abs(Iinj).toFixed(3)}A`);
-            }
           }
 
           for (const u of postOrder) {
@@ -1286,125 +787,18 @@ export class ElectricalCalculator {
           const V_source_bus = Ztr_phase ? sub(Vslack_phase_ph, mul(Ztr_phase, I_source_net)) : Vslack_phase_ph;
           V_node_phase.set(source.id, V_source_bus);
 
-          // SRG2 FIX: Enhanced BFS with comprehensive node processing
           const stack2 = [source.id];
-          const processedInBFS = new Set<string>();
-          
           while (stack2.length) {
             const u = stack2.pop()!;
-            if (processedInBFS.has(u)) continue; // Avoid double processing
-            processedInBFS.add(u);
-            
             for (const v of children.get(u) || []) {
               const cab = parentCableOfChild.get(v);
               if (!cab) continue;
-              
               const Z = cableZ_phase.get(cab.id) || C(0, 0);
               const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
-              let Vv = sub(Vu, mul(Z, Iuv));
-              
-              // T3: Pin SRG2 setpoint during Forward sweep (unbalanced)
-              const childNodeObj = nodeById.get(v);
-              if (childNodeObj?.tensionCible && childNodeObj.tensionCible > 0) {
-                const isThree = this.getVoltage(childNodeObj.connectionType).isThreePhase;
-                const forcedPhase = childNodeObj.connectionType === 'TRI_230V_3F'
-                  ? childNodeObj.tensionCible
-                  : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
-                Vv = fromPolar(forcedPhase, this.deg2rad(angleDeg)); // pin SRG2 (and any tensionCible) node
-              }
+              const Vv = sub(Vu, mul(Z, Iuv));
               V_node_phase.set(v, Vv);
-              
-              // Debug logging for SRG2 nodes
-              const childNode = nodeById.get(v);
-              if (childNode && (childNode.srg2Applied || childNode.tensionCible)) {
-                console.log(`  🔄 BFS: Node ${v} calculated voltage: ${abs(Vv).toFixed(2)}V (parent: ${u})`);
-              }
-              
-              if (!processedInBFS.has(v)) {
-                stack2.push(v);
-              }
-            }
-          }
-          
-          // SRG2 FIX: Critical connectivity validation and repair
-          const allConnectedNodes = [...connectedNodes];
-          const unprocessedNodes = allConnectedNodes.filter(nid => !processedInBFS.has(nid) && nid !== source.id);
-          
-          if (unprocessedNodes.length > 0) {
-            console.warn(`⚠️ BFS missed ${unprocessedNodes.length} nodes: ${unprocessedNodes.join(', ')}`);
-            
-            // CRITICAL FIX: Process missed nodes using alternative traversal
-            const missingNodeQueue = [...unprocessedNodes];
-            let rescueAttempts = 0;
-            const maxRescueAttempts = 5;
-            
-            while (missingNodeQueue.length > 0 && rescueAttempts < maxRescueAttempts) {
-              rescueAttempts++;
-              console.log(`🚨 Rescue attempt ${rescueAttempts} for ${missingNodeQueue.length} missing nodes`);
-              
-              const rescuedThisRound = [];
-              
-              for (let i = missingNodeQueue.length - 1; i >= 0; i--) {
-                const missingNodeId = missingNodeQueue[i];
-                
-                // Find any cable connecting this node to a processed node
-                const connectingCable = cables.find(cable => {
-                  const nodeAProcessed = processedInBFS.has(cable.nodeAId);
-                  const nodeBProcessed = processedInBFS.has(cable.nodeBId);
-                  
-                  return (cable.nodeAId === missingNodeId && nodeBProcessed) || 
-                         (cable.nodeBId === missingNodeId && nodeAProcessed);
-                });
-                
-                if (connectingCable) {
-                  const parentNodeId = connectingCable.nodeAId === missingNodeId ? 
-                    connectingCable.nodeBId : connectingCable.nodeAId;
-                  
-                  const Z = cableZ_phase.get(connectingCable.id) || C(0, 0);
-                  const Iuv = I_branch_phase.get(connectingCable.id) || C(0, 0);
-                  const Vparent = V_node_phase.get(parentNodeId) || Vslack_phase_ph;
-                  
-                  // Calculate voltage considering cable direction
-                  let Vmissing;
-                  if (connectingCable.nodeAId === parentNodeId) {
-                    Vmissing = sub(Vparent, mul(Z, Iuv)); // Forward direction
-                  } else {
-                    Vmissing = add(Vparent, mul(Z, Iuv)); // Reverse direction
-                  }
-                  
-                  V_node_phase.set(missingNodeId, Vmissing);
-                  processedInBFS.add(missingNodeId);
-                  rescuedThisRound.push(missingNodeId);
-                  
-                  const rescuedNode = nodeById.get(missingNodeId);
-                  if (rescuedNode && (rescuedNode.srg2Applied || rescuedNode.tensionCible)) {
-                    console.log(`🔧 RESCUED SRG2 node ${missingNodeId}: V=${abs(Vmissing).toFixed(2)}V via cable ${connectingCable.id}`);
-                  } else {
-                    console.log(`🔧 Rescued node ${missingNodeId}: V=${abs(Vmissing).toFixed(2)}V`);
-                  }
-                  
-                  missingNodeQueue.splice(i, 1);
-                }
-              }
-              
-              if (rescuedThisRound.length === 0) {
-                console.warn(`⚠️ No nodes rescued in attempt ${rescueAttempts}, remaining: ${missingNodeQueue.join(', ')}`);
-                break;
-              }
-            }
-            
-            // Final fallback: assign source voltage to any remaining unprocessed nodes
-            for (const remainingNodeId of missingNodeQueue) {
-              if (!V_node_phase.has(remainingNodeId)) {
-                V_node_phase.set(remainingNodeId, Vslack_phase_ph);
-                console.warn(`🆘 FALLBACK: Assigned source voltage to node ${remainingNodeId}`);
-                
-                const fallbackNode = nodeById.get(remainingNodeId);
-                if (fallbackNode && (fallbackNode.srg2Applied || fallbackNode.tensionCible)) {
-                  console.error(`❌ CRITICAL: SRG2 node ${remainingNodeId} had to use fallback voltage - connectivity issue!`);
-                }
-              }
+              stack2.push(v);
             }
           }
 
@@ -1415,19 +809,7 @@ export class ElectricalCalculator {
             const d = abs(sub(Vn, Vp));
             if (d > maxDelta) maxDelta = d;
           }
-          const convergenceRatio = maxDelta / (Vslack_phase || 1);
-          console.log(`   - Max voltage delta: ${maxDelta.toFixed(6)}V, convergence ratio: ${convergenceRatio.toExponential(3)}`);
-          
-          if (convergenceRatio < ElectricalCalculator.CONVERGENCE_TOLERANCE) { 
-            converged2 = true;
-            console.log(`✅ BFS converged for phase ${angleDeg}° after ${iter2} iterations`);
-          }
-          
-          // Safety check for infinite loops
-          if (iter2 >= ElectricalCalculator.MAX_ITERATIONS - 1) {
-            console.warn(`⚠️ BFS phase ${angleDeg}° reached max iterations (${ElectricalCalculator.MAX_ITERATIONS}), forcing convergence`);
-            converged2 = true;
-          }
+          if (maxDelta / (Vslack_phase || 1) < ElectricalCalculator.CONVERGENCE_TOLERANCE) { converged2 = true; break; }
         }
         if (!converged2) {
           console.warn(`⚠️ BFS phase ${angleDeg}° non convergé`);
@@ -1582,91 +964,20 @@ export class ElectricalCalculator {
           I_source_net_A,
           Ztr_phase,
           cableIndexByPair,
-          nodeById,
           { A: I_source_net_A, B: I_source_net_B, C: I_source_net_C }
         );
       }
 
-      // SRG2 FIX: Enhanced node metrics with comprehensive validation
-      console.log(`📊 Building nodeMetricsPerPhase for ${nodes.length} nodes`);
-      const connectedNodeIds = [...connectedNodes];
-      console.log(`🔗 Connected nodes: ${connectedNodeIds.length} - ${connectedNodeIds.join(', ')}`);
-      
-      // SRG2 FIX: Validate voltage availability for all connected nodes
-      const nodesWithoutVoltage = [];
-      connectedNodeIds.forEach(nodeId => {
-        const hasPhaseA = phaseA.V_node_phase.has(nodeId);
-        const hasPhaseB = phaseB.V_node_phase.has(nodeId);
-        const hasPhaseC = phaseC.V_node_phase.has(nodeId);
+      // Métriques nodales par phase pour monophasé déséquilibré
+      const nodeMetricsPerPhase = nodes.map(n => {
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
-        if (!hasPhaseA || !hasPhaseB || !hasPhaseC) {
-          nodesWithoutVoltage.push({
-            nodeId,
-            missing: {
-              A: !hasPhaseA,
-              B: !hasPhaseB,
-              C: !hasPhaseC
-            }
-          });
-        }
-      });
-      
-      if (nodesWithoutVoltage.length > 0) {
-        console.error(`❌ CRITICAL: ${nodesWithoutVoltage.length} connected nodes missing voltage data:`);
-        nodesWithoutVoltage.forEach(({nodeId, missing}) => {
-          const node = nodeById.get(nodeId);
-          const missingPhases = Object.entries(missing).filter(([_, isMissing]) => isMissing).map(([phase]) => phase);
-          console.error(`  - Node ${nodeId} missing phases: ${missingPhases.join(', ')} (SRG2: ${!!(node?.srg2Applied || node?.tensionCible)})`);
-        });
-      }
-      
-      // Build nodeMetricsPerPhase - CRITICAL: Include ALL connected nodes without fallbacks
-      const nodeMetricsPerPhase = nodes
-        .filter(n => connectedNodes.has(n.id)) // Only include connected nodes
-        .map(n => {
-          // Get voltage data - NO FALLBACKS to expose missing data clearly
-          const Va = phaseA.V_node_phase.get(n.id);
-          const Vb = phaseB.V_node_phase.get(n.id);
-          const Vc = phaseC.V_node_phase.get(n.id);
-          
-          // Validate that voltage data exists for connected nodes
-          if (!Va || !Vb || !Vc) {
-            console.error(`❌ Connected node ${n.id} missing voltage data - this indicates a BFS algorithm issue`);
-            console.error(`   Node connectivity status: connected=${connectedNodes.has(n.id)}`);
-            console.error(`   Voltage data availability: A=${!!Va}, B=${!!Vb}, C=${!!Vc}`);
-            
-            // Use fallback ONLY for error reporting, but log the issue
-            const fallbackV = fromPolar(Vslack_phase, globalAngle);
-            return {
-              nodeId: n.id,
-              voltagesPerPhase: { A: 0, B: 0, C: 0 },
-              calculatedVoltagesPerPhase: { A: 0, B: 0, C: 0 },
-              calculatedVoltagesComposed: { AB: 0, BC: 0, CA: 0 },
-              voltageDropsPerPhase: { A: 0, B: 0, C: 0 },
-              hasValidData: false
-            };
-          }
-          
-          // Node has complete voltage data - proceed with normal calculation
-          if (n.srg2Applied || n.tensionCible) {
-            console.log(`✅ SRG2 Node ${n.id} has complete voltage data: A=${abs(Va).toFixed(1)}V, B=${abs(Vb).toFixed(1)}V, C=${abs(Vc).toFixed(1)}V`);
-          }
-        
-        // Vraies tensions calculées phase-neutre (pour SRG2 et calculs techniques)
-        const Va_calculated = abs(Va);
-        const Vb_calculated = abs(Vb);
-        const Vc_calculated = abs(Vc);
-        
-        // Calcul des tensions composées (phase-phase) pour réseaux 230V
-        const Vab_calculated = abs(sub(Va, Vb)); // Phase A-B
-        const Vbc_calculated = abs(sub(Vb, Vc)); // Phase B-C  
-        const Vca_calculated = abs(sub(Vc, Va)); // Phase C-A
-        
-        // Tensions d'affichage (avec facteur d'échelle pour interface utilisateur)
         const scaleLine = this.getDisplayLineScale(n.connectionType);
-        const Va_display = Va_calculated * scaleLine;
-        const Vb_display = Vb_calculated * scaleLine;
-        const Vc_display = Vc_calculated * scaleLine;
+        const Va_display = abs(Va) * scaleLine;
+        const Vb_display = abs(Vb) * scaleLine;
+        const Vc_display = abs(Vc) * scaleLine;
         
         let { U_base: U_ref } = this.getVoltage(n.connectionType);
         const sourceNode = nodes.find(s => s.isSource);
@@ -1678,16 +989,6 @@ export class ElectricalCalculator {
             A: Va_display,
             B: Vb_display,
             C: Vc_display
-          },
-          calculatedVoltagesPerPhase: {
-            A: Va_calculated,
-            B: Vb_calculated,
-            C: Vc_calculated
-          },
-          calculatedVoltagesComposed: {
-            AB: Vab_calculated,
-            BC: Vbc_calculated,
-            CA: Vca_calculated
           },
           voltageDropsPerPhase: {
             A: U_ref - Va_display,
@@ -1764,9 +1065,8 @@ export class ElectricalCalculator {
     const I_branch = new Map<string, Complex>(); // by cable id (per phase)
     const I_inj_node = new Map<string, Complex>();
 
-    while (iter < maxIter && !converged) {
+    while (iter < maxIter) {
       iter++;
-      console.log(`🔄 BFS equilibrium iteration ${iter}/${maxIter}`);
       const V_prev = new Map(V_node);
 
       // Backward: compute injection currents then branch currents bottom-up
@@ -1819,30 +1119,7 @@ export class ElectricalCalculator {
           const Z = cableZ_phase.get(cab.id) || C(0, 0);
           const Iuv = I_branch.get(cab.id) || C(0, 0);
           const Vu = V_node.get(u) || Vslack;
-          let Vv = sub(Vu, mul(Z, Iuv));
-          
-          const childNodeObj = nodeById.get(v);
-          const parentNodeObj = nodeById.get(u);
-          
-          // Cas 1: Nœud enfant avec tension forcée explicite (SRG2 ou manuel)
-          if (childNodeObj?.tensionCible && childNodeObj.tensionCible > 0) {
-            const isThree = this.getVoltage(childNodeObj.connectionType).isThreePhase;
-            const forcedPhase = childNodeObj.connectionType === 'TRI_230V_3F'
-              ? childNodeObj.tensionCible
-              : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
-            // FIX: Utiliser fromPolar pour cohérence d'angle avec mode déséquilibré
-            Vv = fromPolar(forcedPhase, 0); // 0° en mode équilibré mais angle cohérent
-            
-            if (console) console.log(`🔧 [EQUILIBRE] Node ${v} tension forcée: ${childNodeObj.tensionCible.toFixed(1)}V (${childNodeObj.srg2Applied ? 'SRG2' : 'MANUAL'})`);
-          }
-          // Cas 2: NOUVEAU - Propagation SRG2 depuis parent
-          else if (parentNodeObj?.srg2Applied && parentNodeObj.srg2Ratio && parentNodeObj.srg2Ratio !== 1.0) {
-            // Appliquer le ratio SRG2 du parent au calcul normal de tension
-            Vv = scale(Vv, parentNodeObj.srg2Ratio);
-            
-            if (console) console.log(`⚡ [EQUILIBRE-SRG2] Node ${v} propagation SRG2 depuis ${u}, ratio: ${parentNodeObj.srg2Ratio.toFixed(3)}, tension: ${abs(Vv).toFixed(1)}V`);
-          }
-          
+          const Vv = sub(Vu, mul(Z, Iuv));
           V_node.set(v, Vv);
           stack2.push(v);
         }
@@ -1855,19 +1132,7 @@ export class ElectricalCalculator {
         const d = abs(sub(Vn, Vp));
         if (d > maxDelta) maxDelta = d;
       }
-      const convergenceRatio = maxDelta / (Vslack_phase || 1);
-      console.log(`   - Max voltage delta: ${maxDelta.toFixed(6)}V, convergence ratio: ${convergenceRatio.toExponential(3)}`);
-      
-      if (convergenceRatio < tol) { 
-        converged = true;
-        console.log(`✅ BFS equilibrium converged after ${iter} iterations`);
-      }
-      
-      // Safety check for infinite loops
-      if (iter >= maxIter - 1) {
-        console.warn(`⚠️ BFS equilibrium reached max iterations (${maxIter}), forcing convergence`);
-        converged = true;
-      }
+      if (maxDelta / (Vslack_phase || 1) < tol) { converged = true; break; }
     }
     if (!converged) {
       console.warn(`⚠️ Backward–Forward Sweep non convergé (tol=${tol}, maxIter=${maxIter}). Les résultats peuvent être approximatifs.`);
@@ -1946,21 +1211,9 @@ export class ElectricalCalculator {
       const scaleLine = this.getDisplayLineScale(n.connectionType);
       const U_node_line = abs(Vn) * scaleLine;
 
-      // CORRECTION SRG2: Référence d'affichage adaptée à la régulation
+      // Référence d'affichage: tension cible source si fournie, sinon base de ce type de connexion
       let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
       if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
-      
-      // NOUVEAU: Si le nœud a un SRG2 appliqué, ajuster la référence d'affichage
-      if (n.srg2Applied && n.srg2Ratio && n.srg2Ratio !== 1.0) {
-        // Pour les nœuds SRG2 directs, la référence est la tension cible
-        if (n.tensionCible) {
-          U_ref_display = n.tensionCible;
-        } else {
-          // Pour la propagation SRG2, ajuster la référence par le ratio
-          U_ref_display = U_ref_display * n.srg2Ratio;
-        }
-        console.log(`🔧 [DISPLAY] Node ${n.id} SRG2: ref=${U_ref_display.toFixed(1)}V, calculé=${U_node_line.toFixed(1)}V, ratio=${n.srg2Ratio.toFixed(3)}`);
-      }
 
       const deltaU_V = U_ref_display - U_node_line;
       const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
@@ -2010,8 +1263,7 @@ export class ElectricalCalculator {
         V_node,
         I_source_net_final,
         Ztr_phase,
-        cableIndexByPair,
-        nodeById
+        cableIndexByPair
       );
 
       console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);
@@ -2022,30 +1274,13 @@ export class ElectricalCalculator {
       const Vn = V_node.get(n.id) || Vslack;
       const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
       const V_phase_V = abs(Vn);
-      
-      // CORRECTION SRG2: Utiliser la tension réellement calculée pour l'affichage
-      const scaleLine = this.getDisplayLineScale(n.connectionType);
-      const U_node_line_calculated = V_phase_V * scaleLine;
-      
-      // Pour l'affichage: utiliser la tension calculée au lieu d'une valeur de phase pure
       // Pour TRI_230V_3F, pas de conversion car travail direct en composé
-      const displayVoltage = n.connectionType === 'TRI_230V_3F' 
-        ? V_phase_V // 230V composée directement
-        : U_node_line_calculated; // Conversion ligne appropriée
-      
-      // Pour V_pu, utiliser la référence nominale appropriée
       const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
         ? U_nom_line // 230V composée directement
         : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
       const V_pu = V_nom_phase ? V_phase_V / V_nom_phase : 0;
       const Iinj = I_inj_node.get(n.id) || C(0, 0);
-      
-      // Debug pour nœuds SRG2
-      if (n.srg2Applied || n.tensionCible) {
-        console.log(`📊 [METRICS] Node ${n.id}: tension affichée=${displayVoltage.toFixed(1)}V, phasor=${V_phase_V.toFixed(1)}V, V_pu=${V_pu.toFixed(3)}`);
-      }
-      
-      return { nodeId: n.id, V_phase_V: displayVoltage, V_pu, I_inj_A: abs(Iinj) };
+      return { nodeId: n.id, V_phase_V, V_pu, I_inj_A: abs(Iinj) };
     });
 
     // ---- Export phasors nodaux pour debug/analyse ----
@@ -2127,9 +1362,7 @@ export class ElectricalCalculator {
       }
     }
 
-    // Ancien système SRG2 supprimé - utilisation de SRG2Regulator uniquement
-
-    console.log('📊 Building results...');
+    console.log('🔄 Creating result object...');
     const result: CalculationResult = {
       scenario,
       cables: calculatedCables,
@@ -2146,12 +1379,70 @@ export class ElectricalCalculator {
       virtualBusbar
     };
 
-    
-
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);
-    console.log(`   - Total iterations: BFS equilibrium completed`);
-    console.log(`   - Network state: ${result.cables.length} cables calculated, ${result.globalLosses_kW.toFixed(3)} kW losses`);
     return result;
   }
 
+  // Méthodes utilitaires pour validation et gestion d'erreurs
+  private validateInputs(
+    nodes: Node[],
+    cables: Cable[],
+    cableTypes: CableType[],
+    foisonnementCharges: number,
+    foisonnementProductions: number,
+    desequilibrePourcent: number
+  ): void {
+    if (!nodes || nodes.length === 0) {
+      throw new Error('Aucun nœud fourni pour le calcul');
+    }
+    
+    if (!cables || cables.length === 0) {
+      throw new Error('Aucun câble fourni pour le calcul');
+    }
+    
+    if (!cableTypes || cableTypes.length === 0) {
+      throw new Error('Aucun type de câble fourni pour le calcul');
+    }
+    
+    if (!isFinite(foisonnementCharges) || foisonnementCharges < 0 || foisonnementCharges > 200) {
+      throw new Error(`Facteur de foisonnement charges invalide: ${foisonnementCharges}% (doit être entre 0 et 200)`);
+    }
+    
+    if (!isFinite(foisonnementProductions) || foisonnementProductions < 0 || foisonnementProductions > 200) {
+      throw new Error(`Facteur de foisonnement productions invalide: ${foisonnementProductions}% (doit être entre 0 et 200)`);
+    }
+    
+    if (!isFinite(desequilibrePourcent) || desequilibrePourcent < 0 || desequilibrePourcent > 100) {
+      throw new Error(`Pourcentage de déséquilibre invalide: ${desequilibrePourcent}% (doit être entre 0 et 100)`);
+    }
+
+    // Vérifier qu'il y a exactement une source
+    const sources = nodes.filter(n => n.isSource);
+    if (sources.length !== 1) {
+      throw new Error(`Le réseau doit avoir exactement une source, trouvé: ${sources.length}`);
+    }
+
+    // Vérifier que tous les types de câbles référencés existent
+    const cableTypeIds = new Set(cableTypes.map(ct => ct.id));
+    const missingTypes = cables
+      .map(c => c.typeId)
+      .filter(typeId => !cableTypeIds.has(typeId));
+    
+    if (missingTypes.length > 0) {
+      throw new Error(`Types de câbles manquants: ${missingTypes.join(', ')}`);
+    }
+
+    // Vérifier que tous les nœuds référencés dans les câbles existent
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const missingNodes: string[] = [];
+    
+    for (const cable of cables) {
+      if (!nodeIds.has(cable.nodeAId)) missingNodes.push(cable.nodeAId);
+      if (!nodeIds.has(cable.nodeBId)) missingNodes.push(cable.nodeBId);
+    }
+    
+    if (missingNodes.length > 0) {
+      throw new Error(`Nœuds manquants référencés dans les câbles: ${[...new Set(missingNodes)].join(', ')}`);
+    }
+  }
 }

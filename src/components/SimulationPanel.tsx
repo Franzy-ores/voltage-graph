@@ -7,9 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useNetworkStore } from "@/store/networkStore";
-import { SRG2Config, NeutralCompensator, CableUpgrade } from "@/types/network";
+import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { ForcedModePanel } from "@/components/ForcedModePanel";
@@ -36,9 +35,9 @@ export const SimulationPanel = () => {
     simulationResults,
     selectedScenario,
     toggleSimulationMode,
-    addSRG2Regulator,
-    removeSRG2Regulator,
-    updateSRG2Config,
+    addVoltageRegulator,
+    removeVoltageRegulator,
+    updateVoltageRegulator,
     addNeutralCompensator,
     removeNeutralCompensator,
     updateNeutralCompensator,
@@ -55,43 +54,13 @@ export const SimulationPanel = () => {
   const currentResult = simulationResults[selectedScenario];
   const baseline = currentResult?.baselineResult;
 
-  const SRG2Card = ({ srg2Config }: { srg2Config: SRG2Config }) => {
-    const node = currentProject.nodes.find(n => n.id === srg2Config.nodeId);
-    const srg2Result = currentResult?.srg2Result;
-    
-    // Derive network type from project voltage system
-    const networkType = currentProject.voltageSystem === 'TRIPHASÉ_230V' ? '230V' : '400V';
-    
-    // Fixed power limits
-    const maxInjectionPower = 85; // kVA
-    const maxConsumptionPower = 100; // kVA
+  // Fonction pour déterminer le type de régulateur selon la tension de source
+  const getRegulatorTypeForSource = (sourceVoltage: number) => {
+    return sourceVoltage > 300 ? 'Armoire 400V - 44kVA' : 'Armoire 230V - 77kVA';
+  };
 
-    // Debug info - vérifier si on a les bonnes données
-    console.log('🔍 [SRG2-DEBUG] Current srg2Result:', srg2Result);
-    console.log('🔍 [SRG2-DEBUG] SRG2 Config nodeId:', srg2Config.nodeId);
-    console.log('🔍 [SRG2-DEBUG] SRG2 Result nodeId:', srg2Result?.nodeId);
-
-    // Vérifier si le résultat SRG2 correspond à ce nœud
-    const isCorrectNode = srg2Result?.nodeId === srg2Config.nodeId;
-    const actualSrg2Result = isCorrectNode ? srg2Result : null;
-    
-    // Toujours afficher les informations de base si le SRG2 est configuré
-    const shouldShowBasicInfo = srg2Config.enabled !== undefined;
-
-    // Mappage des états SRG2 vers des couleurs et descriptions
-    const getStateInfo = (state: string | undefined) => {
-      switch (state) {
-        case 'LO1': return { color: 'bg-orange-100 text-orange-800 border-orange-300', label: 'LO1 (Abaissement faible)', description: 'Tension légèrement abaissée' };
-        case 'LO2': return { color: 'bg-red-100 text-red-800 border-red-300', label: 'LO2 (Abaissement fort)', description: 'Tension fortement abaissée' };
-        case 'BO1': return { color: 'bg-blue-100 text-blue-800 border-blue-300', label: 'BO1 (Élévation faible)', description: 'Tension légèrement élevée' };
-        case 'BO2': return { color: 'bg-purple-100 text-purple-800 border-purple-300', label: 'BO2 (Élévation forte)', description: 'Tension fortement élevée' };
-        case 'BYP': return { color: 'bg-green-100 text-green-800 border-green-300', label: 'BYP (Bypass)', description: 'Régulation en bypass (normale)' };
-        case 'WAIT': return { color: 'bg-yellow-100 text-yellow-800 border-yellow-300', label: 'WAIT (Attente)', description: 'Régulateur en attente' };
-        default: return { color: 'bg-gray-100 text-gray-800 border-gray-300', label: 'OFF', description: 'Régulateur inactif' };
-      }
-    };
-
-    const stateInfo = getStateInfo(actualSrg2Result?.state);
+  const RegulatorCard = ({ regulator }: { regulator: VoltageRegulator }) => {
+    const node = currentProject.nodes.find(n => n.id === regulator.nodeId);
     
     return (
       <Card className="mb-4">
@@ -100,301 +69,70 @@ export const SimulationPanel = () => {
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-blue-500" />
               <CardTitle className="text-sm">
-                Régulateur SRG2
+                Armoire {regulator.type.replace('_', ' - ')}
               </CardTitle>
             </div>
             <div className="flex items-center gap-2">
               <Switch
-                checked={srg2Config.enabled}
-                onCheckedChange={(enabled) => {
-                  updateSRG2Config({ enabled });
-                }}
+                checked={regulator.enabled}
+                onCheckedChange={(enabled) => 
+                  updateVoltageRegulator(regulator.id, { enabled })
+                }
               />
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => removeSRG2Regulator()}
+                onClick={() => removeVoltageRegulator(regulator.id)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           </div>
           <CardDescription>
-            Nœud: {node?.name || srg2Config.nodeId}
+            Nœud: {node?.name || regulator.nodeId}
           </CardDescription>
         </CardHeader>
-        <CardContent className="pt-0">
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Type de réseau
-                </Label>
-                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
-                  {networkType}
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  État du régulateur
-                </Label>
-                <div className="mt-1">
-                  <div className={`inline-flex px-2 py-1 rounded-md text-xs font-medium border ${stateInfo.color}`}>
-                    {stateInfo.label}
-                  </div>
-                  {actualSrg2Result?.isActive && (
-                    <div className="text-xs text-muted-foreground mt-1">
-                      {stateInfo.description}
-                    </div>
-                  )}
-                  {!isCorrectNode && srg2Result && (
-                    <div className="text-xs text-orange-600 mt-1">
-                      ⚠️ Résultat pour un autre nœud ({srg2Result.nodeId})
-                    </div>
-                  )}
-                </div>
-              </div>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Tension cible (V)</Label>
+              <Input
+                type="number"
+                value={regulator.targetVoltage_V}
+                onChange={(e) => updateVoltageRegulator(regulator.id, {
+                  targetVoltage_V: Number(e.target.value)
+                })}
+                className="h-8"
+              />
             </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Puissance max injection (kVA)
-                </Label>
-                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
-                  {maxInjectionPower}
-                </div>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Puissance max consommation (kVA)
-                </Label>
-                <div className="text-sm font-mono mt-1 p-2 bg-muted/30 rounded">
-                  {maxConsumptionPower}
-                </div>
-              </div>
+            <div>
+              <Label className="text-xs">Puissance max (kVA)</Label>
+              <Input
+                type="number"
+                value={regulator.maxPower_kVA}
+                onChange={(e) => updateVoltageRegulator(regulator.id, {
+                  maxPower_kVA: Number(e.target.value)
+                })}
+                className="h-8"
+                disabled
+              />
             </div>
-
-            {shouldShowBasicInfo && actualSrg2Result && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    Charge foisonnée (kVA)
-                  </Label>
-                  <div className="text-sm font-mono mt-1 p-2 bg-blue-50 rounded">
-                    {actualSrg2Result.diversifiedLoad_kVA?.toFixed(1) || '0.0'}
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">
-                    Production foisonnée (kVA)
-                  </Label>
-                  <div className="text-sm font-mono mt-1 p-2 bg-green-50 rounded">
-                    {actualSrg2Result.diversifiedProduction_kVA?.toFixed(1) || '0.0'}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {shouldShowBasicInfo && actualSrg2Result && (
-              <div>
-                <Label className="text-xs text-muted-foreground">
-                  Puissance nette downstream (kVA)
-                </Label>
-                <div className="text-sm font-mono mt-1 p-2 bg-orange-50 rounded">
-                  {actualSrg2Result.netPower_kVA?.toFixed(1) || '0.0'}
-                </div>
-              </div>
-            )}
-
-            {/* Afficher les tensions disponibles même si SRG2 n'est pas actif */}
-            {shouldShowBasicInfo && (
-              <div className="mt-4 space-y-3">
-                <Separator />
-                <div className="text-sm font-medium flex items-center gap-2">
-                  <Target className="h-4 w-4 text-blue-500" />
-                  Diagnostic des tensions du nœud
-                </div>
-                
-                {actualSrg2Result?.errorMessage && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-                    <div className="flex items-center gap-2 text-red-700 text-sm font-medium mb-1">
-                      <AlertTriangle className="h-4 w-4" />
-                      Erreur de régulation
-                    </div>
-                    <div className="text-red-600 text-sm">
-                      {actualSrg2Result.errorMessage}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Afficher les tensions calculées si disponibles */}
-                {(() => {
-                  // Check both simulation and calculation results for voltage data
-                  const simNodeMetric = currentResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
-                  const baseNodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
-                  const nodeMetric = simNodeMetric || baseNodeMetric;
-                  const dataSource = simNodeMetric ? 'simulation' : 'calcul de base';
-                  
-                  return nodeMetric && (
-                  <div className="p-3 bg-blue-50 rounded-md border">
-                    <Label className="text-xs font-medium text-blue-700 mb-2 block">
-                      Tensions calculées au nœud ({dataSource})
-                    </Label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="text-center">
-                        <div className="text-xs text-blue-600 font-medium">Phase A</div>
-                        <div className="text-sm font-mono font-bold text-blue-900">
-                          {nodeMetric.voltagesPerPhase.A?.toFixed(1)} V
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-blue-600 font-medium">Phase B</div>
-                        <div className="text-sm font-mono font-bold text-blue-900">
-                          {nodeMetric.voltagesPerPhase.B?.toFixed(1)} V
-                        </div>
-                      </div>
-                      <div className="text-center">
-                        <div className="text-xs text-blue-600 font-medium">Phase C</div>
-                        <div className="text-sm font-mono font-bold text-blue-900">
-                          {nodeMetric.voltagesPerPhase.C?.toFixed(1)} V
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  );
-                })()}
-                
-                {/* Message si pas de données de tension disponibles */}
-                {(() => {
-                  // Check both simulation and calculation results
-                  const simNodeMetric = currentResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
-                  const baseNodeMetric = currentResult?.baselineResult?.nodeMetricsPerPhase?.find(n => n.nodeId === srg2Config.nodeId);
-                  const hasVoltageData = simNodeMetric || baseNodeMetric;
-                  
-                  return !hasVoltageData && (
-                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                    <div className="flex items-center gap-2 text-yellow-700 text-sm font-medium mb-1">
-                      <AlertTriangle className="h-4 w-4" />
-                      Données de tension manquantes
-                    </div>
-                    <div className="text-yellow-600 text-sm">
-                      Aucune tension calculée n'est disponible pour ce nœud. 
-                      Vérifiez que le nœud est bien connecté au réseau et lancez une simulation.
-                    </div>
-                  </div>
-                  );
-                })()}
-                
-                {/* Message d'état si pas de résultat SRG2 mais configuré */}
-                {!actualSrg2Result && (
-                  <div className="p-3 bg-muted/50 rounded-md">
-                    <div className="text-sm text-muted-foreground">
-                      {srg2Config.enabled ? 
-                        "Régulateur configuré - En attende des résultats de simulation..." : 
-                        "Régulateur configuré mais désactivé"
-                      }
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            
-            {actualSrg2Result && srg2Config.enabled && (
-              <div className="mt-4 space-y-3">
-                <Separator />
-                <div className="text-sm font-medium flex items-center gap-2">
-                  <Target className="h-4 w-4 text-blue-500" />
-                  Détails de la régulation SRG2
-                </div>
-                
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="p-3 bg-blue-50 rounded-md border">
-                    <Label className="text-xs font-medium text-blue-700">
-                      Tension mesurée au nœud
-                    </Label>
-                    <div className="text-lg font-mono font-bold text-blue-900 mt-1">
-                      {actualSrg2Result.originalVoltage?.toFixed(1)} V
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-green-50 rounded-md border">
-                    <Label className="text-xs font-medium text-green-700">
-                      Tension corrigée (régulée)
-                    </Label>
-                    <div className="text-lg font-mono font-bold text-green-900 mt-1">
-                      {actualSrg2Result.regulatedVoltage?.toFixed(1)} V
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-orange-50 rounded-md border">
-                    <Label className="text-xs font-medium text-orange-700">
-                      Coefficient appliqué (ratio)
-                    </Label>
-                    <div className="text-lg font-mono font-bold text-orange-900 mt-1">
-                      {actualSrg2Result.ratio?.toFixed(3)}
-                    </div>
-                  </div>
-                </div>
-
-                {actualSrg2Result.regulatedVoltages && (
-                  <div className="mt-3">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Tensions par phase (régulées)
-                    </Label>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      <div className="p-2 bg-red-50 rounded text-center">
-                        <div className="text-xs text-red-700 font-medium">Phase A</div>
-                        <div className="text-sm font-mono font-bold text-red-900">
-                          {actualSrg2Result.regulatedVoltages.A?.toFixed(1)} V
-                        </div>
-                      </div>
-                      <div className="p-2 bg-yellow-50 rounded text-center">
-                        <div className="text-xs text-yellow-700 font-medium">Phase B</div>
-                        <div className="text-sm font-mono font-bold text-yellow-900">
-                          {actualSrg2Result.regulatedVoltages.B?.toFixed(1)} V
-                        </div>
-                      </div>
-                      <div className="p-2 bg-blue-50 rounded text-center">
-                        <div className="text-xs text-blue-700 font-medium">Phase C</div>
-                        <div className="text-sm font-mono font-bold text-blue-900">
-                          {actualSrg2Result.regulatedVoltages.C?.toFixed(1)} V
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {actualSrg2Result.phaseRatios && (
-                  <div className="mt-3">
-                    <Label className="text-xs font-medium text-muted-foreground">
-                      Coefficients par phase
-                    </Label>
-                    <div className="grid grid-cols-3 gap-2 mt-2">
-                      <div className="p-2 bg-gray-50 rounded text-center">
-                        <div className="text-xs text-gray-700 font-medium">Ratio A</div>
-                        <div className="text-sm font-mono font-bold text-gray-900">
-                          {actualSrg2Result.phaseRatios.A?.toFixed(3)}
-                        </div>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded text-center">
-                        <div className="text-xs text-gray-700 font-medium">Ratio B</div>
-                        <div className="text-sm font-mono font-bold text-gray-900">
-                          {actualSrg2Result.phaseRatios.B?.toFixed(3)}
-                        </div>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded text-center">
-                        <div className="text-xs text-gray-700 font-medium">Ratio C</div>
-                        <div className="text-sm font-mono font-bold text-gray-900">
-                          {actualSrg2Result.phaseRatios.C?.toFixed(3)}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
+          
+          {regulator.currentQ_kVAr !== undefined && (
+            <div className="bg-muted/50 p-2 rounded">
+              <div className="text-xs font-medium mb-1">Résultats simulation:</div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>Q injecté: {regulator.currentQ_kVAr.toFixed(1)} kVAr</div>
+                <div>Tension: {regulator.currentVoltage_V?.toFixed(1)} V</div>
+              </div>
+              {regulator.isLimited && (
+                <Badge variant="destructive" className="mt-1 text-xs">
+                  Puissance limitée
+                </Badge>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     );
@@ -669,33 +407,34 @@ export const SimulationPanel = () => {
             <TabsContent value="regulators" className="mt-4">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Régulateur SRG2</h3>
-                  {!simulationEquipment.srg2 && (
-                    <NodeSelector
-                      nodes={nodes}
-                      onNodeSelected={(nodeId) => addSRG2Regulator(nodeId)}
-                      title="Ajouter un régulateur SRG2"
-                      description="Sélectionnez le nœud où installer le régulateur SRG2"
-                      trigger={
-                        <Button size="sm" variant="outline" disabled={!nodes.length}>
-                          <Plus className="h-3 w-3 mr-1" />
-                          Ajouter
-                        </Button>
-                      }
-                    />
-                  )}
+                  <h3 className="text-sm font-medium">Armoires de régulation</h3>
+                  <NodeSelector
+                    nodes={currentProject.nodes}
+                    onNodeSelected={(nodeId) => addVoltageRegulator(nodeId)}
+                    title="Ajouter une armoire de régulation"
+                    description="L'armoire sera automatiquement adaptée à la tension du réseau"
+                    getRegulatorTypeForSource={getRegulatorTypeForSource}
+                    trigger={
+                      <Button size="sm" variant="outline" disabled={!nodes.length}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Ajouter
+                      </Button>
+                    }
+                  />
                 </div>
 
-                {!simulationEquipment.srg2 ? (
+                {simulationEquipment.regulators.length === 0 ? (
                   <Card className="p-4 text-center text-muted-foreground">
                     <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucun régulateur SRG2</p>
+                    <p className="text-sm">Aucune armoire de régulation</p>
                     <p className="text-xs">
-                      Ajoutez un régulateur SRG2 pour la régulation automatique
+                      Ajoutez des armoires pour maintenir la tension
                     </p>
                   </Card>
                 ) : (
-                  <SRG2Card srg2Config={simulationEquipment.srg2} />
+                  simulationEquipment.regulators.map(regulator => (
+                    <RegulatorCard key={regulator.id} regulator={regulator} />
+                  ))
                 )}
               </div>
             </TabsContent>
