@@ -11,10 +11,8 @@ import {
   TransformerConfig,
   TransformerRating,
   VirtualBusbar,
-  VoltageRegulator,
   NeutralCompensator,
   CableUpgrade,
-  RegulatorType,
   SimulationEquipment
 } from '@/types/network';
 import { NodeWithConnectionType, getNodeConnectionType, addConnectionTypeToNodes } from '@/utils/nodeConnectionType';
@@ -107,9 +105,7 @@ interface NetworkActions {
   toggleSimulationMode: () => void;
   updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
   clearSimulationPreview: () => void;
-  addVoltageRegulator: (nodeId: string) => void;
-  removeVoltageRegulator: (regulatorId: string) => void;
-  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => void;
+  // SUPPRIMÉ - Méthodes des régulateurs
   addNeutralCompensator: (nodeId: string) => void;
   removeNeutralCompensator: (compensatorId: string) => void;
   updateNeutralCompensator: (compensatorId: string, updates: Partial<NeutralCompensator>) => void;
@@ -279,7 +275,6 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   showVoltages: false,
   simulationMode: false,
   simulationEquipment: {
-    regulators: [],
     neutralCompensators: [],
     cableUpgrades: []
   },
@@ -309,7 +304,6 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        regulators: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -370,7 +364,6 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         FORCÉ: null
       },
       simulationEquipment: {
-        regulators: [],
         neutralCompensators: [],
         cableUpgrades: []
       }
@@ -857,7 +850,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
             const simResult = simCalculator.calculateWithSimulation(
               currentProject,
               'FORCÉ',
-              { regulators: [], neutralCompensators: [], cableUpgrades: [] }
+              { neutralCompensators: [], cableUpgrades: [] }
             );
             return simResult.baselineResult || simResult;
           } catch (error) {
@@ -1064,76 +1057,14 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       },
       // Désactiver tous les équipements de simulation quand on quitte le mode simulation
       simulationEquipment: newSimulationMode ? simulationEquipment : {
-        regulators: simulationEquipment.regulators.map(r => ({ ...r, enabled: false })),
         neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: false })),
         cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
   },
 
-  addVoltageRegulator: (nodeId: string) => {
-    const { simulationEquipment, currentProject } = get();
-    if (!currentProject) return;
-    
-    // Vérifier qu'il n'y a pas déjà un régulateur sur ce nœud
-    const existingRegulator = simulationEquipment.regulators.find(r => r.nodeId === nodeId);
-    if (existingRegulator) {
-      toast.error('Un régulateur de tension existe déjà sur ce nœud');
-      return;
-    }
-
-    // Utiliser le calculateur pour créer le régulateur avec la tension du transformateur
-    const calculator = new SimulationCalculator();
-    const sourceVoltage = currentProject.transformerConfig.nominalVoltage_V;
-    const newRegulator = calculator.createDefaultRegulator(nodeId, sourceVoltage);
-
-    set({
-      simulationEquipment: {
-        ...simulationEquipment,
-        regulators: [...simulationEquipment.regulators, newRegulator]
-      }
-    });
-    
-    toast.success(`Armoire de régulation ${newRegulator.type} ajoutée`);
-    
-    // Recalculer automatiquement la simulation
-    get().runSimulation();
-  },
-
-  removeVoltageRegulator: (regulatorId: string) => {
-    const { simulationEquipment } = get();
-    set({
-      simulationEquipment: {
-        ...simulationEquipment,
-        regulators: simulationEquipment.regulators.filter(r => r.id !== regulatorId)
-      }
-    });
-    toast.success('Régulateur de tension supprimé');
-  },
-
-  updateVoltageRegulator: (regulatorId: string, updates: Partial<VoltageRegulator>) => {
-    const { simulationEquipment, simulationMode } = get();
-    set({
-      simulationEquipment: {
-        ...simulationEquipment,
-        regulators: simulationEquipment.regulators.map(r => 
-          r.id === regulatorId ? { ...r, ...updates } : r
-        )
-      }
-    });
-
-    // Déclencher le calcul de simulation lors de la (ré)activation ou de toute mise à jour pertinente
-    if (typeof updates.enabled !== 'undefined') {
-      if (updates.enabled === true && !simulationMode) {
-        set({ simulationMode: true, selectedTool: 'simulation' });
-      }
-      get().runSimulation();
-    } else if (simulationMode) {
-      // Si on est déjà en mode simulation, recalculer sur tout autre paramètre (tension cible, puissance max, etc.)
-      get().runSimulation();
-    }
-  },
-
+  // SUPPRIMÉ - Toutes les méthodes des régulateurs
+  
   addNeutralCompensator: (nodeId: string) => {
     const { simulationEquipment, currentProject } = get();
     if (!currentProject) return;
@@ -1269,8 +1200,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       // Mettre à jour l'état avec les résultats de simulation
       set({ simulationResults: newSimulationResults });
       
-      const activeEquipmentCount = simulationEquipment.regulators.filter(r => r.enabled).length + 
-                                  simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+  const activeEquipmentCount = simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
       
       toast.success(`Simulation recalculée avec ${activeEquipmentCount} équipement(s) actif(s)`);
     } catch (error) {

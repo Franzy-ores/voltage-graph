@@ -158,20 +158,7 @@ export interface Project {
 
 
 // Types pour les équipements de simulation
-export type RegulatorType = "230V_77kVA" | "400V_44kVA";
-
-export interface VoltageRegulator {
-  id: string;
-  nodeId: string; // Nœud où l'armoire est installée
-  type: RegulatorType;
-  targetVoltage_V: number; // Tension de consigne
-  maxPower_kVA: number; // Puissance apparente maximale (77 ou 44 kVA)
-  enabled: boolean; // Actif dans la simulation
-  // Résultats de simulation
-  currentQ_kVAr?: number; // Q injecté/absorbé
-  currentVoltage_V?: number; // Tension mesurée au nœud
-  isLimited?: boolean; // True si limite de puissance atteinte
-}
+// SUPPRIMÉ - RegulatorType et VoltageRegulator
 
 export interface NeutralCompensator {
   id: string;
@@ -223,7 +210,6 @@ export interface CableUpgrade {
 }
 
 export interface SimulationEquipment {
-  regulators: VoltageRegulator[];
   neutralCompensators: NeutralCompensator[];
   cableUpgrades: CableUpgrade[];
 }

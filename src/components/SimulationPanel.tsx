@@ -8,13 +8,12 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useNetworkStore } from "@/store/networkStore";
-import { VoltageRegulator, NeutralCompensator, CableUpgrade } from "@/types/network";
+import { NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { ForcedModePanel } from "@/components/ForcedModePanel";
 import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
 import { 
-  Zap, 
   Settings, 
   TrendingUp, 
   Cable, 
@@ -35,9 +34,6 @@ export const SimulationPanel = () => {
     simulationResults,
     selectedScenario,
     toggleSimulationMode,
-    addVoltageRegulator,
-    removeVoltageRegulator,
-    updateVoltageRegulator,
     addNeutralCompensator,
     removeNeutralCompensator,
     updateNeutralCompensator,
@@ -53,90 +49,6 @@ export const SimulationPanel = () => {
   const nodes = currentProject.nodes.filter(n => !n.isSource);
   const currentResult = simulationResults[selectedScenario];
   const baseline = currentResult?.baselineResult;
-
-  // Fonction pour déterminer le type de régulateur selon la tension de source
-  const getRegulatorTypeForSource = (sourceVoltage: number) => {
-    return sourceVoltage > 300 ? 'Armoire 400V - 44kVA' : 'Armoire 230V - 77kVA';
-  };
-
-  const RegulatorCard = ({ regulator }: { regulator: VoltageRegulator }) => {
-    const node = currentProject.nodes.find(n => n.id === regulator.nodeId);
-    
-    return (
-      <Card className="mb-4">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-blue-500" />
-              <CardTitle className="text-sm">
-                Armoire {regulator.type.replace('_', ' - ')}
-              </CardTitle>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={regulator.enabled}
-                onCheckedChange={(enabled) => 
-                  updateVoltageRegulator(regulator.id, { enabled })
-                }
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => removeVoltageRegulator(regulator.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          <CardDescription>
-            Nœud: {node?.name || regulator.nodeId}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs">Tension cible (V)</Label>
-              <Input
-                type="number"
-                value={regulator.targetVoltage_V}
-                onChange={(e) => updateVoltageRegulator(regulator.id, {
-                  targetVoltage_V: Number(e.target.value)
-                })}
-                className="h-8"
-              />
-            </div>
-            <div>
-              <Label className="text-xs">Puissance max (kVA)</Label>
-              <Input
-                type="number"
-                value={regulator.maxPower_kVA}
-                onChange={(e) => updateVoltageRegulator(regulator.id, {
-                  maxPower_kVA: Number(e.target.value)
-                })}
-                className="h-8"
-                disabled
-              />
-            </div>
-          </div>
-          
-          {regulator.currentQ_kVAr !== undefined && (
-            <div className="bg-muted/50 p-2 rounded">
-              <div className="text-xs font-medium mb-1">Résultats simulation:</div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>Q injecté: {regulator.currentQ_kVAr.toFixed(1)} kVAr</div>
-                <div>Tension: {regulator.currentVoltage_V?.toFixed(1)} V</div>
-              </div>
-              {regulator.isLimited && (
-                <Badge variant="destructive" className="mt-1 text-xs">
-                  Puissance limitée
-                </Badge>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
 
   const CompensatorCard = ({ compensator }: { compensator: NeutralCompensator }) => {
     const node = currentProject?.nodes.find(n => n.id === compensator.nodeId);
@@ -381,14 +293,10 @@ export const SimulationPanel = () => {
       <ScrollArea className="flex-1">
         <div className="p-4">
           <Tabs defaultValue="calibration" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 text-xs">
+            <TabsList className="grid w-full grid-cols-3 text-xs">
               <TabsTrigger value="calibration" className="text-xs">
                 <Target className="h-3 w-3 mr-1" />
                 Calibration
-              </TabsTrigger>
-              <TabsTrigger value="regulators" className="text-xs">
-                <Zap className="h-3 w-3 mr-1" />
-                Régulation
               </TabsTrigger>
               <TabsTrigger value="compensators" className="text-xs">
                 <Settings className="h-3 w-3 mr-1" />
@@ -404,16 +312,15 @@ export const SimulationPanel = () => {
               <ForcedModePanel />
             </TabsContent>
 
-            <TabsContent value="regulators" className="mt-4">
+            <TabsContent value="compensators" className="mt-4">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Armoires de régulation</h3>
+                  <h3 className="text-sm font-medium">Compensateurs de neutre</h3>
                   <NodeSelector
                     nodes={currentProject.nodes}
-                    onNodeSelected={(nodeId) => addVoltageRegulator(nodeId)}
-                    title="Ajouter une armoire de régulation"
-                    description="L'armoire sera automatiquement adaptée à la tension du réseau"
-                    getRegulatorTypeForSource={getRegulatorTypeForSource}
+                    onNodeSelected={(nodeId) => addNeutralCompensator(nodeId)}
+                    title="Ajouter un compensateur de neutre"
+                    description="Réduction du courant de neutre (EQUI8)"
                     trigger={
                       <Button size="sm" variant="outline" disabled={!nodes.length}>
                         <Plus className="h-3 w-3 mr-1" />
@@ -423,40 +330,12 @@ export const SimulationPanel = () => {
                   />
                 </div>
 
-                {simulationEquipment.regulators.length === 0 ? (
-                  <Card className="p-4 text-center text-muted-foreground">
-                    <Zap className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucune armoire de régulation</p>
-                    <p className="text-xs">
-                      Ajoutez des armoires pour maintenir la tension
-                    </p>
-                  </Card>
-                ) : (
-                  simulationEquipment.regulators.map(regulator => (
-                    <RegulatorCard key={regulator.id} regulator={regulator} />
-                  ))
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="compensators" className="mt-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Compensateurs de neutre</h3>
-                  <NodeSelector
-                    nodes={currentProject.nodes}
-                    onNodeSelected={(nodeId) => addNeutralCompensator(nodeId)}
-                    title="Ajouter un compensateur de neutre"
-                    description="Sélectionnez le nœud où installer le compensateur"
-                  />
-                </div>
-
                 {simulationEquipment.neutralCompensators.length === 0 ? (
                   <Card className="p-4 text-center text-muted-foreground">
                     <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucun compensateur de neutre</p>
+                    <p className="text-sm">Aucun compensateur</p>
                     <p className="text-xs">
-                      Ajoutez des compensateurs pour réduire I_N
+                      Ajoutez des compensateurs pour réduire le courant de neutre
                     </p>
                   </Card>
                 ) : (
@@ -469,71 +348,40 @@ export const SimulationPanel = () => {
 
             <TabsContent value="upgrades" className="mt-4">
               <div className="space-y-4">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-medium">Renforcement des câbles</h3>
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1">
-                        <Label className="text-xs">Seuil ΔU:</Label>
-                        <Input
-                          type="number"
-                          min="1"
-                          max="15"
-                          step="0.1"
-                          defaultValue="8"
-                          className="h-7 w-16 text-xs"
-                          id="voltage-threshold"
-                        />
-                        <span className="text-xs text-muted-foreground">%</span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          const threshold = parseFloat((document.getElementById('voltage-threshold') as HTMLInputElement)?.value || '8');
-                          proposeCableUpgrades(threshold);
-                        }}
-                        className="flex items-center gap-1"
-                      >
-                        <TrendingUp className="h-3 w-3" />
-                        Analyser
-                      </Button>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium">Renforcements de câbles</h3>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => proposeCableUpgrades()}
+                    disabled={!simulationMode}
+                  >
+                    <TrendingUp className="h-3 w-3 mr-1" />
+                    Analyser
+                  </Button>
                 </div>
+
+                {!simulationMode && (
+                  <Card className="p-4 bg-muted/50">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <AlertTriangle className="h-4 w-4" />
+                      Activez le mode simulation pour analyser les renforcements
+                    </div>
+                  </Card>
+                )}
 
                 {simulationEquipment.cableUpgrades.length === 0 ? (
                   <Card className="p-4 text-center text-muted-foreground">
                     <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucune amélioration proposée</p>
+                    <p className="text-sm">Aucun renforcement proposé</p>
                     <p className="text-xs">
-                      Réglez le seuil et cliquez sur "Analyser" pour détecter les circuits avec chute de tension excessive
+                      Analysez le réseau pour identifier les améliorations
                     </p>
                   </Card>
                 ) : (
-                  <div className="space-y-3">
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        variant="default"
-                        onClick={() => {
-                          if (!simulationMode) {
-                            // Activer le mode simulation
-                            toggleSimulationMode();
-                          }
-                          // Lancer la simulation avec les remplacements proposés
-                          runSimulation();
-                        }}
-                        className="flex items-center gap-1"
-                      >
-                        <CheckCircle className="h-3 w-3" />
-                        Appliquer ces remplacements
-                      </Button>
-                    </div>
-                    {simulationEquipment.cableUpgrades.map((upgrade, index) => (
-                      <UpgradeCard key={index} upgrade={upgrade} />
-                    ))}
-                  </div>
+                  simulationEquipment.cableUpgrades.map((upgrade, index) => (
+                    <UpgradeCard key={index} upgrade={upgrade} />
+                  ))
                 )}
               </div>
             </TabsContent>
@@ -541,83 +389,41 @@ export const SimulationPanel = () => {
         </div>
       </ScrollArea>
 
-      <div className="p-4 border-t bg-muted/50">
-        <div className="space-y-3">
-          <Separator />
-          
-          {currentResult && baseline && (
-            <>
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <div className="font-medium text-muted-foreground">Baseline</div>
-                  <div>Pertes: {baseline.globalLosses_kW.toFixed(2)} kW</div>
-                  <div>ΔU max: {baseline.maxVoltageDropPercent.toFixed(1)}%</div>
-                </div>
-                <div>
-                  <div className="font-medium text-green-600">Simulation</div>
-                  <div>Pertes: {currentResult.globalLosses_kW.toFixed(2)} kW</div>
-                  <div>ΔU max: {currentResult.maxVoltageDropPercent.toFixed(1)}%</div>
+      {simulationMode && (
+        <div className="p-4 border-t bg-muted/50">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Actions simulation</span>
+              {currentResult?.convergenceStatus && (
+                <Badge variant={currentResult.convergenceStatus === 'converged' ? "default" : "destructive"}>
+                  {currentResult.convergenceStatus === 'converged' ? 'Convergé' : 'Non convergé'}
+                </Badge>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => runSimulation()} className="flex-1">
+                <Play className="h-3 w-3 mr-1" />
+                Simuler
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => toggleSimulationMode()}>
+                <RotateCcw className="h-3 w-3 mr-1" />
+                Réinitialiser
+              </Button>
+            </div>
+
+            {baseline && currentResult && (
+              <div className="text-xs bg-background p-2 rounded border">
+                <div className="grid grid-cols-2 gap-1">
+                  <div>Baseline: {baseline.maxVoltageDropPercent.toFixed(1)}% ΔU</div>
+                  <div>Simulation: {currentResult.maxVoltageDropPercent.toFixed(1)}% ΔU</div>
+                  <div>Pertes baseline: {baseline.globalLosses_kW.toFixed(2)} kW</div>
+                  <div>Pertes simulation: {currentResult.globalLosses_kW.toFixed(2)} kW</div>
                 </div>
               </div>
-
-              {simulationEquipment.cableUpgrades.length > 0 && (
-                <div className="mt-4 p-3 bg-muted/30 rounded-md">
-                  <div className="text-xs font-medium mb-2 flex items-center gap-2">
-                    <Cable className="h-3 w-3 text-purple-600" />
-                    Résumé des remplacements
-                  </div>
-                  
-                  {/* Longueur totale remplacée */}
-                  <div className="text-xs mb-2">
-                    <span className="font-medium">Longueur totale à remplacer:</span> {
-                      simulationEquipment.cableUpgrades.reduce((total, upgrade) => {
-                        const cable = currentProject.cables.find(c => c.id === upgrade.originalCableId);
-                        return total + (cable?.length_m || 0);
-                      }, 0).toFixed(0)
-                    } mètres
-                  </div>
-                  
-                  {/* Détails des remplacements */}
-                  <div className="space-y-1 text-xs">
-                    {simulationEquipment.cableUpgrades.map((upgrade, index) => {
-                      const cable = currentProject.cables.find(c => c.id === upgrade.originalCableId);
-                      const originalType = currentProject.cableTypes.find(t => t.id === cable?.typeId);
-                      const newType = currentProject.cableTypes.find(t => t.id === upgrade.newCableTypeId);
-                      
-                      return (
-                        <div key={index} className="text-muted-foreground">
-                          Remplacement du tronçon '{upgrade.originalCableId}' : 
-                          câble {originalType?.label || 'inconnu'} par {newType?.label || 'inconnu'}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="flex gap-2">
-            <Button
-              onClick={runSimulation}
-              className="flex-1"
-              disabled={!simulationMode}
-            >
-              <Play className="h-4 w-4 mr-2" />
-              Simuler
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                // Reset simulation
-                // Cette fonctionnalité peut être ajoutée plus tard
-              }}
-            >
-              <RotateCcw className="h-4 w-4" />
-            </Button>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
