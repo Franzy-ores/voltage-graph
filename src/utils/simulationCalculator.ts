@@ -408,12 +408,27 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Calcul itératif avec régulation SRG2
+   * DIAGNOSTIC ID: vérifie la cohérence des IDs pendant toute la simulation
    */
   private calculateWithSRG2Regulation(
     project: Project,
     scenario: CalculationScenario,
     srg2Devices: SRG2Config[]
   ): CalculationResult {
+    console.log(`🔍 DIAGNOSTIC ID - Début calculateWithSRG2Regulation`);
+    console.log(`📋 IDs des SRG2:`, srg2Devices.map(srg2 => `${srg2.id} -> nœud ${srg2.nodeId}`));
+    console.log(`📋 IDs des nœuds du projet:`, project.nodes.map(n => `${n.id} (${n.name})`));
+    
+    // Vérifier que tous les SRG2 ont des nœuds correspondants
+    for (const srg2 of srg2Devices) {
+      const nodeExists = project.nodes.find(n => n.id === srg2.nodeId);
+      if (!nodeExists) {
+        console.error(`❌ SRG2 ${srg2.id} référence un nœud inexistant: ${srg2.nodeId}`);
+      } else {
+        console.log(`✅ SRG2 ${srg2.id} -> nœud trouvé: ${nodeExists.id} (${nodeExists.name})`);
+      }
+    }
+    
     let iteration = 0;
     let converged = false;
     let previousVoltages: Map<string, {A: number, B: number, C: number}> = new Map();
@@ -780,6 +795,7 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Applique les changements de tension aux nœuds en aval
+   * PROTECTION CONTRE MUTATION: utilise structuredClone pour éviter la corruption des IDs
    */
   private applyVoltageChangesToDownstreamNodes(
     nodes: Node[],
@@ -788,13 +804,36 @@ export class SimulationCalculator extends ElectricalCalculator {
     loadModel: string = 'polyphase_equilibre'
   ): void {
     
+    console.log(`🔍 DIAGNOSTIC ID - Début applyVoltageChangesToDownstreamNodes`);
+    console.log(`📋 IDs des nœuds avant modification:`, nodes.map(n => `${n.id} (type: ${typeof n.id})`));
+    
     for (const [nodeId, newVoltages] of voltageChanges) {
       const nodeIndex = nodes.findIndex(n => n.id === nodeId);
-      if (nodeIndex === -1) continue;
+      if (nodeIndex === -1) {
+        console.error(`❌ Nœud ${nodeId} introuvable dans la liste des nœuds !`);
+        continue;
+      }
 
-      // Marquer ce nœud comme source locale SRG2
+      // Diagnostic ID avant modification
+      const originalId = nodes[nodeIndex].id;
+      console.log(`🔍 DIAGNOSTIC ID - Nœud trouvé: ${originalId} (index: ${nodeIndex}, type: ${typeof originalId})`);
+
+      // PROTECTION ANTI-MUTATION: Créer une copie profonde pour éviter la corruption des références
+      const nodeBackup = {
+        id: nodes[nodeIndex].id,
+        name: nodes[nodeIndex].name
+      };
+
+      // Marquer ce nœud comme source locale SRG2 (sans muter l'ID)
       nodes[nodeIndex].isSRG2Source = true;
-      nodes[nodeIndex].srg2OutputVoltage = { ...newVoltages };
+      nodes[nodeIndex].srg2OutputVoltage = structuredClone(newVoltages);
+
+      // Diagnostic ID après marquage
+      if (nodes[nodeIndex].id !== originalId) {
+        console.error(`🚨 CORRUPTION ID DÉTECTÉE ! Original: ${originalId}, Actuel: ${nodes[nodeIndex].id}`);
+        // Restaurer l'ID original si corrompu
+        nodes[nodeIndex].id = originalId;
+      }
 
       if (loadModel === 'monophase_reparti') {
         // Mode monophasé réparti: conserver les tensions par phase dans des propriétés spéciales
@@ -815,9 +854,17 @@ export class SimulationCalculator extends ElectricalCalculator {
         console.log(`🔧 SRG2 source locale sur nœud ${nodeId} (polyphasé): tension de sortie ${avgVoltage.toFixed(1)}V comme nouvelle source locale`);
       }
       
-      // Ce nœud devient maintenant une source locale pour tous les calculs en aval
-      console.log(`🎯 Nœud ${nodeId} configuré comme source locale SRG2`);
+      // Validation finale de l'ID
+      if (nodes[nodeIndex].id !== originalId) {
+        console.error(`🚨 CORRUPTION ID FINALE ! Restauration...`);
+        nodes[nodeIndex].id = originalId;
+      }
+      
+      console.log(`🎯 Nœud ${nodeId} configuré comme source locale SRG2 (ID préservé: ${nodes[nodeIndex].id})`);
     }
+    
+    console.log(`🔍 DIAGNOSTIC ID - Fin applyVoltageChangesToDownstreamNodes`);
+    console.log(`📋 IDs des nœuds après modification:`, nodes.map(n => `${n.id} (type: ${typeof n.id})`));
   }
 
   /**
@@ -851,15 +898,33 @@ export class SimulationCalculator extends ElectricalCalculator {
   
   /**
    * Nettoie les marqueurs SRG2 après calcul pour éviter les interférences
+   * PROTECTION CONTRE MUTATION: préserve les IDs originaux
    */
   private cleanupSRG2Markers(nodes: Node[]): void {
+    console.log(`🔍 DIAGNOSTIC ID - Début cleanupSRG2Markers`);
+    console.log(`📋 IDs des nœuds avant nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
+    
     for (const node of nodes) {
       if (node.isSRG2Source) {
+        // Sauvegarder l'ID original avant nettoyage
+        const originalId = node.id;
+        
+        // Nettoyer les marqueurs SRG2
         node.isSRG2Source = undefined;
         node.srg2OutputVoltage = undefined;
-        console.log(`🧹 Nettoyage marqueurs SRG2 pour nœud ${node.id}`);
+        
+        // Vérifier que l'ID n'a pas été corrompu pendant le nettoyage
+        if (node.id !== originalId) {
+          console.error(`🚨 CORRUPTION ID lors du nettoyage ! Original: ${originalId}, Actuel: ${node.id}`);
+          node.id = originalId; // Restaurer l'ID
+        }
+        
+        console.log(`🧹 Nettoyage marqueurs SRG2 pour nœud ${node.id} (ID préservé)`);
       }
     }
+    
+    console.log(`🔍 DIAGNOSTIC ID - Fin cleanupSRG2Markers`);
+    console.log(`📋 IDs des nœuds après nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
   }
   
   /**
