@@ -137,37 +137,11 @@ export class SRG2Regulator {
   propagateVoltageToChildren(nodeId: string, nodes: Node[], cables: Cable[], ratio: number): void {
     const descendants = this.getDescendants(nodeId, nodes, cables);
     
-    // CORRECTION PRINCIPALE : Calculer la tension de base pour chaque descendant
-    const sourceNode = nodes.find(n => n.isSource);
-    const baseVoltage = sourceNode?.tensionCible || 400; // Tension de référence
-    
     for (const descendantId of descendants) {
       const node = nodes.find(n => n.id === descendantId);
-      if (node) {
-        // NOUVEAU : Appliquer tensionCible même si elle n'existait pas avant
-        if (!node.tensionCible) {
-          // Calculer la tension de base selon le type de connexion
-          const connectionType = node.connectionType || 'TRI_400V_3F+N';
-          let baseVoltageForNode = baseVoltage;
-          
-          // Ajuster selon le type de connexion
-          if (connectionType === 'TRI_230V_3F') {
-            baseVoltageForNode = 230;
-          } else if (connectionType.includes('230V')) {
-            baseVoltageForNode = 230;
-          } else if (connectionType.includes('400V')) {
-            baseVoltageForNode = 400;
-          }
-          
-          node.tensionCible = baseVoltageForNode;
-        }
-        
-        // Appliquer le ratio SRG2
+      if (node && node.tensionCible) {
         node.tensionCible = node.tensionCible * ratio;
-        (node as any).srg2Applied = true;
-        (node as any).srg2Ratio = ratio;
-        
-        console.log(`🔄 [SRG2-PROPAGATION] Node ${descendantId}: tensionCible=${node.tensionCible.toFixed(1)}V, ratio=${ratio.toFixed(3)}`);
+        console.log(`🔄 Propagated voltage to ${descendantId}: ${node.tensionCible.toFixed(1)}V`);
       }
     }
   }
