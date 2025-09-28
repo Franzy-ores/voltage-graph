@@ -15,7 +15,7 @@ import {
   CableUpgrade,
   SimulationEquipment
 } from '@/types/network';
-import { SRG2Config } from '@/types/srg2';
+import { SRG2Config, DEFAULT_SRG2_400_CONFIG, DEFAULT_SRG2_230_CONFIG } from '@/types/srg2';
 import { NodeWithConnectionType, getNodeConnectionType, addConnectionTypeToNodes } from '@/utils/nodeConnectionType';
 import { defaultCableTypes } from '@/data/defaultCableTypes';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
@@ -1074,20 +1074,6 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
   // Méthodes SRG2
   addSRG2Device: (nodeId: string) => {
-    const { simulationEquipment, currentProject } = get();
-    if (!currentProject) return;
-    
-    // Vérifier qu'il n'y a pas déjà un SRG2 sur ce nœud
-    const existingSRG2 = simulationEquipment.srg2Devices?.find(s => s.nodeId === nodeId);
-    if (existingSRG2) {
-      toast.error('Un SRG2 existe déjà sur ce nœud');
-      return;
-    }
-
-    const node = currentProject.nodes.find(n => n.id === nodeId);
-    const newSRG2: SRG2Config = {
-      id: `srg2_${nodeId}_${Date.now()}`,
-  addSRG2Device: (nodeId: string) => {
     const state = get();
     if (!state.currentProject) return;
     
@@ -1105,8 +1091,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
     set({
       simulationEquipment: {
-        ...simulationEquipment,
-        srg2Devices: [...(simulationEquipment.srg2Devices || []), newSRG2]
+        ...state.simulationEquipment,
+        srg2Devices: [...(state.simulationEquipment.srg2Devices || []), newSRG2]
       }
     });
     
