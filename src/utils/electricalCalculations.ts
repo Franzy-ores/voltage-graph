@@ -1829,8 +1829,14 @@ export class ElectricalCalculator {
               ? childNodeObj.tensionCible
               : childNodeObj.tensionCible / (isThree ? Math.sqrt(3) : 1);
             Vv = C(forcedPhase, 0); // 0° in balanced mode
+            console.log(`🔧 [POLYPHASE-SRG2] Node ${v} voltage pinned to ${abs(Vv).toFixed(2)}V (tensionCible: ${childNodeObj.tensionCible}V)`);
           }
           V_node.set(v, Vv);
+          
+          // Debug: Log voltage update for SRG2 nodes
+          if (childNodeObj && (childNodeObj.srg2Applied || childNodeObj.tensionCible)) {
+            console.log(`📊 [POLYPHASE-DEBUG] V_node updated for ${v}: ${abs(Vv).toFixed(2)}V`);
+          }
           stack2.push(v);
         }
       }
@@ -1997,6 +2003,12 @@ export class ElectricalCalculator {
       const Vn = V_node.get(n.id) || Vslack;
       const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
       const V_phase_V = abs(Vn);
+      
+      // Debug: Log voltage for SRG2 nodes in polyphase
+      if (n.srg2Applied || n.tensionCible) {
+        console.log(`📊 [POLYPHASE-METRICS] Node ${n.id} V_phase_V: ${V_phase_V.toFixed(2)}V (from V_node: ${abs(Vn).toFixed(2)}V, tensionCible: ${n.tensionCible || 'none'})`);
+      }
+      
       // Pour TRI_230V_3F, pas de conversion car travail direct en composé
       const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
         ? U_nom_line // 230V composée directement
