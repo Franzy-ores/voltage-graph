@@ -103,25 +103,24 @@ export function getNodeVoltageInfo(
       const isSrg2Node = simulationEquipment.srg2?.enabled && simulationEquipment.srg2?.nodeId === nodeId;
       
       if (isSrg2Node && sourceType === 'simulation') {
-        // For SRG2 node in simulation mode, try to get the regulated voltage
-        if (result.srg2Result && result.srg2Result.regulatedVoltage) {
-          voltage = result.srg2Result.regulatedVoltage;
-          isRegulated = result.srg2Result.isActive;
-          console.log(`🔧 SRG2 POLYPHASE: Using srg2Result.regulatedVoltage = ${voltage}V`);
+        // For SRG2 node in simulation mode, check if we have SRG2 result
+        if (result.srg2Result && result.srg2Result.nodeId === nodeId) {
+          // ✅ CRITICAL FIX: Always show SRG2 indicator if srg2Result exists for this node
+          // Even if regulation is inactive (isActive=false), we still want to show the * 
+          voltage = result.srg2Result.regulatedVoltage || nodeMetric.V_phase_V;
+          isRegulated = true; // Always show the * for SRG2 nodes when configured
+          console.log(`🔧 SRG2 POLYPHASE: Using voltage = ${voltage}V, showing * indicator`);
         } else {
-          // Fallback: if srg2Result not in result, but we know it's an SRG2 node,
-          // the voltage in nodeMetric should already be the regulated one from pinning
+          // Fallback: Check if the node has SRG2 properties applied
           const node = project.nodes.find(n => n.id === nodeId);
-          if (node?.tensionCible && node.tensionCible > 0) {
-            // Use the target voltage that was set for SRG2
-            voltage = nodeMetric.V_phase_V; // This should be the pinned value
+          if (node && ((node as any).srg2Applied || node.tensionCible)) {
+            voltage = nodeMetric.V_phase_V;
             isRegulated = true;
-            console.log(`🔧 SRG2 POLYPHASE FALLBACK: Using pinned voltage = ${voltage}V`);
+            console.log(`🔧 SRG2 POLYPHASE FALLBACK: Node has SRG2 properties, voltage = ${voltage}V`);
           }
         }
       } else {
         // For downstream nodes affected by SRG2, use the calculated voltages from solver
-        // The solver should have already propagated the SRG2 effects via tensionCible pinning
         const node = project.nodes.find(n => n.id === nodeId);
         isRegulated = node && (node as any).srg2Applied;
       }
