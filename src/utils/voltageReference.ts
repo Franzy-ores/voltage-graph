@@ -30,12 +30,12 @@ export function getNetworkVoltageReference(
           displayReference: 230
         };
       } else {
-        // Balanced polyphase: line voltage = 230V
+        // Balanced polyphase: use phase-to-phase voltage for display
         return {
           nominal: 230,
           phaseToNeutral: 133, // 230/√3  
           phaseToPhase: 230,
-          displayReference: 230
+          displayReference: 230 // Use phase-to-phase for polyphase display
         };
       }
       
@@ -46,15 +46,15 @@ export function getNetworkVoltageReference(
           nominal: 400,
           phaseToNeutral: 230, // 400/√3
           phaseToPhase: 400,
-          displayReference: 230 // SRG2 regulates phase-to-neutral
+          displayReference: 230 // Use phase-to-neutral for monophase display
         };
       } else {
-        // Balanced polyphase: phase-to-neutral = 230V
+        // Balanced polyphase: use phase-to-phase voltage for display
         return {
           nominal: 400,
           phaseToNeutral: 230, // 400/√3
           phaseToPhase: 400,
-          displayReference: 230 // SRG2 regulates phase-to-neutral
+          displayReference: 400 // Use phase-to-phase for polyphase display
         };
       }
       
@@ -64,7 +64,7 @@ export function getNetworkVoltageReference(
         nominal: 400,
         phaseToNeutral: 230,
         phaseToPhase: 400,
-        displayReference: 230
+        displayReference: 400 // Use phase-to-phase for polyphase display
       };
   }
 }

@@ -1,4 +1,4 @@
-import { Node, Project, CalculationResult, SimulationResult } from '@/types/network';
+import { Node, Project, CalculationResult, SimulationResult, VoltageSystem, LoadModel } from '@/types/network';
 import { getDisplayVoltage } from './voltageReference';
 
 /**
@@ -118,8 +118,8 @@ function getFallbackVoltage(nodeId: string, project: Project): VoltageInfo {
   const node = project.nodes.find(n => n.id === nodeId);
   
   if (node?.isSource) {
-    // Source node: use target voltage or system default
-    const sourceVoltage = node.tensionCible || getDisplayVoltage(project.voltageSystem, project.loadModel);
+    // Source node: use target voltage or appropriate system default
+    const sourceVoltage = node.tensionCible || getSystemNominalVoltage(project.voltageSystem, project.loadModel);
     return {
       voltage: sourceVoltage,
       isRegulated: false,
@@ -127,13 +127,33 @@ function getFallbackVoltage(nodeId: string, project: Project): VoltageInfo {
     };
   }
   
-  // Non-source node: use system reference
-  const systemReference = getDisplayVoltage(project.voltageSystem, project.loadModel);
+  // Non-source node: use appropriate system voltage based on context
+  const systemVoltage = getSystemNominalVoltage(project.voltageSystem, project.loadModel);
   return {
-    voltage: systemReference,
+    voltage: systemVoltage,
     isRegulated: false,
     source: 'fallback'
   };
+}
+
+/**
+ * Get the appropriate system voltage for display (not SRG2-centric)
+ */
+function getSystemNominalVoltage(voltageSystem: VoltageSystem, loadModel: LoadModel = 'polyphase_equilibre'): number {
+  switch (voltageSystem) {
+    case 'TRIPHASÉ_230V':
+      return 230; // Always 230V for this system
+      
+    case 'TÉTRAPHASÉ_400V':
+      if (loadModel === 'monophase_reparti') {
+        return 230; // Phase-to-neutral for monophase
+      } else {
+        return 400; // Phase-to-phase for polyphase (NOT SRG2's 230V)
+      }
+      
+    default:
+      return 400; // Default fallback
+  }
 }
 
 /**
