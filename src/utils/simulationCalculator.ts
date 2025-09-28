@@ -458,6 +458,7 @@ export class SimulationCalculator extends ElectricalCalculator {
             B: nodeResult.voltageB_V || nodeResult.voltage_V || 230,
             C: nodeResult.voltageC_V || nodeResult.voltage_V || 230
           };
+          console.log(`📊 SRG2 ${srg2.nodeId}: tensions lues A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
         } else if (srg2Node.tensionCible) {
           // Utiliser la tension cible du nœud si disponible
           nodeVoltages = {
@@ -465,6 +466,9 @@ export class SimulationCalculator extends ElectricalCalculator {
             B: srg2Node.tensionCible, 
             C: srg2Node.tensionCible
           };
+          console.log(`📊 SRG2 ${srg2.nodeId}: utilise tension cible du nœud ${srg2Node.tensionCible.toFixed(1)}V`);
+        } else {
+          console.warn(`⚠️ SRG2 ${srg2.nodeId}: aucune tension trouvée, utilise valeurs par défaut 230V`);
         }
 
         // Appliquer la régulation SRG2 sur les tensions lues
@@ -547,6 +551,8 @@ export class SimulationCalculator extends ElectricalCalculator {
     
     // Tensions d'entrée lues au nœud d'installation
     const tensionEntree = { ...nodeVoltages };
+    
+    console.log(`🔍 SRG2 régulation: tensions d'entrée A=${tensionEntree.A.toFixed(1)}V, B=${tensionEntree.B.toFixed(1)}V, C=${tensionEntree.C.toFixed(1)}V`);
 
     // Déterminer l'état du commutateur pour chaque phase
     const etatCommutateur = {
@@ -554,6 +560,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       B: this.determineSwitchState(tensionEntree.B, srg2),
       C: this.determineSwitchState(tensionEntree.C, srg2)
     };
+    
+    console.log(`⚙️ SRG2 états commutateurs: A=${etatCommutateur.A}, B=${etatCommutateur.B}, C=${etatCommutateur.C}`);
 
     // Appliquer les contraintes SRG2-230 si nécessaire
     if (srg2.type === 'SRG2-230') {
@@ -573,6 +581,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       B: tensionEntree.B * (1 + coefficientsAppliques.B / 100),
       C: tensionEntree.C * (1 + coefficientsAppliques.C / 100)
     };
+    
+    console.log(`🔧 SRG2 tensions de sortie: A=${tensionSortie.A.toFixed(1)}V, B=${tensionSortie.B.toFixed(1)}V, C=${tensionSortie.C.toFixed(1)}V`);
 
     return {
       tensionEntree,
