@@ -249,6 +249,8 @@ export interface CalculationResult {
     nodeId: string; 
     voltagesPerPhase: { A: number; B: number; C: number };
     voltageDropsPerPhase: { A: number; B: number; C: number };
+    compliancePerPhase?: { A: 'normal' | 'warning' | 'critical'; B: 'normal' | 'warning' | 'critical'; C: 'normal' | 'warning' | 'critical' };
+    nodeCompliance?: 'normal' | 'warning' | 'critical';
   }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel

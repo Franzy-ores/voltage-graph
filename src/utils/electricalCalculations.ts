@@ -1104,6 +1104,19 @@ export class ElectricalCalculator {
         const dropB = U_ref - Vb_display;
         const dropC = U_ref - Vc_display;
         
+        // ===== AMÉLIORATION : CONFORMITÉ EN50160 MULTI-PHASE =====
+        // Évaluation individuelle de chaque phase selon EN50160
+        const compliancePerPhase = {
+          A: this.getComplianceStatus(Math.abs((U_ref - Va_display) / U_ref * 100)),
+          B: this.getComplianceStatus(Math.abs((U_ref - Vb_display) / U_ref * 100)),
+          C: this.getComplianceStatus(Math.abs((U_ref - Vc_display) / U_ref * 100))
+        };
+        
+        // Conformité globale du nœud = pire cas des 3 phases
+        const phaseCompliances = [compliancePerPhase.A, compliancePerPhase.B, compliancePerPhase.C];
+        const nodeCompliance: 'normal' | 'warning' | 'critical' = phaseCompliances.includes('critical') ? 'critical' :
+                              phaseCompliances.includes('warning') ? 'warning' : 'normal';
+        
         return {
           nodeId: n.id,
           voltagesPerPhase: {
@@ -1115,9 +1128,23 @@ export class ElectricalCalculator {
             A: dropA,
             B: dropB,
             C: dropC
-          }
+          },
+          compliancePerPhase,
+          nodeCompliance
         };
       });
+
+      // ===== AMÉLIORATION : CONFORMITÉ GLOBALE BASÉE SUR L'ANALYSE MULTI-PHASE =====
+      // Évaluation de la conformité globale à partir de l'analyse par phase
+      const globalComplianceFromPhases = nodeMetricsPerPhase.reduce((worst, node) => {
+        if (node.nodeCompliance === 'critical') return 'critical';
+        if (node.nodeCompliance === 'warning' && worst !== 'critical') return 'warning';
+        return worst;
+      }, 'normal' as 'normal' | 'warning' | 'critical');
+      
+      // Utiliser la conformité multi-phase si elle est plus restrictive que l'analyse globale
+      const finalCompliance = globalComplianceFromPhases === 'critical' ? 'critical' :
+                              globalComplianceFromPhases === 'warning' ? 'warning' : compliance;
 
       const result: CalculationResult = {
         scenario,
@@ -1127,16 +1154,17 @@ export class ElectricalCalculator {
         globalLosses_kW: Number(globalLosses.toFixed(6)),
         maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
         maxVoltageDropCircuitNumber: undefined,
-        compliance,
+        compliance: finalCompliance,
         nodeVoltageDrops,
         nodeMetrics: undefined,
         nodePhasors: undefined,
         nodePhasorsPerPhase,
-        nodeMetricsPerPhase, // Nouvelles métriques par phase
+        nodeMetricsPerPhase, // Nouvelles métriques par phase avec conformité individuelle
         cablePowerFlows: undefined,
         virtualBusbar
       };
 
+      console.log(`[ElectricalCalculator] Conformité multi-phase: global=${globalComplianceFromPhases}, final=${finalCompliance}`);
       return result;
     }
 
