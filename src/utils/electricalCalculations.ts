@@ -606,8 +606,20 @@ export class ElectricalCalculator {
     const hasMonoPNNodes = nodes.some(n => n.connectionType === 'MONO_230V_PN');
     const is400VSystem = transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350;
     
-    if (hasMonoPNNodes && is400VSystem) {
-      // Système 400V avec nœuds phase-neutre : utiliser 230V pour les calculs
+    if (source.tensionCible) {
+      // PRIORITÉ ABSOLUE à la tension forcée (tensionCible)
+      if (source.connectionType === 'MONO_230V_PN' || source.connectionType === 'MONO_230V_PP') {
+        // Tension forcée directe pour monophasé
+        Vslack_phase = source.tensionCible;
+      } else if (source.connectionType === 'TRI_230V_3F') {
+        // Triphasé 230V : tension forcée directe (travail en composé)
+        Vslack_phase = source.tensionCible;
+      } else {
+        // Autres systèmes triphasés : conversion ligne -> phase si nécessaire
+        Vslack_phase = source.tensionCible / (isSrcThree ? Math.sqrt(3) : 1);
+      }
+    } else if (hasMonoPNNodes && is400VSystem) {
+      // Système 400V avec nœuds phase-neutre : utiliser 230V pour les calculs (seulement si pas de tension forcée)
       Vslack_phase = 230;
     } else if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
       // Connexions monophasées standard
