@@ -618,8 +618,8 @@ export class ElectricalCalculator {
       // Ztr (Ω/phase) à partir de Ucc% (en p.u.) et du ratio X/R si fourni
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
-      // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
-      const Zbase = (U_line_base * U_line_base) / (Sbase_VA * Math.sqrt(3)); // Ω
+      // Zbase (Ω) par phase selon standard IEEE : Zbase = U_line² / Sbase
+      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
       const Zmag = Zpu * Zbase; // |Z|
 
       const xOverR = transformerConfig.xOverR;
@@ -881,10 +881,10 @@ export class ElectricalCalculator {
         return { V_node_phase, I_branch_phase };
       };
 
-      // Pivot global : même angle (0°) pour tous les circuits pour préserver la notion de circuit
-      const phaseA = runBFSForPhase(globalAngle, S_A_map);
-      const phaseB = runBFSForPhase(globalAngle, S_B_map);
-      const phaseC = runBFSForPhase(globalAngle, S_C_map);
+      // Déphasages corrects pour les phases A, B, C
+      const phaseA = runBFSForPhase(0, S_A_map);      // 0°
+      const phaseB = runBFSForPhase(-120, S_B_map);   // -120°
+      const phaseC = runBFSForPhase(120, S_C_map);    // +120°
 
       // Compose cable results (par phase)
       calculatedCables.length = 0;
