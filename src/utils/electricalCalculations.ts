@@ -818,8 +818,8 @@ export class ElectricalCalculator {
                 }
                 V_node_phase.set(v, Vv_srg2);
                 console.log(`🎯 SRG2 source locale ${v} (phase ${angleDeg}°): tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
-              } else if (vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
-                // Pour les nœuds avec tensions cibles par phase, utiliser la tension de la phase correspondante
+              } else if (loadModel === "monophase_reparti" && vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
+                // En mode monophasé déséquilibré, utiliser les tensions par phase
                 let Vv_target: Complex;
                 if (angleDeg === 0) {
                   // Phase A
