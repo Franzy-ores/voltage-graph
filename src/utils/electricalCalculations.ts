@@ -971,17 +971,16 @@ export class ElectricalCalculator {
 
         const scaleLine = this.getDisplayLineScale(n.connectionType);
         
-        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la tension appropriée
-        // En mode monophasé déséquilibré, utiliser la moyenne des phases pour éviter les valeurs aberrantes
+        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
+        // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
         let U_node_line_tension: number;
         
         if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          // Nœud monophasé phase-neutre en système 400V : utiliser la moyenne des phases (plus réaliste)
-          // Car en pratique, un nœud monophasé peut être connecté sur n'importe quelle phase
-          U_node_line_tension = (Va_mag + Vb_mag + Vc_mag) / 3;
-          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], moyenne utilisée: ${U_node_line_tension.toFixed(1)}V`);
+          // Nœud monophasé phase-neutre en système 400V : prendre la phase la plus élevée (EN50160)
+          U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
+          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max utilisé: ${U_node_line_tension.toFixed(1)}V`);
         } else {
-          // Autres nœuds : garder la logique existante (pire cas pour conformité)
+          // Autres nœuds : garder la logique existante (pire cas = minimum)
           U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
         }
 
@@ -1060,31 +1059,14 @@ export class ElectricalCalculator {
         const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
-        // Correction pour l'affichage des tensions monophasées en système 400V
-        let Va_display, Vb_display, Vc_display;
-        
-        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          // Pour les nœuds monophasés phase-neutre en système 400V : afficher les tensions phase-neutre directement (pas de conversion)
-          Va_display = abs(Va);
-          Vb_display = abs(Vb);  
-          Vc_display = abs(Vc);
-          console.log(`🔍 Node ${n.id} (MONO_230V_PN en 400V): tensions phase-neutre directes [${Va_display.toFixed(1)}, ${Vb_display.toFixed(1)}, ${Vc_display.toFixed(1)}]V`);
-        } else {
-          // Autres cas : appliquer le facteur d'échelle normal
-          const scaleLine = this.getDisplayLineScale(n.connectionType);
-          Va_display = abs(Va) * scaleLine;
-          Vb_display = abs(Vb) * scaleLine;
-          Vc_display = abs(Vc) * scaleLine;
-        }
+        const scaleLine = this.getDisplayLineScale(n.connectionType);
+        const Va_display = abs(Va) * scaleLine;
+        const Vb_display = abs(Vb) * scaleLine;
+        const Vc_display = abs(Vc) * scaleLine;
         
         let { U_base: U_ref } = this.getVoltage(n.connectionType);
         const sourceNode = nodes.find(s => s.isSource);
         if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
-        
-        // Pour les nœuds monophasés en système 400V, la référence est 230V (phase-neutre)
-        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          U_ref = 230; // Référence phase-neutre pour monophasé en système 400V
-        }
         
         return {
           nodeId: n.id,
