@@ -618,8 +618,8 @@ export class ElectricalCalculator {
         // Autres systèmes triphasés : conversion ligne -> phase si nécessaire
         Vslack_phase = source.tensionCible / (isSrcThree ? Math.sqrt(3) : 1);
       }
-    } else if (hasMonoPNNodes && is400VSystem) {
-      // Système 400V avec nœuds phase-neutre : utiliser 230V pour les calculs (seulement si pas de tension forcée)
+    } else if (hasMonoPNNodes && is400VSystem && source.connectionType === 'MONO_230V_PN') {
+      // Système 400V avec nœuds phase-neutre : utiliser 230V SEULEMENT si la source elle-même est monophasée
       Vslack_phase = 230;
     } else if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
       // Connexions monophasées standard
