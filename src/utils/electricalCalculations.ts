@@ -1059,14 +1059,33 @@ export class ElectricalCalculator {
         const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
-        const scaleLine = this.getDisplayLineScale(n.connectionType);
-        const Va_display = abs(Va) * scaleLine;
-        const Vb_display = abs(Vb) * scaleLine;
-        const Vc_display = abs(Vc) * scaleLine;
+        // CORRECTION : Pour MONO_230V_PN en système 400V, utiliser directement les tensions phase-neutre
+        let Va_display, Vb_display, Vc_display;
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          // Système 400V : afficher les tensions phase-neutre directement (déjà correctes)
+          Va_display = abs(Va);
+          Vb_display = abs(Vb);
+          Vc_display = abs(Vc);
+        } else {
+          // Autres cas : appliquer le scaling normal
+          const scaleLine = this.getDisplayLineScale(n.connectionType);
+          Va_display = abs(Va) * scaleLine;
+          Vb_display = abs(Vb) * scaleLine;
+          Vc_display = abs(Vc) * scaleLine;
+        }
         
-        let { U_base: U_ref } = this.getVoltage(n.connectionType);
-        const sourceNode = nodes.find(s => s.isSource);
-        if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+        // CORRECTION : Pour MONO_230V_PN en système 400V, utiliser une référence de 230V
+        let U_ref: number;
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          // Système 400V : référence 230V pour les nœuds monophasés phase-neutre
+          U_ref = 230;
+        } else {
+          // Autres cas : logique standard
+          let { U_base: U_ref_base } = this.getVoltage(n.connectionType);
+          const sourceNode = nodes.find(s => s.isSource);
+          if (sourceNode?.tensionCible) U_ref_base = sourceNode.tensionCible;
+          U_ref = U_ref_base;
+        }
         
         return {
           nodeId: n.id,
