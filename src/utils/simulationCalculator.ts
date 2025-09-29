@@ -754,10 +754,10 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
 
       if (loadModel === 'monophase_reparti') {
-        // Mode monophasé réparti: conserver les tensions par phase dans des propriétés spéciales
-        (nodes[nodeIndex] as any).tensionCiblePhaseA = newVoltages.A;
-        (nodes[nodeIndex] as any).tensionCiblePhaseB = newVoltages.B;
-        (nodes[nodeIndex] as any).tensionCiblePhaseC = newVoltages.C;
+        // Mode monophasé réparti: conserver les tensions par phase
+        nodes[nodeIndex].tensionCiblePhaseA = newVoltages.A;
+        nodes[nodeIndex].tensionCiblePhaseB = newVoltages.B;
+        nodes[nodeIndex].tensionCiblePhaseC = newVoltages.C;
         
         // Utiliser la moyenne pour tensionCible (compatibilité)
         const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;

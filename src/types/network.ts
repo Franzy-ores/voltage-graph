@@ -86,6 +86,10 @@ export interface Node {
   productions: ProductionPV[];
   isSource?: boolean;
   tensionCible?: number; // tension cible en V (optionnel)
+  // Tensions cibles par phase (pour mode monophasé déséquilibré)
+  tensionCiblePhaseA?: number;
+  tensionCiblePhaseB?: number;
+  tensionCiblePhaseC?: number;
   // SRG2 local source properties
   isSRG2Source?: boolean; // indique si ce nœud est une source locale SRG2
   srg2OutputVoltage?: {A: number, B: number, C: number}; // tensions de sortie SRG2 en V

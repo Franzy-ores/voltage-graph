@@ -1172,8 +1172,8 @@ export class ElectricalCalculator {
             // Pour les nœuds SRG2, utiliser leur tension de sortie régulée
             let Vv_srg2: Complex;
             if (isUnbalanced) {
-              // En mode monophasé, utiliser la phase appropriée ou la moyenne
-              // Pour simplifier, utiliser la moyenne des trois phases
+              // En mode monophasé déséquilibré, cette logique est gérée dans la boucle per-phase
+              // Ici on utilise la moyenne pour le calcul équilibré de base
               const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
               Vv_srg2 = C(avgVoltage, 0);
             } else {
@@ -1183,8 +1183,19 @@ export class ElectricalCalculator {
             }
             V_node.set(v, Vv_srg2);
             console.log(`🎯 SRG2 source locale ${v}: tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
+          } else if (vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
+            // Utiliser les tensions cibles par phase si disponibles (mode monophasé)
+            const avgVoltage = (vNode.tensionCiblePhaseA + vNode.tensionCiblePhaseB + vNode.tensionCiblePhaseC) / 3;
+            const Vv_target = C(avgVoltage, 0);
+            V_node.set(v, Vv_target);
+            console.log(`🎯 Nœud ${v}: tensions cibles par phase appliquées (moy: ${avgVoltage.toFixed(1)}V)`);
+          } else if (vNode?.tensionCible) {
+            // Utiliser la tension cible globale si disponible
+            const Vv_target = C(vNode.tensionCible, 0);
+            V_node.set(v, Vv_target);
+            console.log(`🎯 Nœud ${v}: tension cible appliquée ${vNode.tensionCible.toFixed(1)}V`);
           } else {
-            // Calcul normal pour les nœuds non-SRG2
+            // Calcul normal pour les nœuds sans tension cible
             const Vv = sub(Vu, mul(Z, Iuv));
             V_node.set(v, Vv);
           }
@@ -1336,6 +1347,40 @@ export class ElectricalCalculator {
       console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);
     }
 
+    // ---- Métriques nodales par phase (TOUJOURS générées maintenant) ----
+    const nodeMetricsPerPhase = nodes.map(n => {
+      const Vn = V_node.get(n.id) || Vslack;
+      const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
+      const V_phase_V = abs(Vn);
+      
+      // Pour TRI_230V_3F, pas de conversion car travail direct en composé
+      const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
+        ? U_nom_line // 230V composée directement
+        : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
+
+      // En mode équilibré polyphasé, toutes les phases ont la même tension
+      const scaleLine = this.getDisplayLineScale(n.connectionType);
+      const V_display = V_phase_V * scaleLine;
+      
+      let { U_base: U_ref } = this.getVoltage(n.connectionType);
+      const sourceNode = nodes.find(s => s.isSource);
+      if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+      
+      return {
+        nodeId: n.id,
+        voltagesPerPhase: {
+          A: V_display,
+          B: V_display, 
+          C: V_display
+        },
+        voltageDropsPerPhase: {
+          A: U_ref - V_display,
+          B: U_ref - V_display,
+          C: U_ref - V_display
+        }
+      };
+    });
+
     // ---- Node metrics (V_phase and p.u., I_inj per node) ----
     const nodeMetrics = nodes.map(n => {
       const Vn = V_node.get(n.id) || Vslack;
@@ -1442,6 +1487,8 @@ export class ElectricalCalculator {
       nodeVoltageDrops,
       nodeMetrics,
       nodePhasors,
+      nodePhasorsPerPhase: undefined, // Seulement en mode déséquilibré
+      nodeMetricsPerPhase, // Maintenant toujours disponible
       cablePowerFlows,
       virtualBusbar
     };
