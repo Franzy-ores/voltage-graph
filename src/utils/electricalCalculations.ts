@@ -983,35 +983,59 @@ export class ElectricalCalculator {
         
         // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
         // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
+        // ===== CORRECTION 1 BIS : AFFICHAGE COHÉRENT DANS LES MÉTRIQUES PRINCIPALES =====
         let U_node_line_tension: number;
         
-        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          // Nœud monophasé phase-neutre en système 400V : prendre la phase la plus élevée (EN50160)
+        if (n.connectionType === 'MONO_230V_PN') {
+          // Monophasé phase-neutre : afficher tension phase-neutre directement (PAS de √3 !)
+          // Prendre la phase la plus élevée pour conformité EN50160
           U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
-          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max utilisé: ${U_node_line_tension.toFixed(1)}V`);
+          console.log(`🔍 CORRIGÉ Node ${n.id} (MONO_230V_PN): phases P-N [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max: ${U_node_line_tension.toFixed(1)}V (sans √3)`);
+          
+        } else if (n.connectionType === 'TRI_230V_3F') {
+          // Triphasé 230V : tensions composées = tensions de phase (système 230V)
+          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag);
+          
+        } else if (n.connectionType === 'TÉTRA_3P+N_230_400V') {
+          // Triphasé 400V : afficher tensions composées (√3 × phase)
+          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * Math.sqrt(3);
+          
         } else {
-          // Autres nœuds : garder la logique existante (pire cas = minimum)
+          // Autres cas : logique avec scaling
+          const scaleLine = this.getDisplayLineScale(n.connectionType);
           U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
         }
 
-        let { U_base: U_ref_display } = this.getVoltage(n.connectionType);
-        if (sourceNode?.tensionCible) U_ref_display = sourceNode.tensionCible;
+        // ===== CORRECTION 2 BIS : RÉFÉRENCE DE TENSION POUR CONFORMITÉ =====
+        let U_ref_display: number;
+        if (n.connectionType === 'MONO_230V_PN') {
+          // Référence phase-neutre EN50160
+          U_ref_display = 230;
+        } else if (sourceNode?.tensionCible) {
+          U_ref_display = sourceNode.tensionCible;
+        } else {
+          const { U_base } = this.getVoltage(n.connectionType);
+          U_ref_display = U_base;
+        }
 
         const deltaU_V = U_ref_display - U_node_line_tension;
         const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
 
-        // Référence nominale (conformité EN50160): logique spéciale pour MONO_230V_PN en système 400V
+        // ===== CORRECTION 3 : CALCUL DE CONFORMITÉ EN50160 AVEC RÉFÉRENCE NOMINALE CORRECTE =====
         let U_nom: number;
-        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
+        if (n.connectionType === 'MONO_230V_PN') {
+          // Pour les nœuds monophasés phase-neutre : référence 230V (EN50160)
           U_nom = 230;
         } else {
-          // Logique standard
+          // Logique standard selon le type de connexion
           const { U_base } = this.getVoltage(n.connectionType);
           U_nom = U_base;
         }
+        
         const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_tension) / U_nom) * 100 : 0;
         const absPctNom = Math.abs(deltaU_pct_nominal);
+        
+        console.log(`📊 Node ${n.id}: U_tension=${U_node_line_tension.toFixed(1)}V, U_nom=${U_nom}V, deltaU=${deltaU_pct_nominal.toFixed(1)}%, conformité=${absPctNom.toFixed(1)}%`);
         if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
 
         nodeVoltageDrops.push({ nodeId: n.id, deltaU_cum_V: deltaU_V, deltaU_cum_percent: deltaU_pct });
@@ -1063,41 +1087,61 @@ export class ElectricalCalculator {
         );
       }
 
-      // ===== MÉTRIQUES NODALES PAR PHASE : CALCUL ET AFFICHAGE COHÉRENTS =====
+      // ===== CORRECTION MAJEURE : AFFICHAGE COHÉRENT DES TENSIONS EN MODE DÉSÉQUILIBRÉ =====
       const nodeMetricsPerPhase = nodes.map(n => {
         const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
         
-        // Détection du type de système pour l'affichage cohérent
-        const is400VSystemDisplay = transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350;
-        const isMonoPNNode = n.connectionType === 'MONO_230V_PN';
+        // Tensions de phase (calculs internes)
+        const Va_phase = abs(Va);
+        const Vb_phase = abs(Vb);
+        const Vc_phase = abs(Vc);
         
-        // Calcul des tensions d'affichage selon le contexte système
+        // ===== CORRECTION 1 : AFFICHAGE DES TENSIONS SELON LE TYPE DE CONNEXION =====
         let Va_display, Vb_display, Vc_display, U_ref: number;
         
-        if (isMonoPNNode && is400VSystemDisplay) {
-          // CAS SPÉCIAL : Nœud MONO_230V_PN dans un système 400V
-          // Les calculs internes sont déjà en phase-neutre (230V), pas de scaling
-          Va_display = abs(Va);
-          Vb_display = abs(Vb);
-          Vc_display = abs(Vc);
-          U_ref = 230; // Référence phase-neutre pour la conformité
+        if (n.connectionType === 'MONO_230V_PN') {
+          // Monophasé phase-neutre : afficher tensions phase-neutre directement (PAS de √3 !)
+          Va_display = Va_phase;
+          Vb_display = Vb_phase; 
+          Vc_display = Vc_phase;
+          U_ref = 230; // Référence phase-neutre EN50160
           
-          console.log(`[Node ${n.id}] MONO_230V_PN en système 400V - Va=${Va_display.toFixed(1)}V, Vb=${Vb_display.toFixed(1)}V, Vc=${Vc_display.toFixed(1)}V`);
+          console.log(`[Node ${n.id}] MONO_230V_PN - Tensions P-N: Va=${Va_display.toFixed(1)}V, Vb=${Vb_display.toFixed(1)}V, Vc=${Vc_display.toFixed(1)}V`);
+          
+        } else if (n.connectionType === 'TRI_230V_3F') {
+          // Triphasé 230V : tensions composées = tensions de phase (système 230V)
+          Va_display = Va_phase;
+          Vb_display = Vb_phase;
+          Vc_display = Vc_phase;
+          U_ref = 230;
+          
+        } else if (n.connectionType === 'TÉTRA_3P+N_230_400V') {
+          // Triphasé 400V : afficher tensions composées (√3 × phase)
+          Va_display = Va_phase * Math.sqrt(3);
+          Vb_display = Vb_phase * Math.sqrt(3);
+          Vc_display = Vc_phase * Math.sqrt(3);
+          U_ref = 400;
+          
         } else {
-          // CAS STANDARD : Appliquer le scaling normal selon le type de connexion
+          // Autres cas : logique avec scaling
           const scaleLine = this.getDisplayLineScale(n.connectionType);
-          Va_display = abs(Va) * scaleLine;
-          Vb_display = abs(Vb) * scaleLine;
-          Vc_display = abs(Vc) * scaleLine;
+          Va_display = Va_phase * scaleLine;
+          Vb_display = Vb_phase * scaleLine;
+          Vc_display = Vc_phase * scaleLine;
           
-          // Référence standard selon le type de connexion
-          let { U_base: U_ref_base } = this.getVoltage(n.connectionType);
+          // Référence standard
           const sourceNode = nodes.find(s => s.isSource);
-          if (sourceNode?.tensionCible) U_ref_base = sourceNode.tensionCible;
-          U_ref = U_ref_base;
+          if (sourceNode?.tensionCible) {
+            U_ref = sourceNode.tensionCible;
+          } else {
+            const { U_base } = this.getVoltage(n.connectionType);
+            U_ref = U_base;
+          }
         }
+        
+        // ===== CORRECTION 2 : CALCUL DE CONFORMITÉ EN50160 AVEC RÉFÉRENCE APPROPRIÉE =====
         
         // Calcul des chutes de tension par rapport à la référence
         const dropA = U_ref - Va_display;
