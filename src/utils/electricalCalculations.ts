@@ -647,8 +647,22 @@ export class ElectricalCalculator {
     }
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
-    // ---- Mode déséquilibré (monophasé réparti) -> calcul triphasé par phase ----
-    const isUnbalanced = loadModel === 'monophase_reparti';
+    // ---- Détection des équipements SRG2 actifs ----
+    const hasSRG2Active = nodes.some(n => n.isSRG2Source === true);
+    
+    // ---- Mode déséquilibré (monophasé réparti) OU SRG2 actif -> calcul triphasé par phase ----
+    const isUnbalanced = loadModel === 'monophase_reparti' || hasSRG2Active;
+    
+    console.log(`🔍 Mode calculation decision: loadModel=${loadModel}, hasSRG2Active=${hasSRG2Active}, isUnbalanced=${isUnbalanced}`);
+    
+    if (hasSRG2Active) {
+      console.log('🎯 SRG2 devices detected - forcing per-phase calculation for proper voltage propagation');
+      const srg2Nodes = nodes.filter(n => n.isSRG2Source).map(n => ({ 
+        id: n.id, 
+        voltages: n.srg2OutputVoltage 
+      }));
+      console.log('🎯 SRG2 nodes:', srg2Nodes);
+    }
 
     if (isUnbalanced) {
       // Répartition S_total -> S_A/S_B/S_C selon la répartition manuelle ou équilibré par défaut
@@ -1345,40 +1359,6 @@ export class ElectricalCalculator {
       console.log('✅ Virtual busbar calculated (phasor-based, per-depart):', virtualBusbar);
     }
 
-    // ---- Métriques nodales par phase (TOUJOURS générées maintenant) ----
-    const nodeMetricsPerPhase = nodes.map(n => {
-      const Vn = V_node.get(n.id) || Vslack;
-      const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
-      const V_phase_V = abs(Vn);
-      
-      // Pour TRI_230V_3F, pas de conversion car travail direct en composé
-      const V_nom_phase = n.connectionType === 'TRI_230V_3F' 
-        ? U_nom_line // 230V composée directement
-        : U_nom_line / (isThreePhase ? Math.sqrt(3) : 1);
-
-      // En mode équilibré polyphasé, toutes les phases ont la même tension
-      const scaleLine = this.getDisplayLineScale(n.connectionType);
-      const V_display = V_phase_V * scaleLine;
-      
-      let { U_base: U_ref } = this.getVoltage(n.connectionType);
-      const sourceNode = nodes.find(s => s.isSource);
-      if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
-      
-      return {
-        nodeId: n.id,
-        voltagesPerPhase: {
-          A: V_display,
-          B: V_display, 
-          C: V_display
-        },
-        voltageDropsPerPhase: {
-          A: U_ref - V_display,
-          B: U_ref - V_display,
-          C: U_ref - V_display
-        }
-      };
-    });
-
     // ---- Node metrics (V_phase and p.u., I_inj per node) ----
     const nodeMetrics = nodes.map(n => {
       const Vn = V_node.get(n.id) || Vslack;
@@ -1471,6 +1451,36 @@ export class ElectricalCalculator {
         }
       }
     }
+
+    // ---- Generate nodeMetricsPerPhase for balanced mode ----
+    const nodeMetricsPerPhase = nodes.map(n => {
+      const Vn = V_node.get(n.id) || Vslack;
+      const { isThreePhase, U_base: U_nom_line } = this.getVoltage(n.connectionType);
+      const V_phase_V = abs(Vn);
+      
+      const scaleLine = this.getDisplayLineScale(n.connectionType);
+      const V_display = V_phase_V * scaleLine;
+      
+      let { U_base: U_ref } = this.getVoltage(n.connectionType);
+      const sourceNode = nodes.find(s => s.isSource);
+      if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+      
+      console.log(`🔍 Balanced mode - Node ${n.id}: ${V_display.toFixed(1)}V (same for all phases)`);
+      
+      return {
+        nodeId: n.id,
+        voltagesPerPhase: {
+          A: V_display,
+          B: V_display, 
+          C: V_display
+        },
+        voltageDropsPerPhase: {
+          A: U_ref - V_display,
+          B: U_ref - V_display,
+          C: U_ref - V_display
+        }
+      };
+    });
 
     console.log('🔄 Creating result object...');
     const result: CalculationResult = {
