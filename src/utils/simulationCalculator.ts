@@ -436,8 +436,16 @@ export class SimulationCalculator extends ElectricalCalculator {
     // Copie des nœuds pour modification itérative
     const workingNodes = JSON.parse(JSON.stringify(project.nodes)) as Node[];
     
+    // Stocker les tensions originales avant toute modification SRG2
+    const originalVoltages = new Map<string, {A: number, B: number, C: number}>();
+    
     while (!converged && iteration < SimulationCalculator.SIM_MAX_ITERATIONS) {
       iteration++;
+      
+      // Nettoyer les modifications SRG2 précédentes pour obtenir les tensions naturelles du réseau
+      if (iteration > 1) {
+        this.cleanupSRG2Markers(workingNodes);
+      }
       
       // Calculer le scénario avec l'état actuel des nœuds
       const result = this.calculateScenario(
@@ -452,6 +460,24 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.desequilibrePourcent,
         project.manualPhaseDistribution
       );
+      
+      // Stocker les tensions originales à la première itération
+      if (iteration === 1) {
+        for (const srg2 of srg2Devices) {
+          const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => 
+            String(nm.nodeId) === String(srg2.nodeId)
+          );
+          
+          if (nodeMetricsPerPhase?.voltagesPerPhase) {
+            originalVoltages.set(srg2.nodeId, {
+              A: nodeMetricsPerPhase.voltagesPerPhase.A,
+              B: nodeMetricsPerPhase.voltagesPerPhase.B,
+              C: nodeMetricsPerPhase.voltagesPerPhase.C
+            });
+            console.log(`📋 Tensions originales stockées pour SRG2 ${srg2.nodeId}:`, originalVoltages.get(srg2.nodeId));
+          }
+        }
+      }
 
       // Appliquer la régulation SRG2 sur chaque dispositif
       const voltageChanges = new Map<string, {A: number, B: number, C: number}>();
@@ -464,73 +490,10 @@ export class SimulationCalculator extends ElectricalCalculator {
         const srg2Node = workingNodes.find(n => n.id === srg2.nodeId);
         if (!srg2Node) continue;
 
-        // Lire les tensions du nœud d'installation du SRG2 depuis les résultats de calcul locaux
-        let nodeVoltages = { A: 230, B: 230, C: 230 }; // Valeurs par défaut
-        let voltagesFound = false;
+        // Utiliser les tensions originales stockées pour éviter que le SRG2 lise ses propres tensions modifiées
+        let nodeVoltages = originalVoltages.get(srg2.nodeId) || { A: 230, B: 230, C: 230 };
         
-        console.log(`🔍 SRG2 ${srg2.nodeId}: recherche des tensions calculées...`);
-        
-        // 1. Chercher dans nodeMetricsPerPhase avec normalisation des IDs
-        const nodeMetricsPerPhase = result.nodeMetricsPerPhase?.find(nm => 
-          String(nm.nodeId) === String(srg2.nodeId)
-        );
-        
-        if (nodeMetricsPerPhase?.voltagesPerPhase) {
-          const volts = nodeMetricsPerPhase.voltagesPerPhase;
-          console.log(`📊 Tensions par phase trouvées:`, volts);
-          
-          // Validation des tensions
-          if (volts.A > 200 && volts.A < 300 && volts.B > 200 && volts.B < 300 && volts.C > 200 && volts.C < 300) {
-            nodeVoltages = { A: volts.A, B: volts.B, C: volts.C };
-            voltagesFound = true;
-            console.log(`✅ SRG2 ${srg2.nodeId}: TENSIONS RÉELLES UTILISÉES - A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
-          } else {
-            console.warn(`⚠️ SRG2 ${srg2.nodeId}: tensions par phase non réalistes:`, volts);
-          }
-        }
-        
-        // 2. Fallback sur nodeMetrics si nodeMetricsPerPhase n'est pas disponible
-        if (!voltagesFound) {
-          const nodeMetrics = result.nodeMetrics?.find(nm => 
-            String(nm.nodeId) === String(srg2.nodeId)
-          );
-          
-          if (nodeMetrics?.V_phase_V !== undefined) {
-            const voltage = nodeMetrics.V_phase_V;
-            console.log(`📊 Tension unique disponible: ${voltage.toFixed(3)}V`);
-            
-            if (voltage > 200 && voltage < 300) {
-              nodeVoltages = { A: voltage, B: voltage, C: voltage };
-              voltagesFound = true;
-              console.log(`✅ SRG2 ${srg2.nodeId}: TENSION UNIQUE UTILISÉE ${voltage.toFixed(1)}V sur les 3 phases`);
-            } else {
-              console.warn(`⚠️ SRG2 ${srg2.nodeId}: tension unique non réaliste: ${voltage}V`);
-            }
-          }
-        }
-        
-        // 3. Dernière tentative avec correspondance approximative des IDs
-        if (!voltagesFound) {
-          console.log(`🚨 SRG2 ${srg2.nodeId}: recherche approximative...`);
-          const partialMatch = result.nodeMetricsPerPhase?.find(np => 
-            String(np.nodeId).includes(String(srg2.nodeId)) || String(srg2.nodeId).includes(String(np.nodeId))
-          );
-          
-          if (partialMatch?.voltagesPerPhase) {
-            const volts = partialMatch.voltagesPerPhase;
-            console.log(`🎯 Correspondance partielle trouvée: ID=${partialMatch.nodeId}, tensions:`, volts);
-            
-            if (volts.A > 200 && volts.A < 300) {
-              nodeVoltages = { A: volts.A, B: volts.B, C: volts.C };
-              voltagesFound = true;
-              console.log(`✅ SRG2 ${srg2.nodeId}: TENSIONS PARTIELLES UTILISÉES - A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
-            }
-          }
-        }
-        
-        if (!voltagesFound) {
-          console.warn(`⚠️ SRG2 ${srg2.nodeId}: utilisation de tensions par défaut (${nodeVoltages.A}V)`);
-        }
+        console.log(`🔍 SRG2 ${srg2.nodeId}: utilisation des tensions originales stockées - A=${nodeVoltages.A.toFixed(1)}V, B=${nodeVoltages.B.toFixed(1)}V, C=${nodeVoltages.C.toFixed(1)}V`);
 
         // Appliquer la régulation SRG2 sur les tensions lues
         const regulationResult = this.applySRG2Regulation(srg2, nodeVoltages, project.voltageSystem);
