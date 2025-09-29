@@ -61,16 +61,11 @@ export class SimulationCalculator extends ElectricalCalculator {
     console.log('🚫 CALIBRATION BLOQUÉE - Mode forcé simplifié sans calibration');
     
     // Retourner un résultat basique sans calibration
-      const result = this.calculateScenarioWithHTConfig(
-      project.nodes,
-      project.cables,
-      project.cableTypes,
+    const result = this.calculateScenarioWithHTConfig(
+      project,
       'FORCÉ',
       project.foisonnementCharges,
       project.foisonnementProductions,
-      project.transformerConfig,
-      project.loadModel,
-      project.desequilibrePourcent,
       project.manualPhaseDistribution
     );
     
@@ -449,16 +444,12 @@ export class SimulationCalculator extends ElectricalCalculator {
       }
       
       // Calculer le scénario avec l'état actuel des nœuds
+      const workingProject = { ...project, nodes: workingNodes };
       const result = this.calculateScenarioWithHTConfig(
-        workingNodes,
-        project.cables,
-        project.cableTypes,
+        workingProject,
         scenario,
         project.foisonnementCharges,
         project.foisonnementProductions,
-        project.transformerConfig,
-        project.loadModel,
-        project.desequilibrePourcent,
         project.manualPhaseDistribution
       );
       
