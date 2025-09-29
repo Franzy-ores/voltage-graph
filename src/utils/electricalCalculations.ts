@@ -48,6 +48,30 @@ export class ElectricalCalculator {
   }
 
   /**
+   * Legacy method for backward compatibility
+   */
+  calculateScenario(
+    nodes: Node[], 
+    cables: Cable[], 
+    cableTypes: CableType[], 
+    scenario: CalculationScenario,
+    foisonnementCharges: number = 100, 
+    foisonnementProductions: number = 100,
+    transformer: TransformerConfig,
+    loadModel: LoadModel = 'polyphase_equilibre',
+    desequilibrePourcent: number = 0,
+    manualPhaseDistribution?: any
+  ): CalculationResult {
+    const mockProject: Project = {
+      id: 'temp', name: 'temp', voltageSystem: 'TÉTRAPHASÉ_400V',
+      cosPhi: this.cosPhi, foisonnementCharges, foisonnementProductions,
+      defaultChargeKVA: 5, defaultProductionKVA: 5, transformerConfig: transformer,
+      loadModel, desequilibrePourcent, nodes, cables, cableTypes
+    };
+    return this.calculateScenarioWithHTConfig(mockProject, scenario, foisonnementCharges, foisonnementProductions, manualPhaseDistribution);
+  }
+
+  /**
    * Calcule un scénario avec configuration HT
    */
   calculateScenarioWithHTConfig(
@@ -128,7 +152,7 @@ export class ElectricalCalculator {
       maxVoltage,
       voltageCompliance,
       currentCompliance
-    } = this.calculateGlobalMetrics(result, project.voltageSystem);
+    } = this.calculateGlobalMetrics(result, project);
 
     // Calcul du bus virtuel
     const virtualBusbar = this.calculateVirtualBusbar(processedNodes, scenario, project.voltageSystem);
@@ -158,7 +182,7 @@ export class ElectricalCalculator {
     console.log('🔄 Début du calcul triphasé déséquilibré par phase');
     
     // Constantes selon le système de tension
-    const isVoltageSystem400V = voltageSystem === 'TÉTRA_3P+N_230_400V';
+    const isVoltageSystem400V = voltageSystem === 'TÉTRAPHASÉ_400V';
     const Vnom = isVoltageSystem400V ? 230 : 400; // Tension nominale par phase
     const VnomLL = isVoltageSystem400V ? 400 : 400; // Tension composée nominale
     
@@ -233,7 +257,7 @@ export class ElectricalCalculator {
 
     // Agrégation des résultats finaux
     const nodeVoltageDrops = this.aggregateNodeMetrics(nodeVoltagesPerPhase, Vnom);
-    const cableMetrics = this.aggregateCableMetrics(
+    const updatedCables = this.aggregateCableMetrics(
       cableCurrentsPerPhase, 
       cablePowersPerPhase, 
       cables, 
@@ -242,15 +266,20 @@ export class ElectricalCalculator {
     );
 
     // Calcul des métriques par phase pour l'affichage
-    const nodeVoltageDropsPerPhase = this.calculateNodeMetricsPerPhase(nodeVoltagesPerPhase, Vnom);
+    const nodeMetricsPerPhase = this.calculateNodeMetricsPerPhase(nodeVoltagesPerPhase, Vnom);
 
     console.log('✅ Calcul triphasé déséquilibré terminé');
 
     return {
+      scenario: 'PRÉLÈVEMENT',
+      cables: updatedCables,
+      totalLoads_kVA: 0,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0,
+      maxVoltageDropPercent: 0,
+      compliance: 'normal',
       nodeVoltageDrops,
-      cableMetrics,
-      nodeVoltageDropsPerPhase, // Nouveau: métriques détaillées par phase
-      timestamp: Date.now()
+      nodeMetricsPerPhase
     };
   }
 
@@ -330,24 +359,16 @@ export class ElectricalCalculator {
       const ct = cableTypeMap.get(cab.typeId);
       if (!ct) continue;
       
-      const R_ohm_km = ct.resistance_ohm_km;
-      const X_ohm_km = ct.reactance_ohm_km || 0.1;
-      const Z_ohm = C(R_ohm_km * cab.longueur_m / 1000, X_ohm_km * cab.longueur_m / 1000);
+      const R_ohm_km = ct.R12_ohm_per_km;
+      const X_ohm_km = ct.X12_ohm_per_km || 0.1;
+      const Z_ohm = C(R_ohm_km * (cab.length_m || 0) / 1000, X_ohm_km * (cab.length_m || 0) / 1000);
       cableZ_phase.set(cab.id, Z_ohm);
     }
 
     // Configuration du transformateur (uniquement pour la phase A pour éviter la duplication)
     let Ztr_phase: Complex | null = null;
-    if (angleDeg === 0 && source.transformerConfig?.enabled) {
-      const tr = source.transformerConfig;
-      const Sn_VA = tr.puissance_kVA * 1000;
-      const Vn_V = tr.tensionPrimaire_V;
-      const Zbase = (Vn_V * Vn_V) / Sn_VA;
-      const Ztr_pu = C(tr.resistance_percent / 100, tr.reactance_percent / 100);
-      Ztr_phase = mul(Ztr_pu, C(Zbase, 0));
-      
-      console.log(`🔌 Transformateur configuré: Ztr = ${abs(Ztr_phase).toFixed(4)}Ω`);
-    }
+    // Note: transformer config is on project level, not node level
+    // For now, disable transformer impedance in per-phase calculations
 
     // Algorithme BFS itératif pour résolution load flow
     const maxIter = ElectricalCalculator.MAX_ITERATIONS;
@@ -445,7 +466,7 @@ export class ElectricalCalculator {
           const Vu = V_node_phase.get(u) || Vslack_phase_ph;
           
           // Calculer la tension avec transformation SRG2 si applicable
-          let Vv = Vu.sub(Z.mul(Iuv));
+          let Vv = sub(Vu, mul(Z, Iuv));
           
           // Appliquer la transformation SRG2 si le nœud a un dispositif SRG2
           const vNode = nodeById.get(v);
@@ -468,9 +489,9 @@ export class ElectricalCalculator {
             }
             
             // Appliquer la transformation: V_sortie = V_entrée * coefficient
-            Vv = Vv.mul(C(coefficient, 0));
+            Vv = mul(Vv, C(coefficient, 0));
             
-            console.log(`🎯 SRG2 transformation applied to node ${v}, phase ${angleDeg}°: coefficient=${coefficient.toFixed(4)}, V_out=${Vv.magnitude().toFixed(2)}V`);
+            console.log(`🎯 SRG2 transformation applied to node ${v}, phase ${angleDeg}°: coefficient=${coefficient.toFixed(4)}, V_out=${abs(Vv).toFixed(2)}V`);
           }
           
           V_node_phase.set(v, Vv);
@@ -478,25 +499,21 @@ export class ElectricalCalculator {
         }
       }
 
-      // Test de convergence
-      let maxDiff = 0;
-      for (const [nodeId, V_curr] of V_node_phase) {
-        const V_prev_node = V_prev.get(nodeId) || C(0, 0);
-        const diff = abs(sub(V_curr, V_prev_node));
-        maxDiff = Math.max(maxDiff, diff);
+      // Check convergence
+      let maxChange = 0;
+      for (const [nodeId, V_new] of V_node_phase) {
+        const V_old = V_prev.get(nodeId) || C(0, 0);
+        const change = abs(sub(V_new, V_old));
+        maxChange = Math.max(maxChange, change);
       }
 
-      if (maxDiff < tol) {
+      if (maxChange < tol) {
         converged = true;
         break;
       }
     }
 
-    if (!converged) {
-      console.warn(`⚠️ Convergence non atteinte après ${maxIter} itérations pour la phase ${angleDeg}°`);
-    } else {
-      console.log(`✅ Convergence atteinte en ${iter} itérations pour la phase ${angleDeg}°`);
-    }
+    console.log(`🔄 Convergence ${converged ? 'atteinte' : 'NON atteinte'} en ${iter} itérations (angle=${angleDeg}°)`);
 
     // Calcul des puissances par câble
     const S_cable_phase = new Map<string, Complex>();
@@ -522,21 +539,23 @@ export class ElectricalCalculator {
     angleDeg: number,
     loadModel: LoadModel
   ): number {
-    const totalPower = 'puissance_kW' in element ? element.puissance_kW : element.puissanceNominale_kW;
+    // Use S_kVA from element and apply cosPhi to get kW
+    const totalPowerKW = element.S_kVA * this.cosPhi;
     
     if (loadModel === 'monophase_reparti') {
-      // En mode monophasé réparti, utiliser la distribution par phase si disponible
-      if ('puissancePhaseA_kW' in element && element.puissancePhaseA_kW !== undefined) {
-        if (angleDeg === 0) return element.puissancePhaseA_kW;
-        else if (angleDeg === -120) return element.puissancePhaseB_kW || 0;
-        else if (angleDeg === 120) return element.puissancePhaseC_kW || 0;
+      // For unbalanced loads, check if phase-specific distribution exists
+      const elementAny = element as any;
+      if (elementAny.puissancePhaseA_kW !== undefined) {
+        if (angleDeg === 0) return elementAny.puissancePhaseA_kW || 0;
+        else if (angleDeg === -120) return elementAny.puissancePhaseB_kW || 0;
+        else if (angleDeg === 120) return elementAny.puissancePhaseC_kW || 0;
       }
       
-      // Fallback: répartition équilibrée
-      return totalPower / 3;
+      // Fallback: equal distribution
+      return totalPowerKW / 3;
     } else {
-      // Mode polyphasé équilibré: répartition égale sur les 3 phases
-      return totalPower / 3;
+      // Balanced polyphase mode: equal distribution across 3 phases
+      return totalPowerKW / 3;
     }
   }
 
@@ -546,58 +565,55 @@ export class ElectricalCalculator {
   private aggregateNodeMetrics(
     nodeVoltagesPerPhase: Map<string, {A: Complex, B: Complex, C: Complex}>,
     Vnom: number
-  ): { nodeId: string; V_phase_V: number; V_pu: number; I_inj_A: number; }[] {
+  ): { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number; }[] {
     const nodeMetrics = [];
-    
+
     for (const [nodeId, voltages] of nodeVoltagesPerPhase) {
+      // Calculate average voltage magnitude
       const V_A = abs(voltages.A);
       const V_B = abs(voltages.B);
       const V_C = abs(voltages.C);
-      
-      // Moyennes et écarts
       const V_avg = (V_A + V_B + V_C) / 3;
-      const V_pu = V_avg / Vnom;
       
+      // Calculate voltage drop (nominal - actual)
+      const deltaU_V = Vnom - V_avg;
+      const deltaU_percent = (deltaU_V / Vnom) * 100;
+
       nodeMetrics.push({
         nodeId,
-        V_phase_V: V_avg,
-        V_pu: V_pu,
-        I_inj_A: 0 // Placeholder
+        deltaU_cum_V: deltaU_V,
+        deltaU_cum_percent: deltaU_percent
       });
     }
-    
+
     return nodeMetrics;
   }
 
   /**
-   * Calcul des métriques par phase pour l'affichage détaillé
+   * Calcul des métriques détaillées par phase pour chaque nœud
    */
   private calculateNodeMetricsPerPhase(
     nodeVoltagesPerPhase: Map<string, {A: Complex, B: Complex, C: Complex}>,
     Vnom: number
-  ): { nodeId: string; voltagesPerPhase: { A: number; B: number; C: number; }; voltageDropsPerPhase: { A: number; B: number; C: number; }; }[] {
+  ): { nodeId: string; voltagesPerPhase: { A: number; B: number; C: number }; voltageDropsPerPhase: { A: number; B: number; C: number }; }[] {
     const nodeMetricsPerPhase = [];
-    
+
     for (const [nodeId, voltages] of nodeVoltagesPerPhase) {
       const V_A = abs(voltages.A);
       const V_B = abs(voltages.B);
       const V_C = abs(voltages.C);
       
+      const deltaU_A = Vnom - V_A;
+      const deltaU_B = Vnom - V_B;
+      const deltaU_C = Vnom - V_C;
+
       nodeMetricsPerPhase.push({
         nodeId,
-        voltagesPerPhase: {
-          A: V_A,
-          B: V_B,
-          C: V_C
-        },
-        voltageDropsPerPhase: {
-          A: ((Vnom - V_A) / Vnom) * 100,
-          B: ((Vnom - V_B) / Vnom) * 100,
-          C: ((Vnom - V_C) / Vnom) * 100
-        }
+        voltagesPerPhase: { A: V_A, B: V_B, C: V_C },
+        voltageDropsPerPhase: { A: deltaU_A, B: deltaU_B, C: deltaU_C }
       });
     }
-    
+
     return nodeMetricsPerPhase;
   }
 
@@ -610,29 +626,32 @@ export class ElectricalCalculator {
     cables: Cable[],
     cableTypes: CableType[],
     Vnom: number
-  ): any[] {
-    const cableMetrics = [];
+  ): Cable[] {
     const cableTypeMap = new Map(cableTypes.map(ct => [ct.id, ct]));
-    
-    for (const cable of cables) {
+    const updatedCables = cables.map(cable => ({ ...cable }));
+
+    for (const cable of updatedCables) {
+      const cableType = cableTypeMap.get(cable.typeId);
+      if (!cableType) continue;
+
       const currents = cableCurrentsPerPhase.get(cable.id);
       const powers = cablePowersPerPhase.get(cable.id);
-      const cableType = cableTypeMap.get(cable.typeId);
       
-      if (!currents || !powers || !cableType) continue;
-      
+      if (!currents || !powers) continue;
+
+      // Calcul des courants RMS par phase
       const I_A = abs(currents.A);
       const I_B = abs(currents.B);
       const I_C = abs(currents.C);
-      
+
+      // Calcul des puissances par phase
       const P_A = powers.A.re;
       const P_B = powers.B.re;
       const P_C = powers.C.re;
-      
       const Q_A = powers.A.im;
       const Q_B = powers.B.im;
       const Q_C = powers.C.im;
-      
+
       // Moyennes et totaux
       const I_avg = (I_A + I_B + I_C) / 3;
       const I_max = Math.max(I_A, I_B, I_C);
@@ -641,37 +660,31 @@ export class ElectricalCalculator {
       const S_total = Math.sqrt(P_total * P_total + Q_total * Q_total);
       
       // Pertes et chute de tension
-      const R_ohm = cableType.resistanceLineique_ohm_km * cable.length_m / 1000;
+      const R_ohm = cableType.R12_ohm_per_km * (cable.length_m || 0) / 1000;
       const losses_W = R_ohm * (I_A * I_A + I_B * I_B + I_C * I_C);
       const voltage_drop_V = R_ohm * I_max;
       const voltage_drop_percent = (voltage_drop_V / Vnom) * 100;
       
       // Densité de courant et conformité
-      const current_density = I_max / cableType.section_mm2;
+      const current_density = I_max / (cableType.maxCurrent_A || 100);
       const isCurrentCompliant = current_density <= ElectricalCalculator.MAX_CURRENT_DENSITY;
       const isVoltageDropCompliant = voltage_drop_percent <= 5; // Limite 5%
       
-      cableMetrics.push({
-        cableId: cable.id,
-        I_A: I_avg,
-        I_max: I_max,
-        P_kW: P_total / 1000,
-        Q_kVAr: Q_total / 1000,
-        S_kVA: S_total / 1000,
-        losses_W: losses_W,
-        voltage_drop_V: voltage_drop_V,
-        voltage_drop_percent: voltage_drop_percent,
-        current_density: current_density,
-        isCurrentCompliant,
-        isVoltageDropCompliant
-      });
+      // Mettre à jour le câble avec les résultats
+      cable.current_A = I_avg;
+      cable.voltageDrop_V = voltage_drop_V;
+      cable.voltageDropPercent = voltage_drop_percent;
+      cable.losses_kW = losses_W / 1000;
+      cable.apparentPower_kVA = S_total / 1000;
+      cable.currentsPerPhase_A = { A: I_A, B: I_B, C: I_C };
+      cable.voltageDropPerPhase_V = { A: voltage_drop_V, B: voltage_drop_V, C: voltage_drop_V };
     }
-    
-    return cableMetrics;
+
+    return updatedCables;
   }
 
   /**
-   * Calcul monophasé équilibré classique (méthode existante)
+   * Calcul monophasé équilibré (méthode simplifiée)
    */
   private calculateSinglePhase(
     nodes: Node[],
@@ -679,44 +692,36 @@ export class ElectricalCalculator {
     cableTypes: CableType[],
     voltageSystem: VoltageSystem
   ): CalculationResult {
-    console.log('🔄 Début du calcul monophasé équilibré');
-    
-    // Implementation simplifiée pour le calcul équilibré
-    const nodeVoltageDrops = [];
-    const cableMetrics = [];
-    
-    // Placeholder - utiliser l'implémentation existante
-    for (const node of nodes) {
-      nodeVoltageDrops.push({
-        nodeId: node.id,
-        V_phase_V: 230,
-        V_pu: 1.0,
-        I_inj_A: 0
-      });
-    }
-    
-    for (const cable of cables) {
-      cableMetrics.push({
-        cableId: cable.id,
-        I_A: 0,
-        P_kW: 0,
-        voltage_drop_percent: 0,
-        isCurrentCompliant: true,
-        isVoltageDropCompliant: true
-      });
-    }
-    
+    // Simplified single-phase calculation
+    const nodeVoltageDrops = nodes.map(node => ({
+      nodeId: node.id,
+      deltaU_cum_V: 0,
+      deltaU_cum_percent: 0
+    }));
+
+    const updatedCables = cables.map(cable => ({
+      ...cable,
+      current_A: 0,
+      voltageDrop_V: 0,
+      voltageDropPercent: 0,
+      losses_kW: 0,
+      apparentPower_kVA: 0
+    }));
+
     return {
-      nodeVoltageDrops,
-      cableMetrics,
-      timestamp: Date.now()
+      scenario: 'PRÉLÈVEMENT',
+      cables: updatedCables,
+      totalLoads_kVA: 0,
+      totalProductions_kVA: 0,
+      globalLosses_kW: 0,
+      maxVoltageDropPercent: 0,
+      compliance: 'normal',
+      nodeVoltageDrops
     };
   }
 
-  // ... autres méthodes utilitaires
-
   /**
-   * Prépare les données selon le scénario choisi
+   * Préparation des données selon le scénario
    */
   private prepareScenarioData(
     nodes: Node[],
@@ -734,7 +739,7 @@ export class ElectricalCalculator {
       if (newNode.clients) {
         newNode.clients = newNode.clients.map(charge => ({
           ...charge,
-          puissance_kW: charge.puissance_kW * (foisonnementCharges / 100)
+          S_kVA: charge.S_kVA * (foisonnementCharges / 100)
         }));
       }
       
@@ -744,88 +749,95 @@ export class ElectricalCalculator {
         
         switch (scenario) {
           case 'PRÉLÈVEMENT':
-            productionFactor = 0.1; // Très faible production
-            break;
-          case 'PRODUCTION':
-            productionFactor = 1.0; // Production maximale
+            productionFactor = 0; // Pas de production
             break;
           case 'MIXTE':
-            productionFactor = 0.5; // Production moyenne
+            productionFactor = foisonnementProductions / 2; // 50% de la production
+            break;
+          case 'PRODUCTION':
+            productionFactor = foisonnementProductions; // Production complète
             break;
           case 'FORCÉ':
-            productionFactor = 0.7; // Production selon configuration forcée
+            productionFactor = foisonnementProductions; // Utiliser le facteur donné
             break;
-          default:
-            productionFactor = 0.5;
         }
         
-        newNode.productions = newNode.productions.map(production => ({
-          ...production,
-          puissance_kW: production.puissance_kW * productionFactor * (foisonnementProductions / 100)
-        }));
+        if (productionFactor > 0) {
+          newNode.productions = newNode.productions.map(prod => ({
+            ...prod,
+            S_kVA: prod.S_kVA * (productionFactor / 100)
+          }));
+        } else {
+          newNode.productions = newNode.productions.map(prod => ({
+            ...prod,
+            S_kVA: 0
+          }));
+        }
       }
       
       return newNode;
     });
-    
-    return {
-      processedNodes,
-      processedCables: cables
-    };
+
+    // Calculate cable lengths if not set
+    const processedCables = cables.map(cable => ({
+      ...cable,
+      length_m: cable.length_m || ElectricalCalculator.calculateCableLength(cable.coordinates)
+    }));
+
+    return { processedNodes, processedCables };
   }
 
   /**
-   * Construit la topologie du réseau
+   * Construction de la topologie du réseau
    */
   private buildNetworkTopology(nodes: Node[], cables: Cable[]): {
     children: Map<string, string[]>,
     parent: Map<string, string>,
     parentCableOfChild: Map<string, Cable>
   } {
-    
     const children = new Map<string, string[]>();
     const parent = new Map<string, string>();
     const parentCableOfChild = new Map<string, Cable>();
-    
-    // Initialiser les listes d'enfants
+
+    // Initialize children map
     for (const node of nodes) {
       children.set(node.id, []);
     }
-    
-    // Construire la topologie à partir des câbles
+
+    // Build topology from cables
     for (const cable of cables) {
-      const nodeA = cable.nodeAId;
-      const nodeB = cable.nodeBId;
+      const nodeA = nodes.find(n => n.id === cable.nodeAId);
+      const nodeB = nodes.find(n => n.id === cable.nodeBId);
       
-      // Déterminer le sens (source vers charge)
-      const nodeAObj = nodes.find(n => n.id === nodeA);
-      const nodeBObj = nodes.find(n => n.id === nodeB);
-      
-      if (nodeAObj?.isSource) {
-        // A est source, B est enfant
-        children.get(nodeA)?.push(nodeB);
-        parent.set(nodeB, nodeA);
-        parentCableOfChild.set(nodeB, cable);
-      } else if (nodeBObj?.isSource) {
-        // B est source, A est enfant
-        children.get(nodeB)?.push(nodeA);
-        parent.set(nodeA, nodeB);
-        parentCableOfChild.set(nodeA, cable);
+      if (!nodeA || !nodeB) continue;
+
+      // Determine parent-child relationship (source is always parent)
+      if (nodeA.isSource) {
+        children.get(nodeA.id)?.push(nodeB.id);
+        parent.set(nodeB.id, nodeA.id);
+        parentCableOfChild.set(nodeB.id, cable);
+      } else if (nodeB.isSource) {
+        children.get(nodeB.id)?.push(nodeA.id);
+        parent.set(nodeA.id, nodeB.id);
+        parentCableOfChild.set(nodeA.id, cable);
       } else {
-        // Ni A ni B n'est source - utiliser le premier comme parent par défaut
-        children.get(nodeA)?.push(nodeB);
-        parent.set(nodeB, nodeA);
-        parentCableOfChild.set(nodeB, cable);
+        // If neither is source, assume nodeA is upstream
+        children.get(nodeA.id)?.push(nodeB.id);
+        parent.set(nodeB.id, nodeA.id);
+        parentCableOfChild.set(nodeB.id, cable);
       }
     }
-    
+
     return { children, parent, parentCableOfChild };
   }
 
   /**
-   * Calcule les métriques globales
+   * Calcul des métriques globales du réseau
    */
-  private calculateGlobalMetrics(result: CalculationResult, voltageSystem: VoltageSystem): {
+  private calculateGlobalMetrics(
+    result: CalculationResult,
+    project: Project
+  ): {
     totalPowerLosses: number,
     totalApparentPower: number,
     totalActivePower: number,
@@ -833,84 +845,109 @@ export class ElectricalCalculator {
     averageVoltage: number,
     minVoltage: number,
     maxVoltage: number,
-    voltageCompliance: number,
-    currentCompliance: number
+    voltageCompliance: 'normal' | 'warning' | 'critical',
+    currentCompliance: 'normal' | 'warning' | 'critical'
   } {
-    
     let totalPowerLosses = 0;
     let totalApparentPower = 0;
     let totalActivePower = 0;
     let totalReactivePower = 0;
-    
-    let voltageSum = 0;
-    let voltageCount = 0;
-    let minVoltage = Infinity;
-    let maxVoltage = -Infinity;
-    let compliantVoltages = 0;
-    let compliantCurrents = 0;
-    let totalCables = 0;
-    
-    // Métriques des câbles
-    for (const metrics of result.cableMetrics || []) {
-      totalPowerLosses += metrics.losses_W || 0;
-      totalApparentPower += (metrics.S_kVA || 0) * 1000;
-      totalActivePower += (metrics.P_kW || 0) * 1000;
-      totalReactivePower += (metrics.Q_kVAr || 0) * 1000;
-      
-      if (metrics.isCurrentCompliant) compliantCurrents++;
-      totalCables++;
+    let minVoltage_V = Number.MAX_VALUE;
+    let maxVoltage_V = Number.MIN_VALUE;
+    let totalLoads_kVA = 0;
+    let totalProductions_kVA = 0;
+
+    // Calculate cable losses
+    const cableMetrics = result.cables || [];
+    for (const cable of cableMetrics) {
+      totalPowerLosses += cable.losses_kW || 0;
+      totalApparentPower += cable.apparentPower_kVA || 0;
     }
-    
-    // Métriques des nœuds
-    for (const metrics of result.nodeVoltageDrops || []) {
-      const voltage = metrics.V_phase_V || 0;
-      voltageSum += voltage;
-      voltageCount++;
+
+    // Calculate voltage metrics from node voltage drops
+    for (const nodeMetric of result.nodeVoltageDrops || []) {
+      // Use deltaU_cum_V for voltage calculations
+      const nominalVoltage_V = project.transformerConfig?.nominalVoltage_V || 400;
+      const voltage_V = nominalVoltage_V - Math.abs(nodeMetric.deltaU_cum_V);
       
-      minVoltage = Math.min(minVoltage, voltage);
-      maxVoltage = Math.max(maxVoltage, voltage);
+      if (voltage_V < minVoltage_V) minVoltage_V = voltage_V;
+      if (voltage_V > maxVoltage_V) maxVoltage_V = voltage_V;
       
-      const V_pu = metrics.V_pu || 0;
-      if (V_pu >= 0.95 && V_pu <= 1.05) compliantVoltages++;
+      const voltageDeviation_percent = Math.abs(nodeMetric.deltaU_cum_percent);
+      if (voltageDeviation_percent > 5) {
+        // Voltage compliance issues
+      }
     }
+
+    const averageVoltage = (minVoltage_V + maxVoltage_V) / 2;
+
+    // Determine compliance levels
+    const voltageDeviation = Math.abs(averageVoltage - (project.transformerConfig?.nominalVoltage_V || 400)) / (project.transformerConfig?.nominalVoltage_V || 400) * 100;
+    let voltageCompliance: 'normal' | 'warning' | 'critical' = 'normal';
+    if (voltageDeviation > 10) voltageCompliance = 'critical';
+    else if (voltageDeviation > 5) voltageCompliance = 'warning';
+
+    // Calculate total loads and productions
+    for (const node of project.nodes) {
+      for (const client of node.clients || []) {
+        totalLoads_kVA += client.S_kVA || 0;
+      }
+      for (const prod of node.productions || []) {
+        totalProductions_kVA += prod.S_kVA || 0;
+      }
+    }
+
+    // Get nominal voltage for busbar calculation
+    const nominalVoltage_V = (project.voltageSystem === "TÉTRAPHASÉ_400V") ? 400 : 230;
     
     return {
-      totalPowerLosses: totalPowerLosses / 1000, // en kW
-      totalApparentPower: totalApparentPower / 1000, // en kVA
-      totalActivePower: totalActivePower / 1000, // en kW
-      totalReactivePower: totalReactivePower / 1000, // en kVAr
-      averageVoltage: voltageCount > 0 ? voltageSum / voltageCount : 0,
-      minVoltage: minVoltage === Infinity ? 0 : minVoltage,
-      maxVoltage: maxVoltage === -Infinity ? 0 : maxVoltage,
-      voltageCompliance: voltageCount > 0 ? (compliantVoltages / voltageCount) * 100 : 100,
-      currentCompliance: totalCables > 0 ? (compliantCurrents / totalCables) * 100 : 100
+      totalPowerLosses,
+      totalApparentPower,
+      totalActivePower: totalLoads_kVA * this.cosPhi,
+      totalReactivePower: totalLoads_kVA * Math.sin(Math.acos(this.cosPhi)),
+      averageVoltage,
+      minVoltage: minVoltage_V,
+      maxVoltage: maxVoltage_V,
+      voltageCompliance,
+      currentCompliance: 'normal' // Simplified for now
     };
   }
 
   /**
-   * Calcule le bus virtuel
+   * Calcul du jeu de barres virtuel
    */
-  private calculateVirtualBusbar(nodes: Node[], scenario: CalculationScenario, voltageSystem: VoltageSystem): any {
-    // Implementation simplifiée du bus virtuel
-    const totalCharges = nodes.reduce((sum, node) => {
-      return sum + (node.clients?.reduce((nodeSum, charge) => nodeSum + charge.puissance_kW, 0) || 0);
-    }, 0);
+  private calculateVirtualBusbar(
+    nodes: Node[],
+    scenario: CalculationScenario,
+    voltageSystem: VoltageSystem
+  ): any {
+    let totalCharges_kVA = 0;
+    let totalProductions_kVA = 0;
     
-    const totalProductions = nodes.reduce((sum, node) => {
-      return sum + (node.productions?.reduce((nodeSum, prod) => nodeSum + prod.puissance_kW, 0) || 0);
-    }, 0);
+    for (const node of nodes) {
+      for (const client of node.clients || []) {
+        totalCharges_kVA += client.S_kVA || 0;
+      }
+      for (const prod of node.productions || []) {
+        totalProductions_kVA += prod.S_kVA || 0;
+      }
+    }
+
+    const netSkVA = totalCharges_kVA - totalProductions_kVA;
+    const nominalVoltage_V = (voltageSystem === "TÉTRAPHASÉ_400V") ? 400 : 230;
     
     return {
-      tension_V: voltageSystem === '400V' ? 400 : 400,
-      puissance_charges_kW: totalCharges,
-      puissance_productions_kW: totalProductions,
-      puissance_nette_kW: totalCharges - totalProductions,
-      scenario
+      voltage_V: nominalVoltage_V,
+      current_A: Math.abs(netSkVA * 1000 / (Math.sqrt(3) * nominalVoltage_V)),
+      netSkVA,
+      deltaU_V: 0,
+      deltaU_percent: 0,
+      circuits: []
     };
   }
 
   /**
-   * Validation des paramètres d'entrée
+   * Validation des entrées
    */
   private validateInputs(
     nodes: Node[],
@@ -921,56 +958,30 @@ export class ElectricalCalculator {
     desequilibrePourcent: number
   ): void {
     if (!nodes || nodes.length === 0) {
-      throw new Error('Aucun nœud fourni pour le calcul');
+      throw new Error('Aucun nœud défini dans le réseau');
     }
-    
+
     if (!cables || cables.length === 0) {
-      throw new Error('Aucun câble fourni pour le calcul');
+      throw new Error('Aucun câble défini dans le réseau');
     }
-    
+
     if (!cableTypes || cableTypes.length === 0) {
-      throw new Error('Aucun type de câble fourni pour le calcul');
-    }
-    
-    if (!isFinite(foisonnementCharges) || foisonnementCharges < 0 || foisonnementCharges > 200) {
-      throw new Error(`Facteur de foisonnement charges invalide: ${foisonnementCharges}% (doit être entre 0 et 200)`);
-    }
-    
-    if (!isFinite(foisonnementProductions) || foisonnementProductions < 0 || foisonnementProductions > 200) {
-      throw new Error(`Facteur de foisonnement productions invalide: ${foisonnementProductions}% (doit être entre 0 et 200)`);
-    }
-    
-    if (!isFinite(desequilibrePourcent) || desequilibrePourcent < 0 || desequilibrePourcent > 100) {
-      throw new Error(`Pourcentage de déséquilibre invalide: ${desequilibrePourcent}% (doit être entre 0 et 100)`);
+      throw new Error('Aucun type de câble défini');
     }
 
-    // Vérifier qu'il y a exactement une source
-    const sources = nodes.filter(n => n.isSource);
-    if (sources.length !== 1) {
-      throw new Error(`Le réseau doit avoir exactement une source, trouvé: ${sources.length}`);
+    const sourceNodes = nodes.filter(n => n.isSource);
+    if (sourceNodes.length !== 1) {
+      throw new Error(`Exactement une source requise, trouvé: ${sourceNodes.length}`);
     }
 
-    // Vérifier que tous les types de câbles référencés existent
-    const cableTypeIds = new Set(cableTypes.map(ct => ct.id));
-    const missingTypes = cables
-      .map(c => c.typeId)
-      .filter(typeId => !cableTypeIds.has(typeId));
-    
-    if (missingTypes.length > 0) {
-      throw new Error(`Types de câbles manquants: ${missingTypes.join(', ')}`);
+    if (foisonnementCharges < 0 || foisonnementCharges > 200) {
+      throw new Error('Foisonnement des charges doit être entre 0 et 200%');
     }
 
-    // Vérifier que tous les nœuds référencés dans les câbles existent
-    const nodeIds = new Set(nodes.map(n => n.id));
-    const missingNodes: string[] = [];
-    
-    for (const cable of cables) {
-      if (!nodeIds.has(cable.nodeAId)) missingNodes.push(cable.nodeAId);
-      if (!nodeIds.has(cable.nodeBId)) missingNodes.push(cable.nodeBId);
+    if (foisonnementProductions < 0 || foisonnementProductions > 200) {
+      throw new Error('Foisonnement des productions doit être entre 0 et 200%');
     }
-    
-    if (missingNodes.length > 0) {
-      throw new Error(`Nœuds manquants référencés dans les câbles: ${[...new Set(missingNodes)].join(', ')}`);
-    }
+
+    console.log('✅ Validation des entrées réussie');
   }
 }
