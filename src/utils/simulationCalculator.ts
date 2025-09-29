@@ -360,7 +360,8 @@ export class SimulationCalculator extends ElectricalCalculator {
       equipment
     );
 
-    // Nettoyage des marqueurs SRG2 après calcul
+    console.log('🎯 SRG2 simulation terminée - nettoyage des marqueurs maintenant');
+    // Nettoyage des marqueurs SRG2 après calcul final et utilisation des résultats
     this.cleanupSRG2Markers(project.nodes);
 
     return {
@@ -534,8 +535,11 @@ export class SimulationCalculator extends ElectricalCalculator {
       project.manualPhaseDistribution
     );
 
-    // Nettoyage des marqueurs SRG2 sur les nœuds de travail
-    this.cleanupSRG2Markers(workingNodes);
+    console.log('🎯 SRG2 calcul final terminé - marqueurs SRG2 conservés pour nodeMetricsPerPhase');
+    
+    // IMPORTANT: Ne pas nettoyer les marqueurs SRG2 ici !
+    // Le nettoyage se fait dans calculateWithSimulation() après avoir utilisé les résultats
+    // this.cleanupSRG2Markers(workingNodes); ← Déplacé
 
     return {
       ...finalResult,
