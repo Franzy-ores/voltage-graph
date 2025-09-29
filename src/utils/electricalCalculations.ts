@@ -431,7 +431,7 @@ export class ElectricalCalculator {
       }
     }
 
-    // Appeler la méthode standard avec les nœuds modifiés
+      // Appeler la méthode standard avec les nœuds modifiés
     return this.calculateScenario(
       modifiedNodes,
       project.cables,
@@ -648,7 +648,7 @@ export class ElectricalCalculator {
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
     // ---- Détection des équipements SRG2 actifs ----
-    const hasSRG2Active = nodes.some(n => n.isSRG2Source === true);
+    const hasSRG2Active = nodes.some(n => n.hasSRG2Device === true);
     
     // ---- Mode déséquilibré (monophasé réparti) OU SRG2 actif -> calcul triphasé par phase ----
     const isUnbalanced = loadModel === 'monophase_reparti' || hasSRG2Active;
@@ -656,10 +656,10 @@ export class ElectricalCalculator {
     console.log(`🔍 Mode calculation decision: loadModel=${loadModel}, hasSRG2Active=${hasSRG2Active}, isUnbalanced=${isUnbalanced}`);
     
     if (hasSRG2Active) {
-      console.log('🎯 SRG2 devices detected - forcing per-phase calculation for proper voltage propagation');
-      const srg2Nodes = nodes.filter(n => n.isSRG2Source).map(n => ({ 
+      console.log('🎯 SRG2 devices detected - forcing per-phase calculation for proper voltage regulation');
+      const srg2Nodes = nodes.filter(n => n.hasSRG2Device).map(n => ({ 
         id: n.id, 
-        voltages: n.srg2OutputVoltage 
+        coefficients: n.srg2RegulationCoefficients 
       }));
       console.log('🎯 SRG2 nodes:', srg2Nodes);
     }
@@ -810,28 +810,34 @@ export class ElectricalCalculator {
               const Z = cableZ_phase.get(cab.id) || C(0, 0);
               const Iuv = I_branch_phase.get(cab.id) || C(0, 0);
               const Vu = V_node_phase.get(u) || Vslack_phase_ph;
+              // Calculer tension selon Kirchhoff : V_v = V_u - Z * I_uv
+              const Vv = sub(Vu, mul(Z, Iuv));
               
-              // Vérifier si le nœud de destination est une source SRG2
+              // Vérifier si le nœud de destination a un dispositif SRG2
               const vNode = nodeById.get(v);
-              if (vNode?.isSRG2Source && vNode.srg2OutputVoltage) {
-                // Pour les nœuds SRG2 en mode déséquilibré, utiliser la tension de la phase correspondante
-                let Vv_srg2: Complex;
+              if (vNode?.hasSRG2Device && vNode.srg2RegulationCoefficients) {
+                // Appliquer les coefficients de régulation SRG2 aux tensions calculées
+                let regulationCoeff = 0;
                 if (angleDeg === 0) {
                   // Phase A
-                  Vv_srg2 = C(vNode.srg2OutputVoltage.A, 0);
+                  regulationCoeff = vNode.srg2RegulationCoefficients.A;
                 } else if (angleDeg === -120) {
                   // Phase B
-                  Vv_srg2 = C(vNode.srg2OutputVoltage.B, 0);
+                  regulationCoeff = vNode.srg2RegulationCoefficients.B;
                 } else if (angleDeg === 120) {
                   // Phase C
-                  Vv_srg2 = C(vNode.srg2OutputVoltage.C, 0);
+                  regulationCoeff = vNode.srg2RegulationCoefficients.C;
                 } else {
                   // Fallback: utiliser la moyenne
-                  const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
-                  Vv_srg2 = C(avgVoltage, 0);
+                  const avgCoeff = (vNode.srg2RegulationCoefficients.A + vNode.srg2RegulationCoefficients.B + vNode.srg2RegulationCoefficients.C) / 3;
+                  regulationCoeff = avgCoeff;
                 }
-                V_node_phase.set(v, Vv_srg2);
-                console.log(`🎯 SRG2 source locale ${v} (phase ${angleDeg}°): tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
+                
+                // Appliquer le coefficient: V_regulated = V_calculated × (1 + coefficient/100)
+                const regulationFactor = 1 + (regulationCoeff / 100);
+                const Vv_regulated = scale(Vv, regulationFactor);
+                V_node_phase.set(v, Vv_regulated);
+                console.log(`🎯 SRG2 régulation nœud ${v} (phase ${angleDeg}°): coeff=${regulationCoeff.toFixed(1)}%, V=${abs(Vv).toFixed(1)}V -> ${abs(Vv_regulated).toFixed(1)}V`);
               } else if (loadModel === "monophase_reparti" && vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
                 // En mode monophasé déséquilibré, utiliser les tensions par phase
                 let Vv_target: Complex;

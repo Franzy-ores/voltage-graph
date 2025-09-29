@@ -499,20 +499,24 @@ export class SimulationCalculator extends ElectricalCalculator {
         // Appliquer la régulation SRG2 sur les tensions lues
         const regulationResult = this.applySRG2Regulation(srg2, nodeVoltages, project.voltageSystem);
         
-        // Stocker les changements de tension pour ce nœud
-        if (regulationResult.tensionSortie) {
-          voltageChanges.set(srg2.nodeId, regulationResult.tensionSortie);
+        // Stocker les coefficients de régulation pour ce nœud
+        if (regulationResult.coefficientsAppliques) {
+          voltageChanges.set(srg2.nodeId, regulationResult.coefficientsAppliques);
           
           // Mettre à jour les informations du SRG2 pour l'affichage
           srg2.tensionEntree = regulationResult.tensionEntree;
           srg2.etatCommutateur = regulationResult.etatCommutateur;
           srg2.coefficientsAppliques = regulationResult.coefficientsAppliques;
-          srg2.tensionSortie = regulationResult.tensionSortie;
         }
       }
       
-      // Appliquer les modifications de tension aux nœuds en aval de chaque SRG2
-      this.applyVoltageChangesToDownstreamNodes(workingNodes, project.cables, voltageChanges, project.loadModel);
+      // Appliquer les coefficients de régulation SRG2 aux nœuds correspondants
+      for (const srg2 of srg2Devices) {
+        const coefficients = voltageChanges.get(srg2.nodeId);
+        if (coefficients) {
+          this.applySRG2Coefficients(workingNodes, srg2, coefficients);
+        }
+      }
       
       // Vérifier la convergence
       converged = this.checkSRG2Convergence(voltageChanges, previousVoltages);
@@ -716,77 +720,29 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Applique les changements de tension aux nœuds en aval
-   * PROTECTION CONTRE MUTATION: utilise structuredClone pour éviter la corruption des IDs
+   * Applique les coefficients de régulation SRG2 aux nœuds correspondants
+   * Nouvelle approche transformer: les coefficients modifient les tensions calculées
    */
-  private applyVoltageChangesToDownstreamNodes(
+  private applySRG2Coefficients(
     nodes: Node[],
-    cables: Cable[],
-    voltageChanges: Map<string, {A: number, B: number, C: number}>,
-    loadModel: string = 'polyphase_equilibre'
+    srg2Device: SRG2Config,
+    coefficients: { A: number; B: number; C: number }
   ): void {
-    
-    console.log(`🔍 DIAGNOSTIC ID - Début applyVoltageChangesToDownstreamNodes`);
-    console.log(`📋 IDs des nœuds avant modification:`, nodes.map(n => `${n.id} (type: ${typeof n.id})`));
-    
-    for (const [nodeId, newVoltages] of voltageChanges) {
-      const nodeIndex = nodes.findIndex(n => n.id === nodeId);
-      if (nodeIndex === -1) {
-        console.error(`❌ Nœud ${nodeId} introuvable dans la liste des nœuds !`);
-        continue;
-      }
+    console.log(`🎯 Application coefficients SRG2 ${srg2Device.id} sur nœud ${srg2Device.nodeId}`);
+    console.log(`   Coefficients: A=${coefficients.A.toFixed(1)}%, B=${coefficients.B.toFixed(1)}%, C=${coefficients.C.toFixed(1)}%`);
 
-      // Diagnostic ID avant modification
-      const originalId = nodes[nodeIndex].id;
-      console.log(`🔍 DIAGNOSTIC ID - Nœud trouvé: ${originalId} (index: ${nodeIndex}, type: ${typeof originalId})`);
-
-      // PROTECTION ANTI-MUTATION: Créer une copie profonde pour éviter la corruption des références
-      const nodeBackup = {
-        id: nodes[nodeIndex].id,
-        name: nodes[nodeIndex].name
-      };
-
-      // Marquer ce nœud comme source locale SRG2 (sans muter l'ID)
-      nodes[nodeIndex].isSRG2Source = true;
-      nodes[nodeIndex].srg2OutputVoltage = structuredClone(newVoltages);
-
-      // Diagnostic ID après marquage
-      if (nodes[nodeIndex].id !== originalId) {
-        console.error(`🚨 CORRUPTION ID DÉTECTÉE ! Original: ${originalId}, Actuel: ${nodes[nodeIndex].id}`);
-        // Restaurer l'ID original si corrompu
-        nodes[nodeIndex].id = originalId;
-      }
-
-      if (loadModel === 'monophase_reparti') {
-        // Mode monophasé réparti: conserver les tensions par phase
-        nodes[nodeIndex].tensionCiblePhaseA = newVoltages.A;
-        nodes[nodeIndex].tensionCiblePhaseB = newVoltages.B;
-        nodes[nodeIndex].tensionCiblePhaseC = newVoltages.C;
-        
-        // Utiliser la moyenne pour tensionCible (compatibilité)
-        const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
-        nodes[nodeIndex].tensionCible = avgVoltage;
-        
-        console.log(`🔧 SRG2 source locale sur nœud ${nodeId} (monophasé): tensions A=${newVoltages.A.toFixed(1)}V, B=${newVoltages.B.toFixed(1)}V, C=${newVoltages.C.toFixed(1)}V`);
-      } else {
-        // Mode polyphasé équilibré: utiliser la moyenne des trois phases
-        const avgVoltage = (newVoltages.A + newVoltages.B + newVoltages.C) / 3;
-        nodes[nodeIndex].tensionCible = avgVoltage;
-        
-        console.log(`🔧 SRG2 source locale sur nœud ${nodeId} (polyphasé): tension de sortie ${avgVoltage.toFixed(1)}V comme nouvelle source locale`);
-      }
-      
-      // Validation finale de l'ID
-      if (nodes[nodeIndex].id !== originalId) {
-        console.error(`🚨 CORRUPTION ID FINALE ! Restauration...`);
-        nodes[nodeIndex].id = originalId;
-      }
-      
-      console.log(`🎯 Nœud ${nodeId} configuré comme source locale SRG2 (ID préservé: ${nodes[nodeIndex].id})`);
+    // Trouver le nœud correspondant
+    const nodeIndex = nodes.findIndex(n => String(n.id) === String(srg2Device.nodeId));
+    if (nodeIndex === -1) {
+      console.error(`❌ Nœud SRG2 non trouvé: ${srg2Device.nodeId}`);
+      return;
     }
-    
-    console.log(`🔍 DIAGNOSTIC ID - Fin applyVoltageChangesToDownstreamNodes`);
-    console.log(`📋 IDs des nœuds après modification:`, nodes.map(n => `${n.id} (type: ${typeof n.id})`));
+
+    // Marquer le nœud comme ayant un dispositif SRG2 avec ses coefficients
+    nodes[nodeIndex].hasSRG2Device = true;
+    nodes[nodeIndex].srg2RegulationCoefficients = { ...coefficients };
+
+    console.log(`✅ Nœud ${nodes[nodeIndex].id} marqué avec coefficients SRG2`);
   }
 
   /**
@@ -824,16 +780,16 @@ export class SimulationCalculator extends ElectricalCalculator {
    */
   private cleanupSRG2Markers(nodes: Node[]): void {
     console.log(`🔍 DIAGNOSTIC ID - Début cleanupSRG2Markers`);
-    console.log(`📋 IDs des nœuds avant nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
+    console.log(`📋 IDs des nœuds avant nettoyage:`, nodes.map(n => `${n.id} (hasSRG2Device: ${!!n.hasSRG2Device})`));
     
     for (const node of nodes) {
-      if (node.isSRG2Source) {
+      if (node.hasSRG2Device) {
         // Sauvegarder l'ID original avant nettoyage
         const originalId = node.id;
         
         // Nettoyer les marqueurs SRG2
-        node.isSRG2Source = undefined;
-        node.srg2OutputVoltage = undefined;
+        node.hasSRG2Device = undefined;
+        node.srg2RegulationCoefficients = undefined;
         
         // Vérifier que l'ID n'a pas été corrompu pendant le nettoyage
         if (node.id !== originalId) {
@@ -846,7 +802,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
     
     console.log(`🔍 DIAGNOSTIC ID - Fin cleanupSRG2Markers`);
-    console.log(`📋 IDs des nœuds après nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
+    console.log(`📋 IDs des nœuds après nettoyage:`, nodes.map(n => `${n.id} (hasSRG2Device: ${!!n.hasSRG2Device})`));
   }
   
   /**

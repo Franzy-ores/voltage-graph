@@ -90,9 +90,9 @@ export interface Node {
   tensionCiblePhaseA?: number;
   tensionCiblePhaseB?: number;
   tensionCiblePhaseC?: number;
-  // SRG2 local source properties
-  isSRG2Source?: boolean; // indique si ce nœud est une source locale SRG2
-  srg2OutputVoltage?: {A: number, B: number, C: number}; // tensions de sortie SRG2 en V
+  // SRG2 regulation properties (transformer approach)
+  hasSRG2Device?: boolean; // indique si ce nœud a un dispositif SRG2
+  srg2RegulationCoefficients?: {A: number, B: number, C: number}; // coefficients de régulation SRG2 en % (multiplicateurs)
 }
 
 export interface Cable {
