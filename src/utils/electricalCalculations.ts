@@ -609,7 +609,6 @@ export class ElectricalCalculator {
     if (hasMonoPNNodes && is400VSystem) {
       // Système 400V avec nœuds phase-neutre : utiliser 230V pour les calculs
       Vslack_phase = 230;
-      console.log(`[ElectricalCalculator] Système 400V détecté avec nœuds MONO_230V_PN - Vslack_phase = ${Vslack_phase}V`);
     } else if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
       // Connexions monophasées standard
       Vslack_phase = 230;
@@ -978,19 +977,15 @@ export class ElectricalCalculator {
           { nodeId: n.id, phase: 'B', V_real: Vb.re, V_imag: Vb.im, V_phase_V: Vb_mag, V_angle_deg: (Math.atan2(Vb.im, Vb.re)*180)/Math.PI },
           { nodeId: n.id, phase: 'C', V_real: Vc.re, V_imag: Vc.im, V_phase_V: Vc_mag, V_angle_deg: (Math.atan2(Vc.im, Vc.re)*180)/Math.PI },
         );
-
-        const scaleLine = this.getDisplayLineScale(n.connectionType);
         
         // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
         // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
-        // ===== CORRECTION 1 BIS : AFFICHAGE COHÉRENT DANS LES MÉTRIQUES PRINCIPALES =====
         let U_node_line_tension: number;
         
         if (n.connectionType === 'MONO_230V_PN') {
           // Monophasé phase-neutre : afficher tension phase-neutre directement (PAS de √3 !)
           // Prendre la phase la plus élevée pour conformité EN50160
           U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
-          console.log(`🔍 CORRIGÉ Node ${n.id} (MONO_230V_PN): phases P-N [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max: ${U_node_line_tension.toFixed(1)}V (sans √3)`);
           
         } else if (n.connectionType === 'TRI_230V_3F') {
           // Triphasé 230V : tensions composées = tensions de phase (système 230V)
@@ -1035,7 +1030,6 @@ export class ElectricalCalculator {
         const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_tension) / U_nom) * 100 : 0;
         const absPctNom = Math.abs(deltaU_pct_nominal);
         
-        console.log(`📊 Node ${n.id}: U_tension=${U_node_line_tension.toFixed(1)}V, U_nom=${U_nom}V, deltaU=${deltaU_pct_nominal.toFixed(1)}%, conformité=${absPctNom.toFixed(1)}%`);
         if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
 
         nodeVoltageDrops.push({ nodeId: n.id, deltaU_cum_V: deltaU_V, deltaU_cum_percent: deltaU_pct });
@@ -1107,8 +1101,6 @@ export class ElectricalCalculator {
           Vb_display = Vb_phase; 
           Vc_display = Vc_phase;
           U_ref = 230; // Référence phase-neutre EN50160
-          
-          console.log(`[Node ${n.id}] MONO_230V_PN - Tensions P-N: Va=${Va_display.toFixed(1)}V, Vb=${Vb_display.toFixed(1)}V, Vc=${Vc_display.toFixed(1)}V`);
           
         } else if (n.connectionType === 'TRI_230V_3F') {
           // Triphasé 230V : tensions composées = tensions de phase (système 230V)

@@ -81,4 +81,42 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
       expect(result.virtualBusbar.deltaU_V).toBeGreaterThan(0); // élévation de tension
     }
   });
+
+  it('Cas 4: tensions monophasées correctes en 400V déséquilibré', () => {
+    const calc = new ElectricalCalculator(1.0);
+    const nodes: Node[] = [
+      { id: 'src', name: 'Source', lat: 0, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [], isSource: true },
+      { id: 'n1', name: 'Mono1', lat: degLatForMeters(100), lng: 0, connectionType: 'MONO_230V_PN', clients: [{ id: 'c1', label: 'Load', S_kVA: 5 }], productions: [] },
+      { id: 'n2', name: 'Tri1', lat: degLatForMeters(100), lng: degLatForMeters(50), connectionType: 'TÉTRA_3P+N_230_400V', clients: [{ id: 'c2', label: 'Load', S_kVA: 15 }], productions: [] },
+    ];
+    const cables: Cable[] = [
+      { id: 'cab1', name: 'C1', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n1', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: 0 }] },
+      { id: 'cab2', name: 'C2', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n2', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: degLatForMeters(50) }] }
+    ];
+    const cableTypes: CableType[] = [mkCableType('t1', 0.3, 0, 0.3, 0)];
+    const transformer = baseTransformer(400, 100, 4);
+
+    const result = calc.calculateScenario(nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 100, 100, transformer, 'monophase_reparti', 0, undefined);
+    
+    // Vérifier que les nœuds MONO_230V_PN affichent des tensions ~230V (pas ~400V)
+    const monoMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'n1');
+    const triMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'n2');
+    
+    expect(monoMetrics).toBeTruthy();
+    expect(triMetrics).toBeTruthy();
+    
+    if (monoMetrics) {
+      // Nœud monophasé : tensions de phase ~230V ±10% (EN50160: 207V-253V)
+      const maxPhaseVoltage = Math.max(monoMetrics.voltagesPerPhase.A, monoMetrics.voltagesPerPhase.B, monoMetrics.voltagesPerPhase.C);
+      expect(maxPhaseVoltage).toBeGreaterThan(200); // minimum EN50160
+      expect(maxPhaseVoltage).toBeLessThan(260); // maximum EN50160
+    }
+    
+    if (triMetrics) {
+      // Nœud triphasé : tensions composées ~400V ±10%
+      const maxLineVoltage = Math.max(triMetrics.voltagesPerPhase.A, triMetrics.voltagesPerPhase.B, triMetrics.voltagesPerPhase.C);
+      expect(maxLineVoltage).toBeGreaterThan(360); 
+      expect(maxLineVoltage).toBeLessThan(440);
+    }
+  });
 });
