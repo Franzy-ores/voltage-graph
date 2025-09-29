@@ -202,9 +202,23 @@ export class ElectricalCalculator {
 
   private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
     const { useR0 } = this.getVoltageConfig(connectionType);
-    return useR0
-      ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
-      : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
+    
+    if (useR0) {
+      // R0/X0 doivent représenter l'impédance de boucle phase+neutre au km
+      let R0 = cableType.R0_ohm_per_km;
+      let X0 = cableType.X0_ohm_per_km;
+      
+      // Fallback si R0/X0 sont absents ou non finis
+      if (!isFinite(R0) || !isFinite(X0)) {
+        console.warn(`⚠️ R0/X0 absents ou invalides pour ${cableType.id} en MONO P-N, utilisation R12/X12 comme fallback`);
+        R0 = cableType.R12_ohm_per_km;
+        X0 = cableType.X12_ohm_per_km;
+      }
+      
+      return { R: R0, X: X0 };
+    }
+    
+    return { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
   /**
@@ -231,8 +245,8 @@ export class ElectricalCalculator {
     } else if (connectionType === 'MONO_230V_PP') {
       denom = U_base; // I = S / tension_entre_phases
     } else if (connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : pas de √3, calcul direct en tension composée
-      denom = U_base; // I = S / 230V directement (pas de √3)
+      // 3×230 V (sans neutre) : formalisme triphasé standard
+      denom = Math.sqrt(3) * U_base; // U_base = U_L-L
     } else {
       denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     }
@@ -244,10 +258,10 @@ export class ElectricalCalculator {
     return (Sabs_kVA * 1000) / denom;
   }
 
-  private getComplianceStatus(voltageDropPercent: number): 'normal'|'warning'|'critical' {
-    const absP = Math.abs(voltageDropPercent);
-    if (absP <= 8) return 'normal';
-    if (absP <= 10) return 'warning';
+  private getComplianceStatus(maxUndervoltPercent: number, maxOvervoltPercent: number): 'normal'|'warning'|'critical' {
+    // Politique compliance conservatrice : seuils séparés pour sous/sur-tension
+    if (maxUndervoltPercent <= 8 && maxOvervoltPercent <= 10) return 'normal';
+    if (maxUndervoltPercent <= 10 && maxOvervoltPercent <= 12) return 'warning';
     return 'critical';
   }
 
@@ -601,13 +615,12 @@ export class ElectricalCalculator {
     // Tension de phase pour l'initialisation selon le type de connexion
     let Vslack_phase: number;
     if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
-      // Pour les connexions monophasées, utiliser directement 230V comme tension de phase/service
-      Vslack_phase = 230;
+      Vslack_phase = 230; // L-N
     } else if (source.connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : pas de conversion, travail direct en 230V composé
-      Vslack_phase = U_line_base; // 230V composée directement
+      // 3×230 V : travailler en L-N virtuel
+      Vslack_phase = U_line_base / Math.sqrt(3); // ≈ 132,79 V
     } else {
-      // Pour les autres systèmes triphasés, conversion ligne -> phase
+      // Triphasé 400/230 V
       Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
     }
     const Vslack = C(Vslack_phase, 0);
@@ -619,7 +632,8 @@ export class ElectricalCalculator {
       const Zpu = transformerConfig.shortCircuitVoltage_percent / 100;
       const Sbase_VA = transformerConfig.nominalPower_kVA * 1000;
       // Zbase (Ω) en utilisant U_ligne^2 / Sbase, cohérent avec un modèle par phase
-      const Zbase = (U_line_base * U_line_base) / (Sbase_VA * Math.sqrt(3)); // Ω
+      // Base par phase cohérente avec le modèle « par phase » :
+      const Zbase = (U_line_base * U_line_base) / Sbase_VA; // Ω
       const Zmag = Zpu * Zbase; // |Z|
 
       const xOverR = transformerConfig.xOverR;
@@ -666,7 +680,6 @@ export class ElectricalCalculator {
 
     if (isUnbalanced) {
       // Répartition S_total -> S_A/S_B/S_C selon la répartition manuelle ou équilibré par défaut
-      const globalAngle = 0; // Angle identique pour tous les circuits pour préserver la notion de circuit
       
       // Utiliser la répartition manuelle si disponible, sinon répartition équitable par défaut
       let pA_charges = 1/3, pB_charges = 1/3, pC_charges = 1/3;
@@ -881,10 +894,9 @@ export class ElectricalCalculator {
         return { V_node_phase, I_branch_phase };
       };
 
-      // Pivot global : même angle (0°) pour tous les circuits pour préserver la notion de circuit
-      const phaseA = runBFSForPhase(globalAngle, S_A_map);
-      const phaseB = runBFSForPhase(globalAngle, S_B_map);
-      const phaseC = runBFSForPhase(globalAngle, S_C_map);
+      const phaseA = runBFSForPhase(   0, S_A_map);
+      const phaseB = runBFSForPhase(-120, S_B_map);
+      const phaseC = runBFSForPhase( 120, S_C_map);
 
       // Compose cable results (par phase)
       calculatedCables.length = 0;
@@ -916,10 +928,7 @@ export class ElectricalCalculator {
         const dVC = abs(mul(Z, IC));
 
         const current_A = Math.max(IA_mag, IB_mag, IC_mag);
-        // Pour TRI_230V_3F, pas de conversion car travail direct en composé
-        const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
-          ? Math.max(dVA, dVB, dVC) // Direct en 230V composé
-          : Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
+        const deltaU_line_V = Math.max(dVA, dVB, dVC) * (isThreePhase ? Math.sqrt(3) : 1);
 
         // Base voltage for percent
         let { U_base } = this.getVoltage(distalNode.connectionType);
@@ -948,17 +957,18 @@ export class ElectricalCalculator {
         });
       }
 
-      // Tension nodale (pire phase) et conformité
-      let worstAbsPct = 0;
+      // Tension nodale (pire phase) et conformité avec métriques séparées sous/sur-tension
+      let maxUndervoltPercent = 0;
+      let maxOvervoltPercent = 0;
       const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
       const nodePhasorsPerPhase: { nodeId: string; phase: 'A'|'B'|'C'; V_real: number; V_imag: number; V_phase_V: number; V_angle_deg: number }[] = [];
 
       const sourceNode = nodes.find(n => n.isSource);
       for (const n of nodes) {
-        // Récupération des tensions nodales par phase avec même angle global (préservation des circuits)
-        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        // Récupération des tensions nodales par phase avec angles correctement déphasés
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(0));
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(-120));
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(120));
         const Va_mag = abs(Va);
         const Vb_mag = abs(Vb);
         const Vc_mag = abs(Vc);
@@ -971,14 +981,14 @@ export class ElectricalCalculator {
 
         const scaleLine = this.getDisplayLineScale(n.connectionType);
         
-        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
-        // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
+        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la moyenne des trois phases
+        // car c'est plus représentatif que le maximum pour la conformité
         let U_node_line_tension: number;
         
         if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
-          // Nœud monophasé phase-neutre en système 400V : prendre la phase la plus élevée (EN50160)
-          U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
-          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], max utilisé: ${U_node_line_tension.toFixed(1)}V`);
+          // Nœud monophasé phase-neutre en système 400V : prendre la moyenne des phases (EN50160)
+          U_node_line_tension = (Va_mag + Vb_mag + Vc_mag) / 3;
+          console.log(`🔍 EN50160 Node ${n.id} (MONO_230V_PN): phases [${Va_mag.toFixed(1)}, ${Vb_mag.toFixed(1)}, ${Vc_mag.toFixed(1)}], moyenne utilisée: ${U_node_line_tension.toFixed(1)}V`);
         } else {
           // Autres nœuds : garder la logique existante (pire cas = minimum)
           U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
@@ -990,24 +1000,36 @@ export class ElectricalCalculator {
         const deltaU_V = U_ref_display - U_node_line_tension;
         const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
 
-        // Référence nominale (conformité EN50160): logique spéciale pour MONO_230V_PN en système 400V
+        // Conformité basée sur U_nom avec distinction sous-tension/surtension
         let U_nom: number;
         if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
           // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
           U_nom = 230;
+        } else if (n.connectionType === 'TRI_230V_3F') {
+          // 3×230 V : référence 230V (L-L)
+          U_nom = 230;
         } else {
-          // Logique standard
+          // Triphasé 400/230 → 400 V pour L-L, 230 V pour L-N
           const { U_base } = this.getVoltage(n.connectionType);
           U_nom = U_base;
         }
+
         const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line_tension) / U_nom) * 100 : 0;
-        const absPctNom = Math.abs(deltaU_pct_nominal);
-        if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
+        
+        if (deltaU_pct_nominal > 0) {
+          // Sous-tension (tension inférieure à la nominale)
+          if (deltaU_pct_nominal > maxUndervoltPercent) maxUndervoltPercent = deltaU_pct_nominal;
+        } else {
+          // Surtension (tension supérieure à la nominale)
+          const overvoltPercent = Math.abs(deltaU_pct_nominal);
+          if (overvoltPercent > maxOvervoltPercent) maxOvervoltPercent = overvoltPercent;
+        }
 
         nodeVoltageDrops.push({ nodeId: n.id, deltaU_cum_V: deltaU_V, deltaU_cum_percent: deltaU_pct });
       }
 
-      const compliance = this.getComplianceStatus(worstAbsPct);
+      const compliance = this.getComplianceStatus(maxUndervoltPercent, maxOvervoltPercent);
+      const worstAbsPct = Math.max(maxUndervoltPercent, maxOvervoltPercent); // Compat descendante
 
       // Calcul du jeu de barres virtuel (préserver la notion de circuit en monophasé déséquilibré)
       let virtualBusbar: VirtualBusbar | undefined;
@@ -1055,18 +1077,32 @@ export class ElectricalCalculator {
 
       // Métriques nodales par phase pour monophasé déséquilibré
       const nodeMetricsPerPhase = nodes.map(n => {
-        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
-        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, globalAngle);
+        const Va = phaseA.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(0));
+        const Vb = phaseB.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(-120));
+        const Vc = phaseC.V_node_phase.get(n.id) || fromPolar(Vslack_phase, this.deg2rad(120));
         
-        const scaleLine = this.getDisplayLineScale(n.connectionType);
+        // Pour les nœuds monophasés sur système 400V, afficher en tension phase-neutre
+        let scaleLine: number;
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          scaleLine = 1; // Affichage direct en L-N (230V)
+        } else {
+          scaleLine = this.getDisplayLineScale(n.connectionType);
+        }
+        
         const Va_display = abs(Va) * scaleLine;
         const Vb_display = abs(Vb) * scaleLine;
         const Vc_display = abs(Vc) * scaleLine;
         
-        let { U_base: U_ref } = this.getVoltage(n.connectionType);
-        const sourceNode = nodes.find(s => s.isSource);
-        if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+        // Référence pour le calcul des chutes : 230V pour MONO_230V_PN en système 400V
+        let U_ref: number;
+        if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
+          U_ref = 230; // Référence 230V pour nœuds monophasés
+        } else {
+          const { U_base } = this.getVoltage(n.connectionType);
+          U_ref = U_base;
+          const sourceNode = nodes.find(s => s.isSource);
+          if (sourceNode?.tensionCible) U_ref = sourceNode.tensionCible;
+        }
         
         return {
           nodeId: n.id,
@@ -1090,6 +1126,8 @@ export class ElectricalCalculator {
         totalProductions_kVA: totalProductions,
         globalLosses_kW: Number(globalLosses.toFixed(6)),
         maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
+        maxUndervoltPercent: Number(maxUndervoltPercent.toFixed(6)),
+        maxOvervoltPercent: Number(maxOvervoltPercent.toFixed(6)),
         maxVoltageDropCircuitNumber: undefined,
         compliance,
         nodeVoltageDrops,
@@ -1262,10 +1300,7 @@ export class ElectricalCalculator {
       const Iph = I_branch.get(cab.id) || C(0, 0);
       const dVph = mul(Z!, Iph);
       const current_A = abs(Iph);
-      // Pour TRI_230V_3F, pas de conversion car travail direct en composé
-      const deltaU_line_V = distalNode.connectionType === 'TRI_230V_3F' 
-        ? abs(dVph) // Direct en 230V composé
-        : abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
+      const deltaU_line_V = abs(dVph) * (isThreePhase ? Math.sqrt(3) : 1);
 
       // Base voltage for percent: prefer source target voltage if provided
       let { U_base } = this.getVoltage(distalNode.connectionType);
@@ -1298,7 +1333,8 @@ export class ElectricalCalculator {
 
     // ---- Évaluation nodale basée sur les phasors V_node ----
     // On n'additionne plus les |ΔV| câble par câble ; on compare |V_node| à une référence U_ref
-    let worstAbsPct = 0;
+    let maxUndervoltPercent = 0;
+    let maxOvervoltPercent = 0;
     const nodeVoltageDrops: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[] = [];
 
     const sourceNode = nodes.find(n => n.isSource);
@@ -1314,19 +1350,30 @@ export class ElectricalCalculator {
       const deltaU_V = U_ref_display - U_node_line;
       const deltaU_pct = U_ref_display ? (deltaU_V / U_ref_display) * 100 : 0;
 
-      // Référence nominale (conformité): logique spéciale pour MONO_230V_PN en système 400V
+      // Conformité basée sur U_nom avec distinction sous-tension/surtension
       let U_nom: number;
       if (n.connectionType === 'MONO_230V_PN' && transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350) {
         // Pour les nœuds monophasés phase-neutre en système 400V : référence 230V
         U_nom = 230;
+      } else if (n.connectionType === 'TRI_230V_3F') {
+        // 3×230 V : référence 230V (L-L)
+        U_nom = 230;
       } else {
-        // Logique standard
+        // Triphasé 400/230 → 400 V pour L-L, 230 V pour L-N
         const { U_base } = this.getVoltage(n.connectionType);
         U_nom = U_base;
       }
+
       const deltaU_pct_nominal = U_nom ? ((U_nom - U_node_line) / U_nom) * 100 : 0;
-      const absPctNom = Math.abs(deltaU_pct_nominal);
-      if (absPctNom > worstAbsPct) worstAbsPct = absPctNom;
+      
+      if (deltaU_pct_nominal > 0) {
+        // Sous-tension (tension inférieure à la nominale)
+        if (deltaU_pct_nominal > maxUndervoltPercent) maxUndervoltPercent = deltaU_pct_nominal;
+      } else {
+        // Surtension (tension supérieure à la nominale)
+        const overvoltPercent = Math.abs(deltaU_pct_nominal);
+        if (overvoltPercent > maxOvervoltPercent) maxOvervoltPercent = overvoltPercent;
+      }
 
       nodeVoltageDrops.push({
         nodeId: n.id,
@@ -1335,7 +1382,8 @@ export class ElectricalCalculator {
       });
     }
 
-    const compliance = this.getComplianceStatus(worstAbsPct);
+    const compliance = this.getComplianceStatus(maxUndervoltPercent, maxOvervoltPercent);
+    const worstAbsPct = Math.max(maxUndervoltPercent, maxOvervoltPercent); // Compat descendante
 
     // ---- VIRTUAL BUSBAR : calcul détaillé PAR DÉPART ----
     let virtualBusbar: VirtualBusbar | undefined;
@@ -1496,6 +1544,8 @@ export class ElectricalCalculator {
       totalProductions_kVA: totalProductions,
       globalLosses_kW: Number(globalLosses.toFixed(6)),
       maxVoltageDropPercent: Number(worstAbsPct.toFixed(6)),
+      maxUndervoltPercent: Number(maxUndervoltPercent.toFixed(6)),
+      maxOvervoltPercent: Number(maxOvervoltPercent.toFixed(6)),
       maxVoltageDropCircuitNumber,
       compliance,
       nodeVoltageDrops,

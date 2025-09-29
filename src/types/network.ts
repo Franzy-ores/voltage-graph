@@ -239,6 +239,8 @@ export interface CalculationResult {
   totalProductions_kVA: number;
   globalLosses_kW: number;
   maxVoltageDropPercent: number;
+  maxUndervoltPercent: number; // Métrique de sous-tension (≥0) basée sur U_nom
+  maxOvervoltPercent: number; // Métrique de surtension (≥0) basée sur U_nom
   maxVoltageDropCircuitNumber?: number; // Numéro de circuit avec la chute maximale
   compliance: 'normal' | 'warning' | 'critical';
   nodeVoltageDrops?: { nodeId: string; deltaU_cum_V: number; deltaU_cum_percent: number }[];
