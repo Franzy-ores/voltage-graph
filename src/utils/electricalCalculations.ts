@@ -1187,28 +1187,7 @@ export class ElectricalCalculator {
           
           // Vérifier si le nœud de destination est une source SRG2
           const vNode = nodeById.get(v);
-          if (vNode?.isSRG2Source && vNode.srg2OutputVoltage) {
-            // Pour les nœuds SRG2, utiliser leur tension de sortie régulée
-            let Vv_srg2: Complex;
-            if (isUnbalanced) {
-              // En mode monophasé déséquilibré, cette logique est gérée dans la boucle per-phase
-              // Ici on utilise la moyenne pour le calcul équilibré de base
-              const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
-              Vv_srg2 = C(avgVoltage, 0);
-            } else {
-              // En mode polyphasé équilibré, utiliser la moyenne
-              const avgVoltage = (vNode.srg2OutputVoltage.A + vNode.srg2OutputVoltage.B + vNode.srg2OutputVoltage.C) / 3;
-              Vv_srg2 = C(avgVoltage, 0);
-            }
-            V_node.set(v, Vv_srg2);
-            console.log(`🎯 SRG2 source locale ${v}: tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
-          } else if (vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
-            // Utiliser les tensions cibles par phase si disponibles (mode monophasé)
-            const avgVoltage = (vNode.tensionCiblePhaseA + vNode.tensionCiblePhaseB + vNode.tensionCiblePhaseC) / 3;
-            const Vv_target = C(avgVoltage, 0);
-            V_node.set(v, Vv_target);
-            console.log(`🎯 Nœud ${v}: tensions cibles par phase appliquées (moy: ${avgVoltage.toFixed(1)}V)`);
-          } else if (vNode?.tensionCible) {
+          if (vNode?.tensionCible) {
             // Utiliser la tension cible globale si disponible
             const Vv_target = C(vNode.tensionCible, 0);
             V_node.set(v, Vv_target);
