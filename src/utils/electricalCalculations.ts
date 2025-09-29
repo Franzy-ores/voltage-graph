@@ -818,6 +818,25 @@ export class ElectricalCalculator {
                 }
                 V_node_phase.set(v, Vv_srg2);
                 console.log(`🎯 SRG2 source locale ${v} (phase ${angleDeg}°): tension imposée ${abs(Vv_srg2).toFixed(1)}V`);
+              } else if (vNode?.tensionCiblePhaseA && vNode?.tensionCiblePhaseB && vNode?.tensionCiblePhaseC) {
+                // Pour les nœuds avec tensions cibles par phase, utiliser la tension de la phase correspondante
+                let Vv_target: Complex;
+                if (angleDeg === 0) {
+                  // Phase A
+                  Vv_target = C(vNode.tensionCiblePhaseA, 0);
+                } else if (angleDeg === -120) {
+                  // Phase B
+                  Vv_target = C(vNode.tensionCiblePhaseB, 0);
+                } else if (angleDeg === 120) {
+                  // Phase C
+                  Vv_target = C(vNode.tensionCiblePhaseC, 0);
+                } else {
+                  // Fallback: utiliser la moyenne
+                  const avgVoltage = (vNode.tensionCiblePhaseA + vNode.tensionCiblePhaseB + vNode.tensionCiblePhaseC) / 3;
+                  Vv_target = C(avgVoltage, 0);
+                }
+                V_node_phase.set(v, Vv_target);
+                console.log(`🎯 Nœud ${v} (phase ${angleDeg}°): tension cible par phase imposée ${abs(Vv_target).toFixed(1)}V`);
               } else {
                 // Calcul normal pour les nœuds non-SRG2
                 const Vv = sub(Vu, mul(Z, Iuv));
