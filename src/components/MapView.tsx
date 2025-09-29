@@ -472,7 +472,26 @@ export const MapView = () => {
       if (calculationResults[selectedScenario] && !node.isSource) {
         const results = resultsToUse[selectedScenario];
         const nodeData = results?.nodeVoltageDrops?.find(n => n.nodeId === node.id);
-        if (nodeData) {
+        
+        // ===== AMÉLIORATION : CONFORMITÉ MULTI-PHASE EN MODE DÉSÉQUILIBRÉ =====
+        // Vérifier la conformité par phase si disponible (mode déséquilibré)
+        const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
+        if (phaseMetrics?.nodeCompliance) {
+          // Mode déséquilibré : utiliser la conformité calculée par phase
+          if (phaseMetrics.nodeCompliance === 'critical') {
+            isOutOfCompliance = true;
+            nominalDropPercent = 15; // Valeur indicative pour affichage critique
+          } else if (phaseMetrics.nodeCompliance === 'warning') {
+            isOutOfCompliance = false; // Pas critique mais en warning
+            nominalDropPercent = 9; // Valeur indicative pour affichage warning
+          } else {
+            isOutOfCompliance = false;
+            nominalDropPercent = 5; // Valeur indicative pour affichage normal
+          }
+          
+          console.log(`🚨 Node ${node.id} conformité multi-phase: ${phaseMetrics.nodeCompliance} (phases: A=${phaseMetrics.compliancePerPhase?.A}, B=${phaseMetrics.compliancePerPhase?.B}, C=${phaseMetrics.compliancePerPhase?.C})`);
+        } else if (nodeData) {
+          // Mode équilibré ou fallback : logique standard
           // Utiliser la chute de tension cumulée SIGNÉE (+ = chute, - = hausse) avec la tension source
           nodeVoltage = sourceVoltage - nodeData.deltaU_cum_V;
           
@@ -481,7 +500,6 @@ export const MapView = () => {
           
           // Pour les nœuds MONO_230V_PN en système 400V, utiliser la tension la plus élevée des phases
           if (connectionType === 'MONO_230V_PN' && currentProject.voltageSystem === 'TÉTRAPHASÉ_400V') {
-            const phaseMetrics = results?.nodeMetricsPerPhase?.find(n => n.nodeId === node.id);
             if (phaseMetrics) {
               // Prendre la tension la plus élevée des trois phases
               const maxPhaseVoltage = Math.max(
@@ -818,19 +836,36 @@ export const MapView = () => {
             if (calculatedCable) {
               // Utiliser le nœud d'arrivée (nodeBId) pour déterminer la couleur
               const arrivalNodeId = calculatedCable.nodeBId;
-              const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
-              console.log(`Cable ${cable.id}: nodeData for ${arrivalNodeId}:`, nodeData?.deltaU_cum_percent);
               
-              if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
-                const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
-                console.log(`Cable ${cable.id}: voltage drop ${voltageDropPercent}%`);
-                
-                if (voltageDropPercent < 8) {
-                  cableColor = '#22c55e'; // VERT - dans la norme (<8%)
-                } else if (voltageDropPercent < 10) {
-                  cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+              // ===== AMÉLIORATION : COULEUR CÂBLES BASÉE SUR CONFORMITÉ MULTI-PHASE =====
+              // Priorité à la conformité par phase si disponible (mode déséquilibré)
+              const phaseMetrics = results.nodeMetricsPerPhase?.find(n => n.nodeId === arrivalNodeId);
+              if (phaseMetrics?.nodeCompliance) {
+                // Mode déséquilibré : utiliser la conformité calculée par phase
+                if (phaseMetrics.nodeCompliance === 'critical') {
+                  cableColor = '#ef4444'; // ROUGE - critique
+                } else if (phaseMetrics.nodeCompliance === 'warning') {
+                  cableColor = '#f97316'; // ORANGE - warning
                 } else {
-                  cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+                  cableColor = '#22c55e'; // VERT - normal
+                }
+                console.log(`🎨 Cable ${cable.id}: couleur basée sur conformité multi-phase ${phaseMetrics.nodeCompliance} -> ${cableColor}`);
+              } else {
+                // Mode équilibré ou fallback : logique standard basée sur chute de tension
+                const nodeData = results.nodeVoltageDrops.find(n => n.nodeId === arrivalNodeId);
+                console.log(`Cable ${cable.id}: nodeData for ${arrivalNodeId}:`, nodeData?.deltaU_cum_percent);
+                
+                if (nodeData && nodeData.deltaU_cum_percent !== undefined) {
+                  const voltageDropPercent = Math.abs(nodeData.deltaU_cum_percent);
+                  console.log(`Cable ${cable.id}: voltage drop ${voltageDropPercent}%`);
+                  
+                  if (voltageDropPercent < 8) {
+                    cableColor = '#22c55e'; // VERT - dans la norme (<8%)
+                  } else if (voltageDropPercent < 10) {
+                    cableColor = '#f97316'; // ORANGE - warning (8% à 10%)
+                  } else {
+                    cableColor = '#ef4444'; // ROUGE - critique (≥10%)
+                  }
                 }
               }
             }
