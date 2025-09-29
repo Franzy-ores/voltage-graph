@@ -746,9 +746,18 @@ export class SimulationCalculator extends ElectricalCalculator {
         name: nodes[nodeIndex].name
       };
 
-      // Marquer ce nœud comme source locale SRG2 (sans muter l'ID)
-      nodes[nodeIndex].isSRG2Source = true;
-      nodes[nodeIndex].srg2OutputVoltage = structuredClone(newVoltages);
+      // Marquer ce nœud avec un équipement SRG2 actif (sans muter l'ID)
+      nodes[nodeIndex].hasSRG2Device = true;
+      
+      // Calculer les coefficients de transformation SRG2 à partir des changements de tension
+      // Les tensions dans voltageChanges sont les tensions de sortie absolues
+      // Il faut les convertir en coefficients multiplicateurs
+      const originalVoltages = { A: 230, B: 230, C: 230 }; // Tensions de référence
+      nodes[nodeIndex].srg2VoltageCoefficients = {
+        A: newVoltages.A / originalVoltages.A,
+        B: newVoltages.B / originalVoltages.B, 
+        C: newVoltages.C / originalVoltages.C
+      };
 
       // Diagnostic ID après marquage
       if (nodes[nodeIndex].id !== originalId) {
@@ -824,16 +833,16 @@ export class SimulationCalculator extends ElectricalCalculator {
    */
   private cleanupSRG2Markers(nodes: Node[]): void {
     console.log(`🔍 DIAGNOSTIC ID - Début cleanupSRG2Markers`);
-    console.log(`📋 IDs des nœuds avant nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
+    console.log(`📋 IDs des nœuds avant nettoyage:`, nodes.map(n => `${n.id} (hasSRG2Device: ${!!n.hasSRG2Device})`));
     
     for (const node of nodes) {
-      if (node.isSRG2Source) {
+      if (node.hasSRG2Device) {
         // Sauvegarder l'ID original avant nettoyage
         const originalId = node.id;
         
         // Nettoyer les marqueurs SRG2
-        node.isSRG2Source = undefined;
-        node.srg2OutputVoltage = undefined;
+        node.hasSRG2Device = undefined;
+        node.srg2VoltageCoefficients = undefined;
         
         // Vérifier que l'ID n'a pas été corrompu pendant le nettoyage
         if (node.id !== originalId) {
@@ -846,7 +855,7 @@ export class SimulationCalculator extends ElectricalCalculator {
     }
     
     console.log(`🔍 DIAGNOSTIC ID - Fin cleanupSRG2Markers`);
-    console.log(`📋 IDs des nœuds après nettoyage:`, nodes.map(n => `${n.id} (isSRG2Source: ${!!n.isSRG2Source})`));
+    console.log(`📋 IDs des nœuds après nettoyage:`, nodes.map(n => `${n.id} (hasSRG2Device: ${!!n.hasSRG2Device})`));
   }
   
   /**
