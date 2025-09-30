@@ -930,6 +930,8 @@ export class SimulationCalculator extends ElectricalCalculator {
 
   /**
    * Recalcule les tensions en aval d'un compensateur de neutre
+   * Le compensateur EQUI8 consomme de la puissance réactive pour équilibrer les phases,
+   * ce qui provoque une chute de tension en aval due au courant absorbé
    */
   private recalculateDownstreamVoltages(
     result: CalculationResult,
@@ -944,16 +946,25 @@ export class SimulationCalculator extends ElectricalCalculator {
 
     console.log(`🔄 Recalcul des tensions en aval du compensateur ${compensator.nodeId}`);
 
-    // Calculer l'amélioration de tension au nœud du compensateur
-    const { complex: I_N } = this.calculateNeutralCurrent(I_A, I_B, I_C);
-    const I_N_reduction = scale(I_N, reductionFraction);
+    // Le compensateur absorbe du courant pour équilibrer les phases
+    // Ce courant absorbé crée une chute de tension supplémentaire en aval
+    const I_absorbed_A = compensator.iN_absorbed_A || 0;
     
-    // Trouver les câbles en aval du compensateur
+    if (I_absorbed_A === 0) {
+      console.log(`⚠️ Compensateur ${compensator.nodeId}: pas de courant absorbé, pas d'effet en aval`);
+      return;
+    }
+    
+    // Courant absorbé réparti sur les 3 phases (approximation pour calcul de chute de tension)
+    const I_absorbed_per_phase = I_absorbed_A / Math.sqrt(3);
+    
+    // Trouver les nœuds en aval du compensateur
     const downstreamNodes = this.findDownstreamNodes(project, compensator.nodeId);
     
     console.log(`📍 Nœuds en aval: ${downstreamNodes.length}`, downstreamNodes);
+    console.log(`⚡ Courant absorbé par compensateur: ${I_absorbed_A.toFixed(1)}A (${I_absorbed_per_phase.toFixed(1)}A par phase)`);
     
-    // Pour chaque nœud en aval, améliorer les tensions
+    // Pour chaque nœud en aval, calculer la chute de tension due à la consommation du compensateur
     for (const downstreamNodeId of downstreamNodes) {
       const nodeMetrics = result.nodeMetricsPerPhase.find(nm => nm.nodeId === downstreamNodeId);
       if (!nodeMetrics) continue;
@@ -961,37 +972,41 @@ export class SimulationCalculator extends ElectricalCalculator {
       // Trouver le chemin de câbles du compensateur au nœud aval
       const pathCables = this.findCablePath(project, compensator.nodeId, downstreamNodeId);
       
-      // Calculer l'amélioration totale de tension (chute de tension réduite)
-      let totalImpedance = C(0, 0);
+      // Calculer l'impédance totale du chemin
+      let totalResistance = 0;
+      let totalReactance = 0;
+      
       for (const cable of pathCables) {
         const cableType = project.cableTypes.find(ct => ct.id === cable.typeId);
         if (!cableType) continue;
         
         const length_km = cable.length_m / 1000;
-        const R = cableType.R0_ohm_per_km * length_km;
-        const X = cableType.X0_ohm_per_km * length_km;
-        totalImpedance = add(totalImpedance, C(R, X));
+        totalResistance += cableType.R0_ohm_per_km * length_km;
+        totalReactance += cableType.X0_ohm_per_km * length_km;
       }
       
-      // Amélioration de tension = Z * I_N_reduction
-      const voltageImprovement = mul(totalImpedance, I_N_reduction);
-      const voltageImprovementMag = abs(voltageImprovement);
+      // Impédance complexe totale
+      const Z_total = Math.sqrt(totalResistance * totalResistance + totalReactance * totalReactance);
       
-      // Appliquer l'amélioration à chaque phase
+      // Chute de tension due au courant absorbé par le compensateur
+      // ΔU = Z × I (réactif principalement)
+      const voltageDrop = Z_total * I_absorbed_per_phase;
+      
+      // Appliquer la chute de tension à chaque phase (DIMINUTION car consommation)
       const oldVoltages = { ...nodeMetrics.voltagesPerPhase };
-      nodeMetrics.voltagesPerPhase.A += voltageImprovementMag;
-      nodeMetrics.voltagesPerPhase.B += voltageImprovementMag;
-      nodeMetrics.voltagesPerPhase.C += voltageImprovementMag;
+      nodeMetrics.voltagesPerPhase.A -= voltageDrop;
+      nodeMetrics.voltagesPerPhase.B -= voltageDrop;
+      nodeMetrics.voltagesPerPhase.C -= voltageDrop;
       
-      console.log(`  📈 Nœud ${downstreamNodeId}: A: ${oldVoltages.A.toFixed(1)}V -> ${nodeMetrics.voltagesPerPhase.A.toFixed(1)}V (+${voltageImprovementMag.toFixed(2)}V)`);
+      console.log(`  📉 Nœud ${downstreamNodeId}: A: ${oldVoltages.A.toFixed(1)}V -> ${nodeMetrics.voltagesPerPhase.A.toFixed(1)}V (-${voltageDrop.toFixed(2)}V)`);
       
-      // Recalculer les chutes de tension (si disponible)
+      // Recalculer les chutes de tension totales
       const sourceVoltage = 230; // Tension nominale de référence
       const dropA = ((sourceVoltage - nodeMetrics.voltagesPerPhase.A) / sourceVoltage) * 100;
       const dropB = ((sourceVoltage - nodeMetrics.voltagesPerPhase.B) / sourceVoltage) * 100;
       const dropC = ((sourceVoltage - nodeMetrics.voltagesPerPhase.C) / sourceVoltage) * 100;
       
-      console.log(`  📉 Chutes de tension: A: ${dropA.toFixed(2)}%, B: ${dropB.toFixed(2)}%, C: ${dropC.toFixed(2)}%`);
+      console.log(`  📊 Chutes de tension totales: A: ${dropA.toFixed(2)}%, B: ${dropB.toFixed(2)}%, C: ${dropC.toFixed(2)}%`);
     }
   }
 
