@@ -56,18 +56,18 @@ export const MapView = () => {
     simulationMode,
   } = useNetworkStore();
 
-  // Déterminer quels résultats utiliser - simulation si en mode simulation ET équipements actifs
+  // Déterminer quels résultats utiliser - simulation si équipements actifs (peu importe simulationMode)
   const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
                                simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
   console.log('🐛 MapView results logic:', {
     simulationMode,
     activeEquipmentCount,
-    usingSimulation: simulationMode && activeEquipmentCount > 0,
-    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'SIMULATION' : 'CALCULATION'
+    usingSimulation: activeEquipmentCount > 0,
+    resultsType: activeEquipmentCount > 0 ? 'SIMULATION' : 'CALCULATION'
   });
   
-  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
+  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
 
   // Fonction pour zoomer sur le projet chargé
   const zoomToProject = (event?: CustomEvent) => {

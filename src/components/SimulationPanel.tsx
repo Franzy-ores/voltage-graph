@@ -76,6 +76,11 @@ export const SimulationPanel = () => {
                 onCheckedChange={(enabled) => {
                   if (!eligible) return;
                   updateNeutralCompensator(compensator.id, { enabled });
+                  // Déclencher automatiquement la simulation quand un compensateur est activé
+                  if (enabled) {
+                    console.log('🔄 Auto-triggering simulation after compensator activation');
+                    setTimeout(() => runSimulation(), 100);
+                  }
                 }}
                 disabled={!eligible}
               />

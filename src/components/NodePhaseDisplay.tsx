@@ -12,17 +12,17 @@ export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
     return null;
   }
 
-  // Utiliser les résultats de simulation si du matériel de simulation est actif ET en mode simulation
+  // Utiliser les résultats de simulation si du matériel de simulation est actif (peu importe simulationMode)
   const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
                                simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  const resultsToUse = (simulationMode && activeEquipmentCount > 0) ? simulationResults : calculationResults;
+  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
   
   console.log('🐛 NodePhaseDisplay logic:', {
     simulationMode,
     activeEquipmentCount,
-    usingSimulation: simulationMode && activeEquipmentCount > 0,
-    resultsType: (simulationMode && activeEquipmentCount > 0) ? 'simulation' : 'calculation'
+    usingSimulation: activeEquipmentCount > 0,
+    resultsType: activeEquipmentCount > 0 ? 'simulation' : 'calculation'
   });
   
   if (!resultsToUse[selectedScenario]?.nodeMetricsPerPhase) {
