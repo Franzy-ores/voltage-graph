@@ -37,8 +37,10 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * BLOQUÉ - Méthode publique pour l'algorithme de convergence du mode forcé
-   * Utilise maintenant la nouvelle logique en 2 phases
+   * Méthode publique pour l'algorithme de convergence du mode forcé
+   * Utilise la nouvelle logique en 2 phases:
+   * Phase 1: Calibration du foisonnement (mode nuit)
+   * Phase 2: Convergence sur les répartitions de phases basées sur les tensions mesurées
    */
   public async runForcedModeConvergence(
     project: Project,
@@ -57,32 +59,117 @@ export class SimulationCalculator extends ElectricalCalculator {
     calibratedFoisonnementCharges?: number;
   }> {
     
-    // BLOQUÉ - Fonctionnalité de calibration désactivée
-    console.log('🚫 CALIBRATION BLOQUÉE - Mode forcé simplifié sans calibration');
+    console.log('🚀 CALIBRATION ACTIVÉE - Début du mode forcé avec convergence complète');
     
-    // Retourner un résultat basique sans calibration
-    const result = this.calculateScenario(
+    // Préparer les tensions mesurées
+    const preparedVoltages = this.prepareMeasuredVoltages(measuredVoltages, project.voltageSystem);
+    
+    // Phase 1: Calibration du foisonnement des charges (mode nuit sans production)
+    console.log('📊 Phase 1: Calibration du foisonnement des charges');
+    const calibratedFoisonnement = this.calibrateFoisonnement(
+      project,
+      'FORCÉ',
+      { targetVoltage: sourceVoltage, measuredVoltages: preparedVoltages, measurementNodeId },
+      project.foisonnementCharges
+    );
+    
+    console.log(`✅ Foisonnement calibré: ${calibratedFoisonnement.toFixed(1)}%`);
+    
+    // Phase 2: Convergence sur les répartitions de phases avec les tensions mesurées
+    console.log('📊 Phase 2: Convergence sur les répartitions de phases');
+    
+    let iterations = 0;
+    let converged = false;
+    let currentDistribution = this.calculateImbalanceFromVoltages(preparedVoltages);
+    let previousError = Infinity;
+    
+    while (!converged && iterations < 50) {
+      iterations++;
+      
+      // Calculer avec les distributions actuelles
+      const result = this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        'FORCÉ',
+        calibratedFoisonnement,
+        project.foisonnementProductions,
+        project.transformerConfig,
+        project.loadModel,
+        project.desequilibrePourcent,
+        currentDistribution
+      );
+      
+      // Récupérer les tensions calculées au nœud de mesure
+      const measuredNode = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === measurementNodeId);
+      if (!measuredNode?.voltagesPerPhase) {
+        console.warn('⚠️ Impossible de trouver les tensions au nœud de mesure');
+        break;
+      }
+      
+      // Calculer les erreurs de tension par phase
+      const voltageErrors = {
+        A: Math.abs(measuredNode.voltagesPerPhase.A - preparedVoltages.U1),
+        B: Math.abs(measuredNode.voltagesPerPhase.B - preparedVoltages.U2),
+        C: Math.abs(measuredNode.voltagesPerPhase.C - preparedVoltages.U3)
+      };
+      
+      const maxError = Math.max(voltageErrors.A, voltageErrors.B, voltageErrors.C);
+      
+      console.log(`🔄 Itération ${iterations}: Erreur max = ${maxError.toFixed(2)}V`);
+      
+      // Vérifier la convergence
+      if (maxError < SimulationCalculator.CONVERGENCE_TOLERANCE_V || Math.abs(maxError - previousError) < 0.001) {
+        converged = true;
+        console.log('✅ Convergence atteinte');
+        
+        return {
+          result,
+          foisonnementCharges: calibratedFoisonnement,
+          desequilibrePourcent: project.desequilibrePourcent || 0,
+          voltageErrors,
+          iterations,
+          convergenceStatus: 'converged',
+          finalLoadDistribution: currentDistribution.charges,
+          finalProductionDistribution: currentDistribution.productions,
+          calibratedFoisonnementCharges: calibratedFoisonnement
+        };
+      }
+      
+      // Ajuster les distributions basées sur les erreurs
+      currentDistribution = this.calculateImbalanceFromVoltages({
+        U1: measuredNode.voltagesPerPhase.A,
+        U2: measuredNode.voltagesPerPhase.B,
+        U3: measuredNode.voltagesPerPhase.C
+      });
+      previousError = maxError;
+    }
+    
+    // Si pas de convergence après max iterations
+    console.warn('⚠️ Convergence non atteinte après', iterations, 'itérations');
+    
+    const finalResult = this.calculateScenario(
       project.nodes,
       project.cables,
       project.cableTypes,
       'FORCÉ',
-      project.foisonnementCharges,
+      calibratedFoisonnement,
       project.foisonnementProductions,
       project.transformerConfig,
       project.loadModel,
       project.desequilibrePourcent,
-      project.manualPhaseDistribution
+      currentDistribution
     );
     
     return {
-      result,
-      foisonnementCharges: project.foisonnementCharges,
+      result: finalResult,
+      foisonnementCharges: calibratedFoisonnement,
       desequilibrePourcent: project.desequilibrePourcent || 0,
-      iterations: 1,
-      convergenceStatus: 'converged',
-      finalLoadDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-      finalProductionDistribution: { A: 33.33, B: 33.33, C: 33.33 },
-      calibratedFoisonnementCharges: project.foisonnementCharges
+      iterations,
+      convergenceStatus: 'not_converged',
+      finalLoadDistribution: currentDistribution.charges,
+      finalProductionDistribution: currentDistribution.productions,
+      calibratedFoisonnementCharges: calibratedFoisonnement
     };
   }
   
@@ -131,9 +218,9 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
   
   /**
-   * BLOQUÉ - Nouveau processus Mode Forcé en 2 étapes avec boucle de convergence intelligente du déséquilibre
-   * Phase 1: Calibration du foisonnement (nuit) - DÉSACTIVÉE
-   * Phase 2: Convergence sur déséquilibre (jour) avec ajustement des répartitions par phase - DÉSACTIVÉE
+   * Nouveau processus Mode Forcé en 2 étapes avec boucle de convergence intelligente du déséquilibre
+   * Phase 1: Calibration du foisonnement (nuit)
+   * Phase 2: Convergence sur déséquilibre (jour) avec ajustement des répartitions par phase
    */
   private runForcedModeSimulation(
     project: Project,
@@ -149,46 +236,113 @@ export class SimulationCalculator extends ElectricalCalculator {
       sourceVoltage = sourceNode?.tensionCible || 400;
       if (config.targetVoltage && config.targetVoltage <= 250) {
         // Tension cible en phase-neutre pour calibration
+        sourceVoltage = config.targetVoltage;
       }
     }
     
-    let foisonnementCharges = project.foisonnementCharges;
-    let simulationConverged = false;
+    console.log('🚀 Mode FORCÉ ACTIVÉ: Simulation avec calibration et convergence complètes');
     
-    console.log('🚫 Mode FORCÉ BLOQUÉ: Simulation basique sans calibration ni convergence');
+    // Phase 1: Calibration du foisonnement des charges (mode nuit sans production)
+    console.log('📊 Phase 1: Calibration automatique du foisonnement');
+    const calibratedFoisonnement = this.calibrateFoisonnement(
+      project,
+      scenario,
+      config,
+      project.foisonnementCharges
+    );
     
-    // BLOQUÉ - Pas de calibration ni de convergence
-    // Utiliser directement les paramètres du projet
+    console.log(`✅ Foisonnement calibré: ${calibratedFoisonnement.toFixed(1)}%`);
     
-    // Exécuter une simulation basique sans calibration
+    // Phase 2: Convergence sur les répartitions de phases avec mesures réelles
+    console.log('📊 Phase 2: Ajustement des répartitions de phases');
+    
+    let iterations = 0;
+    let converged = false;
+    const preparedVoltages = this.prepareMeasuredVoltages(config.measuredVoltages, project.voltageSystem);
+    let currentDistribution = this.calculateImbalanceFromVoltages(preparedVoltages);
+    let previousError = Infinity;
+    
+    while (!converged && iterations < SimulationCalculator.SIM_MAX_LOCAL_ITERATIONS) {
+      iterations++;
+      
+      // Calculer avec la distribution actuelle
+      const result = this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        calibratedFoisonnement,
+        project.foisonnementProductions,
+        project.transformerConfig,
+        project.loadModel,
+        project.desequilibrePourcent,
+        currentDistribution
+      );
+      
+      // Vérifier les tensions au nœud de mesure
+      const measuredNode = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === config.measurementNodeId);
+      if (!measuredNode?.voltagesPerPhase) {
+        console.warn('⚠️ Nœud de mesure non trouvé, arrêt de la convergence');
+        converged = true;
+        break;
+      }
+      
+      // Calculer l'erreur de tension
+      const voltageErrors = {
+        A: Math.abs(measuredNode.voltagesPerPhase.A - preparedVoltages.U1),
+        B: Math.abs(measuredNode.voltagesPerPhase.B - preparedVoltages.U2),
+        C: Math.abs(measuredNode.voltagesPerPhase.C - preparedVoltages.U3)
+      };
+      
+      const maxError = Math.max(voltageErrors.A, voltageErrors.B, voltageErrors.C);
+      
+      console.log(`🔄 Itération ${iterations}: Erreur max = ${maxError.toFixed(2)}V`);
+      
+      // Vérifier la convergence (erreur < 1V)
+      if (maxError < 1.0 || Math.abs(maxError - previousError) < 0.01) {
+        converged = true;
+        console.log('✅ Convergence atteinte');
+        break;
+      }
+      
+      // Ajuster les distributions pour la prochaine itération
+      currentDistribution = this.calculateImbalanceFromVoltages({
+        U1: measuredNode.voltagesPerPhase.A,
+        U2: measuredNode.voltagesPerPhase.B,
+        U3: measuredNode.voltagesPerPhase.C
+      });
+      previousError = maxError;
+    }
+    
+    // Calcul final avec les paramètres convergés
     const finalResult = this.calculateScenario(
       project.nodes,
       project.cables,
       project.cableTypes,
       scenario,
-      foisonnementCharges,
+      calibratedFoisonnement,
       project.foisonnementProductions,
       project.transformerConfig,
       project.loadModel,
       project.desequilibrePourcent,
-      project.manualPhaseDistribution
+      currentDistribution
     );
     
     const convergenceResult = {
       result: finalResult,
-      converged: true,
-      finalDistribution: { charges: { A: 33.33, B: 33.33, C: 33.33 }, productions: { A: 33.33, B: 33.33, C: 33.33 } },
-      iterations: 1,
-      maxError: 0
+      converged,
+      finalDistribution: currentDistribution,
+      iterations,
+      maxError: previousError
     };
     
-    // Mise à jour finale dans l'interface - conserver la modifiabilité des curseurs
+    // Mise à jour finale dans l'interface
     const finalUpdateEvent = new CustomEvent('updateProjectFoisonnement', { 
       detail: { 
-        foisonnementCharges,
-        foisonnementProductions: 100, // Foisonnement productions fixé à 100%
+        foisonnementCharges: calibratedFoisonnement,
+        foisonnementProductions: 100,
         finalDistribution: convergenceResult.finalDistribution,
-        keepSliderEnabled: true // Permettre la modification des curseurs après simulation
+        keepSliderEnabled: true
       } 
     });
     window.dispatchEvent(finalUpdateEvent);
@@ -199,7 +353,7 @@ export class SimulationCalculator extends ElectricalCalculator {
       convergenceStatus: convergenceResult.converged ? 'converged' : 'not_converged',
       finalLoadDistribution: convergenceResult.finalDistribution.charges,
       finalProductionDistribution: convergenceResult.finalDistribution.productions,
-      calibratedFoisonnementCharges: foisonnementCharges,
+      calibratedFoisonnementCharges: calibratedFoisonnement,
       optimizedPhaseDistribution: convergenceResult.finalDistribution
     } as CalculationResult;
   }
@@ -245,8 +399,8 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * BLOQUÉ - Calibration du foisonnement des charges (Phase 1)
-   * Utilise la même logique que calculateWithTargetVoltage du store
+   * Calibration du foisonnement des charges (Phase 1)
+   * Utilise une recherche binaire pour trouver le foisonnement optimal basé sur la tension cible
    */
   private calibrateFoisonnement(
     project: Project,
@@ -254,14 +408,59 @@ export class SimulationCalculator extends ElectricalCalculator {
     config: any,
     initialFoisonnement: number
   ): number {
-    console.log('🚫 CALIBRATION BLOQUÉE - Retour du foisonnement initial');
-    return initialFoisonnement;
+    console.log('🔧 Calibration du foisonnement en cours...');
     
-    /* BLOQUÉ - Code de calibration désactivé
-    let bestFoisonnement = 100;
-    let bestVoltage = 0;
+    const targetVoltage = config.targetVoltage || 230;
+    const measurementNodeId = config.measurementNodeId;
+    
+    if (!measurementNodeId) {
+      console.warn('⚠️ Pas de nœud de mesure défini, utilisation du foisonnement initial');
+      return initialFoisonnement;
+    }
+    
+    let bestFoisonnement = initialFoisonnement;
     let minDiff = Infinity;
-    */
+    
+    // Recherche du foisonnement optimal entre 50% et 150%
+    const foisonnementMin = 50;
+    const foisonnementMax = 150;
+    const step = 5;
+    
+    console.log(`🎯 Recherche du foisonnement optimal pour tension cible: ${targetVoltage}V`);
+    
+    for (let f = foisonnementMin; f <= foisonnementMax; f += step) {
+      // Calculer avec ce foisonnement
+      const result = this.calculateScenario(
+        project.nodes,
+        project.cables,
+        project.cableTypes,
+        scenario,
+        f,
+        0, // Pas de production en mode nuit
+        project.transformerConfig,
+        project.loadModel,
+        0, // Pas de déséquilibre en mode nuit
+        { charges: { A: 33.33, B: 33.33, C: 33.33 }, productions: { A: 33.33, B: 33.33, C: 33.33 } }
+      );
+      
+      // Récupérer la tension moyenne au nœud de mesure
+      const measuredNode = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === measurementNodeId);
+      if (measuredNode?.voltagesPerPhase) {
+        const avgVoltage = (measuredNode.voltagesPerPhase.A + measuredNode.voltagesPerPhase.B + measuredNode.voltagesPerPhase.C) / 3;
+        const diff = Math.abs(avgVoltage - targetVoltage);
+        
+        if (diff < minDiff) {
+          minDiff = diff;
+          bestFoisonnement = f;
+        }
+        
+        console.log(`  f=${f}%: tension=${avgVoltage.toFixed(1)}V, diff=${diff.toFixed(2)}V`);
+      }
+    }
+    
+    console.log(`✅ Foisonnement optimal trouvé: ${bestFoisonnement}% (erreur: ${minDiff.toFixed(2)}V)`);
+    
+    return bestFoisonnement;
   }
 
   /**
