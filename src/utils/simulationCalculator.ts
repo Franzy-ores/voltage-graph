@@ -824,6 +824,18 @@ export class SimulationCalculator extends ElectricalCalculator {
         compensator.isLimited = compensationResult.isLimited;
         compensator.compensationQ_kVAr = compensationResult.compensationQ_kVAr;
         
+        // Capturer les tensions au nœud du compensateur (avant propagation aval)
+        // Ces tensions sont celles du nœud où le compensateur est installé
+        compensator.u1p_V = nodeMetrics.voltagesPerPhase.A;
+        compensator.u2p_V = nodeMetrics.voltagesPerPhase.B;
+        compensator.u3p_V = nodeMetrics.voltagesPerPhase.C;
+        
+        console.log(`📊 Tensions au nœud compensateur ${compensator.nodeId}:`, {
+          U1p: compensator.u1p_V.toFixed(1) + 'V',
+          U2p: compensator.u2p_V.toFixed(1) + 'V',
+          U3p: compensator.u3p_V.toFixed(1) + 'V'
+        });
+        
         // Si compensation active, recalculer les tensions en aval
         if (compensationResult.reductionPercent > 0) {
           this.recalculateDownstreamVoltages(
@@ -835,25 +847,6 @@ export class SimulationCalculator extends ElectricalCalculator {
             I_B_total,
             I_C_total
           );
-          
-          // Après recalcul, capturer les tensions au nœud du compensateur
-          const compensatorNodeMetrics = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === compensator.nodeId);
-          if (compensatorNodeMetrics) {
-            compensator.u1p_V = compensatorNodeMetrics.voltagesPerPhase.A;
-            compensator.u2p_V = compensatorNodeMetrics.voltagesPerPhase.B;
-            compensator.u3p_V = compensatorNodeMetrics.voltagesPerPhase.C;
-            
-            console.log(`📊 Tensions au nœud compensateur ${compensator.nodeId}:`, {
-              U1p: compensator.u1p_V.toFixed(1) + 'V',
-              U2p: compensator.u2p_V.toFixed(1) + 'V',
-              U3p: compensator.u3p_V.toFixed(1) + 'V'
-            });
-          }
-        } else {
-          // Si pas de compensation, utiliser les tensions actuelles
-          compensator.u1p_V = nodeMetrics.voltagesPerPhase.A;
-          compensator.u2p_V = nodeMetrics.voltagesPerPhase.B;
-          compensator.u3p_V = nodeMetrics.voltagesPerPhase.C;
         }
       }
     }
