@@ -652,18 +652,25 @@ export class SimulationCalculator extends ElectricalCalculator {
     V_B: Complex,
     V_C: Complex
   ): {
+    iN_initial_A: number;
+    currentIN_A: number;
+    iN_absorbed_A: number;
     reductionPercent: number;
     isLimited: boolean;
-    currentIN_A: number;
+    compensationQ_kVAr: { A: number; B: number; C: number };
   } {
     const { magnitude: I_N_mag } = this.calculateNeutralCurrent(I_A, I_B, I_C);
+    const iN_initial_A = I_N_mag;
     
     // Si sous le seuil, pas de compensation
     if (I_N_mag < compensator.tolerance_A) {
       return {
+        iN_initial_A,
+        currentIN_A: I_N_mag,
+        iN_absorbed_A: 0,
         reductionPercent: 0,
         isLimited: false,
-        currentIN_A: I_N_mag
+        compensationQ_kVAr: { A: 0, B: 0, C: 0 }
       };
     }
     
@@ -682,20 +689,49 @@ export class SimulationCalculator extends ElectricalCalculator {
       ? (compensator.maxPower_kVA / Q_needed_kVAr) * fraction * 100
       : fraction * 100;
     
+    // Calcul du courant après compensation
+    const actualFraction = actualReduction / 100;
+    const I_N_after = I_N_mag * (1 - actualFraction);
+    const I_N_absorbed = I_N_mag - I_N_after;
+    
+    // Calcul de la puissance réactive par phase (proportionnelle aux courants)
+    const I_A_mag = abs(I_A);
+    const I_B_mag = abs(I_B);
+    const I_C_mag = abs(I_C);
+    const I_total = I_A_mag + I_B_mag + I_C_mag || 1;
+    
+    const Q_A = isLimited 
+      ? (compensator.maxPower_kVA * (I_A_mag / I_total))
+      : ((I_N_absorbed / 3) * abs(V_A) / 1000);
+    const Q_B = isLimited
+      ? (compensator.maxPower_kVA * (I_B_mag / I_total))
+      : ((I_N_absorbed / 3) * abs(V_B) / 1000);
+    const Q_C = isLimited
+      ? (compensator.maxPower_kVA * (I_C_mag / I_total))
+      : ((I_N_absorbed / 3) * abs(V_C) / 1000);
+    
     console.log(`⚡ Compensation neutre nœud ${compensator.nodeId}:`, {
-      I_N_initial: I_N_mag.toFixed(2) + 'A',
+      I_N_initial: iN_initial_A.toFixed(2) + 'A',
+      I_N_after: I_N_after.toFixed(2) + 'A',
+      I_N_absorbed: I_N_absorbed.toFixed(2) + 'A',
       tolerance: compensator.tolerance_A + 'A',
       fraction: (fraction * 100).toFixed(0) + '%',
       Q_needed: Q_needed_kVAr.toFixed(2) + 'kVAr',
+      Q_A: Q_A.toFixed(2) + 'kVAr',
+      Q_B: Q_B.toFixed(2) + 'kVAr',
+      Q_C: Q_C.toFixed(2) + 'kVAr',
       maxPower: compensator.maxPower_kVA + 'kVA',
       isLimited,
       reductionApplied: actualReduction.toFixed(1) + '%'
     });
     
     return {
+      iN_initial_A,
+      currentIN_A: I_N_after,
+      iN_absorbed_A: I_N_absorbed,
       reductionPercent: actualReduction,
       isLimited,
-      currentIN_A: I_N_mag
+      compensationQ_kVAr: { A: Q_A, B: Q_B, C: Q_C }
     };
   }
 
@@ -780,10 +816,13 @@ export class SimulationCalculator extends ElectricalCalculator {
           V_C
         );
         
-        // Mettre à jour le compensateur avec les résultats
+        // Mettre à jour le compensateur avec TOUS les résultats
+        compensator.iN_initial_A = compensationResult.iN_initial_A;
         compensator.currentIN_A = compensationResult.currentIN_A;
+        compensator.iN_absorbed_A = compensationResult.iN_absorbed_A;
         compensator.reductionPercent = compensationResult.reductionPercent;
         compensator.isLimited = compensationResult.isLimited;
+        compensator.compensationQ_kVAr = compensationResult.compensationQ_kVAr;
         
         // Si compensation active, recalculer les tensions en aval
         if (compensationResult.reductionPercent > 0) {
@@ -796,6 +835,25 @@ export class SimulationCalculator extends ElectricalCalculator {
             I_B_total,
             I_C_total
           );
+          
+          // Après recalcul, capturer les tensions au nœud du compensateur
+          const compensatorNodeMetrics = result.nodeMetricsPerPhase?.find(nm => nm.nodeId === compensator.nodeId);
+          if (compensatorNodeMetrics) {
+            compensator.u1p_V = compensatorNodeMetrics.voltagesPerPhase.A;
+            compensator.u2p_V = compensatorNodeMetrics.voltagesPerPhase.B;
+            compensator.u3p_V = compensatorNodeMetrics.voltagesPerPhase.C;
+            
+            console.log(`📊 Tensions au nœud compensateur ${compensator.nodeId}:`, {
+              U1p: compensator.u1p_V.toFixed(1) + 'V',
+              U2p: compensator.u2p_V.toFixed(1) + 'V',
+              U3p: compensator.u3p_V.toFixed(1) + 'V'
+            });
+          }
+        } else {
+          // Si pas de compensation, utiliser les tensions actuelles
+          compensator.u1p_V = nodeMetrics.voltagesPerPhase.A;
+          compensator.u2p_V = nodeMetrics.voltagesPerPhase.B;
+          compensator.u3p_V = nodeMetrics.voltagesPerPhase.C;
         }
       }
     }
