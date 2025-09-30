@@ -14,7 +14,7 @@ import {
 } from '@/types/network';
 import { SRG2Config, SRG2SimulationResult, SRG2SwitchState, DEFAULT_SRG2_400_CONFIG, DEFAULT_SRG2_230_CONFIG } from '@/types/srg2';
 import { ElectricalCalculator } from '@/utils/electricalCalculations';
-import { Complex, C, add, sub, mul, div, abs, fromPolar } from '@/utils/complex';
+import { Complex, C, add, sub, mul, div, abs, fromPolar, scale } from '@/utils/complex';
 
 export class SimulationCalculator extends ElectricalCalculator {
   
@@ -784,10 +784,155 @@ export class SimulationCalculator extends ElectricalCalculator {
         compensator.currentIN_A = compensationResult.currentIN_A;
         compensator.reductionPercent = compensationResult.reductionPercent;
         compensator.isLimited = compensationResult.isLimited;
+        
+        // Si compensation active, recalculer les tensions en aval
+        if (compensationResult.reductionPercent > 0) {
+          this.recalculateDownstreamVoltages(
+            result,
+            project,
+            compensator,
+            compensationResult.reductionPercent / 100,
+            I_A_total,
+            I_B_total,
+            I_C_total
+          );
+        }
       }
     }
     
     return result;
+  }
+
+  /**
+   * Recalcule les tensions en aval d'un compensateur de neutre
+   */
+  private recalculateDownstreamVoltages(
+    result: CalculationResult,
+    project: Project,
+    compensator: NeutralCompensator,
+    reductionFraction: number,
+    I_A: Complex,
+    I_B: Complex,
+    I_C: Complex
+  ): void {
+    if (!result.nodeMetricsPerPhase) return;
+
+    console.log(`🔄 Recalcul des tensions en aval du compensateur ${compensator.nodeId}`);
+
+    // Calculer l'amélioration de tension au nœud du compensateur
+    const { complex: I_N } = this.calculateNeutralCurrent(I_A, I_B, I_C);
+    const I_N_reduction = scale(I_N, reductionFraction);
+    
+    // Trouver les câbles en aval du compensateur
+    const downstreamNodes = this.findDownstreamNodes(project, compensator.nodeId);
+    
+    console.log(`📍 Nœuds en aval: ${downstreamNodes.length}`, downstreamNodes);
+    
+    // Pour chaque nœud en aval, améliorer les tensions
+    for (const downstreamNodeId of downstreamNodes) {
+      const nodeMetrics = result.nodeMetricsPerPhase.find(nm => nm.nodeId === downstreamNodeId);
+      if (!nodeMetrics) continue;
+      
+      // Trouver le chemin de câbles du compensateur au nœud aval
+      const pathCables = this.findCablePath(project, compensator.nodeId, downstreamNodeId);
+      
+      // Calculer l'amélioration totale de tension (chute de tension réduite)
+      let totalImpedance = C(0, 0);
+      for (const cable of pathCables) {
+        const cableType = project.cableTypes.find(ct => ct.id === cable.typeId);
+        if (!cableType) continue;
+        
+        const length_km = cable.length_m / 1000;
+        const R = cableType.R0_ohm_per_km * length_km;
+        const X = cableType.X0_ohm_per_km * length_km;
+        totalImpedance = add(totalImpedance, C(R, X));
+      }
+      
+      // Amélioration de tension = Z * I_N_reduction
+      const voltageImprovement = mul(totalImpedance, I_N_reduction);
+      const voltageImprovementMag = abs(voltageImprovement);
+      
+      // Appliquer l'amélioration à chaque phase
+      const oldVoltages = { ...nodeMetrics.voltagesPerPhase };
+      nodeMetrics.voltagesPerPhase.A += voltageImprovementMag;
+      nodeMetrics.voltagesPerPhase.B += voltageImprovementMag;
+      nodeMetrics.voltagesPerPhase.C += voltageImprovementMag;
+      
+      console.log(`  📈 Nœud ${downstreamNodeId}: A: ${oldVoltages.A.toFixed(1)}V -> ${nodeMetrics.voltagesPerPhase.A.toFixed(1)}V (+${voltageImprovementMag.toFixed(2)}V)`);
+      
+      // Recalculer les chutes de tension (si disponible)
+      const sourceVoltage = 230; // Tension nominale de référence
+      const dropA = ((sourceVoltage - nodeMetrics.voltagesPerPhase.A) / sourceVoltage) * 100;
+      const dropB = ((sourceVoltage - nodeMetrics.voltagesPerPhase.B) / sourceVoltage) * 100;
+      const dropC = ((sourceVoltage - nodeMetrics.voltagesPerPhase.C) / sourceVoltage) * 100;
+      
+      console.log(`  📉 Chutes de tension: A: ${dropA.toFixed(2)}%, B: ${dropB.toFixed(2)}%, C: ${dropC.toFixed(2)}%`);
+    }
+  }
+
+  /**
+   * Trouve tous les nœuds en aval d'un nœud donné
+   */
+  private findDownstreamNodes(project: Project, startNodeId: string): string[] {
+    const downstream: string[] = [];
+    const visited = new Set<string>();
+    const queue: string[] = [startNodeId];
+    visited.add(startNodeId);
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      
+      // Trouver les câbles partant de ce nœud
+      const outgoingCables = project.cables.filter(
+        c => c.nodeAId === currentId || c.nodeBId === currentId
+      );
+      
+      for (const cable of outgoingCables) {
+        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
+        
+        // Éviter de remonter vers la source (vérifier si le nœud suivant est plus proche de la source)
+        if (!visited.has(nextNodeId)) {
+          visited.add(nextNodeId);
+          downstream.push(nextNodeId);
+          queue.push(nextNodeId);
+        }
+      }
+    }
+    
+    return downstream;
+  }
+
+  /**
+   * Trouve le chemin de câbles entre deux nœuds
+   */
+  private findCablePath(project: Project, fromNodeId: string, toNodeId: string): Cable[] {
+    const path: Cable[] = [];
+    const visited = new Set<string>();
+    const queue: Array<{ nodeId: string; path: Cable[] }> = [{ nodeId: fromNodeId, path: [] }];
+    visited.add(fromNodeId);
+    
+    while (queue.length > 0) {
+      const { nodeId, path: currentPath } = queue.shift()!;
+      
+      if (nodeId === toNodeId) {
+        return currentPath;
+      }
+      
+      const outgoingCables = project.cables.filter(
+        c => c.nodeAId === nodeId || c.nodeBId === nodeId
+      );
+      
+      for (const cable of outgoingCables) {
+        const nextNodeId = cable.nodeAId === nodeId ? cable.nodeBId : cable.nodeAId;
+        
+        if (!visited.has(nextNodeId)) {
+          visited.add(nextNodeId);
+          queue.push({ nodeId: nextNodeId, path: [...currentPath, cable] });
+        }
+      }
+    }
+    
+    return path;
   }
 
   /**
