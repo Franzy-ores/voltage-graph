@@ -573,7 +573,7 @@ export class SimulationCalculator extends ElectricalCalculator {
   }
 
   /**
-   * Calcule un scénario en intégrant les équipements de simulation avec mode itératif pour SRG2
+   * Calcule un scénario en intégrant les équipements de simulation avec mode itératif pour SRG2 et compensateurs
    */
   private calculateScenarioWithEquipment(
     project: Project,
@@ -581,9 +581,12 @@ export class SimulationCalculator extends ElectricalCalculator {
     equipment: SimulationEquipment
   ): CalculationResult {
     
-    // Si pas de SRG2 actifs, calcul normal
+    // Détection des équipements actifs
     const activeSRG2 = equipment.srg2Devices?.filter(srg2 => srg2.enabled) || [];
-    if (activeSRG2.length === 0) {
+    const activeCompensators = equipment.neutralCompensators?.filter(c => c.enabled) || [];
+    
+    // Cas 1: Aucun équipement actif → calcul normal (CODE EXISTANT INCHANGÉ)
+    if (activeSRG2.length === 0 && activeCompensators.length === 0) {
       return this.calculateScenario(
         project.nodes,
         project.cables,
@@ -597,13 +600,194 @@ export class SimulationCalculator extends ElectricalCalculator {
         project.manualPhaseDistribution
       );
     }
+    
+    // Cas 2: Uniquement SRG2 → code existant (INCHANGÉ)
+    if (activeSRG2.length > 0 && activeCompensators.length === 0) {
+      return this.calculateWithSRG2Regulation(
+        project,
+        scenario,
+        activeSRG2
+      );
+    }
+    
+    // Cas 3: Uniquement compensateurs → nouvelle méthode
+    if (activeSRG2.length === 0 && activeCompensators.length > 0) {
+      return this.calculateWithNeutralCompensation(
+        project,
+        scenario,
+        activeCompensators
+      );
+    }
+    
+    // Cas 4: Les deux actifs → calcul avec SRG2 puis compensateurs
+    const srg2Result = this.calculateWithSRG2Regulation(project, scenario, activeSRG2);
+    return this.applyNeutralCompensatorsToResult(srg2Result, project, activeCompensators);
+  }
 
-    // Calcul itératif avec régulation SRG2
-    return this.calculateWithSRG2Regulation(
-      project,
+  /**
+   * Calcule le courant de neutre à partir des courants de phases
+   */
+  private calculateNeutralCurrent(
+    I_A: Complex,
+    I_B: Complex,
+    I_C: Complex
+  ): { magnitude: number; complex: Complex } {
+    // I_N = I_A + I_B + I_C (loi de Kirchhoff)
+    const I_N = add(add(I_A, I_B), I_C);
+    return {
+      magnitude: abs(I_N),
+      complex: I_N
+    };
+  }
+
+  /**
+   * Applique la compensation de neutre à un nœud
+   */
+  private applyNeutralCompensation(
+    compensator: NeutralCompensator,
+    I_A: Complex,
+    I_B: Complex,
+    I_C: Complex,
+    V_A: Complex,
+    V_B: Complex,
+    V_C: Complex
+  ): {
+    reductionPercent: number;
+    isLimited: boolean;
+    currentIN_A: number;
+  } {
+    const { magnitude: I_N_mag } = this.calculateNeutralCurrent(I_A, I_B, I_C);
+    
+    // Si sous le seuil, pas de compensation
+    if (I_N_mag < compensator.tolerance_A) {
+      return {
+        reductionPercent: 0,
+        isLimited: false,
+        currentIN_A: I_N_mag
+      };
+    }
+    
+    // Calcul de la réduction théorique
+    const fraction = compensator.fraction || 0.5;
+    const I_N_target = I_N_mag * (1 - fraction);
+    const reduction = I_N_mag - I_N_target;
+    
+    // Calcul de la puissance réactive nécessaire (approximation)
+    const V_avg = (abs(V_A) + abs(V_B) + abs(V_C)) / 3;
+    const Q_needed_kVAr = (reduction * V_avg * Math.sqrt(3)) / 1000;
+    
+    // Vérification de la limite de puissance
+    const isLimited = Q_needed_kVAr > compensator.maxPower_kVA;
+    const actualReduction = isLimited 
+      ? (compensator.maxPower_kVA / Q_needed_kVAr) * fraction * 100
+      : fraction * 100;
+    
+    console.log(`⚡ Compensation neutre nœud ${compensator.nodeId}:`, {
+      I_N_initial: I_N_mag.toFixed(2) + 'A',
+      tolerance: compensator.tolerance_A + 'A',
+      fraction: (fraction * 100).toFixed(0) + '%',
+      Q_needed: Q_needed_kVAr.toFixed(2) + 'kVAr',
+      maxPower: compensator.maxPower_kVA + 'kVA',
+      isLimited,
+      reductionApplied: actualReduction.toFixed(1) + '%'
+    });
+    
+    return {
+      reductionPercent: actualReduction,
+      isLimited,
+      currentIN_A: I_N_mag
+    };
+  }
+
+  /**
+   * Calcule un scénario avec compensation de neutre uniquement
+   */
+  private calculateWithNeutralCompensation(
+    project: Project,
+    scenario: CalculationScenario,
+    compensators: NeutralCompensator[]
+  ): CalculationResult {
+    // 1. Calcul de base sans équipement
+    const baseResult = this.calculateScenario(
+      project.nodes,
+      project.cables,
+      project.cableTypes,
       scenario,
-      activeSRG2
+      project.foisonnementCharges,
+      project.foisonnementProductions,
+      project.transformerConfig,
+      project.loadModel,
+      project.desequilibrePourcent,
+      project.manualPhaseDistribution
     );
+    
+    return this.applyNeutralCompensatorsToResult(baseResult, project, compensators);
+  }
+
+  /**
+   * Applique les compensateurs de neutre aux résultats de calcul
+   */
+  private applyNeutralCompensatorsToResult(
+    result: CalculationResult,
+    project: Project,
+    compensators: NeutralCompensator[]
+  ): CalculationResult {
+    // 2. Appliquer chaque compensateur
+    for (const compensator of compensators) {
+      const node = project.nodes.find(n => n.id === compensator.nodeId);
+      if (!node) {
+        console.warn(`⚠️ Nœud ${compensator.nodeId} non trouvé pour compensateur`);
+        continue;
+      }
+      
+      // Récupérer les métriques du nœud (si mode monophasé réparti)
+      if (project.loadModel === 'monophase_reparti' && result.nodeMetricsPerPhase) {
+        const nodeMetrics = result.nodeMetricsPerPhase.find(nm => nm.nodeId === compensator.nodeId);
+        if (!nodeMetrics) continue;
+        
+        // Récupérer les courants de phase depuis les câbles parent
+        const parentCables = project.cables.filter(c => c.nodeBId === compensator.nodeId);
+        if (parentCables.length === 0) continue;
+        
+        // Pour chaque câble parent, récupérer les courants de phase
+        let I_A_total = C(0, 0);
+        let I_B_total = C(0, 0);
+        let I_C_total = C(0, 0);
+        
+        for (const cable of parentCables) {
+          const cableResult = result.cables.find(cr => cr.id === cable.id);
+          if (!cableResult) continue;
+          
+          // Estimation des courants de phase (simplifiée)
+          const I_total = cableResult.current_A;
+          I_A_total = add(I_A_total, C(I_total / 3, 0));
+          I_B_total = add(I_B_total, C(I_total / 3, 0));
+          I_C_total = add(I_C_total, C(I_total / 3, 0));
+        }
+        
+        // Appliquer la compensation
+        const V_A = C(nodeMetrics.voltagesPerPhase.A, 0);
+        const V_B = C(nodeMetrics.voltagesPerPhase.B, 0);
+        const V_C = C(nodeMetrics.voltagesPerPhase.C, 0);
+        
+        const compensationResult = this.applyNeutralCompensation(
+          compensator,
+          I_A_total,
+          I_B_total,
+          I_C_total,
+          V_A,
+          V_B,
+          V_C
+        );
+        
+        // Mettre à jour le compensateur avec les résultats
+        compensator.currentIN_A = compensationResult.currentIN_A;
+        compensator.reductionPercent = compensationResult.reductionPercent;
+        compensator.isLimited = compensationResult.isLimited;
+      }
+    }
+    
+    return result;
   }
 
   /**
