@@ -824,20 +824,38 @@ export class SimulationCalculator extends ElectricalCalculator {
         compensator.isLimited = compensationResult.isLimited;
         compensator.compensationQ_kVAr = compensationResult.compensationQ_kVAr;
         
-        // Capturer les tensions au nœud du compensateur (avant propagation aval)
-        // Ces tensions sont celles du nœud où le compensateur est installé
-        compensator.u1p_V = nodeMetrics.voltagesPerPhase.A;
-        compensator.u2p_V = nodeMetrics.voltagesPerPhase.B;
-        compensator.u3p_V = nodeMetrics.voltagesPerPhase.C;
-        
-        console.log(`📊 Tensions au nœud compensateur ${compensator.nodeId}:`, {
-          U1p: compensator.u1p_V.toFixed(1) + 'V',
-          U2p: compensator.u2p_V.toFixed(1) + 'V',
-          U3p: compensator.u3p_V.toFixed(1) + 'V'
-        });
-        
-        // Si compensation active, recalculer les tensions en aval
+        // Si compensation active, recalculer les tensions en aval ET au nœud compensateur
         if (compensationResult.reductionPercent > 0) {
+          // Calculer l'amélioration de tension au nœud du compensateur lui-même
+          const { complex: I_N } = this.calculateNeutralCurrent(I_A_total, I_B_total, I_C_total);
+          const I_N_reduction = scale(I_N, compensationResult.reductionPercent / 100);
+          
+          // Trouver le câble en amont du compensateur pour calculer l'impédance
+          const upstreamCable = project.cables.find(
+            c => c.nodeBId === compensator.nodeId || c.nodeAId === compensator.nodeId
+          );
+          
+          let voltageImprovementAtCompensator = 0;
+          if (upstreamCable) {
+            const cableType = project.cableTypes.find(ct => ct.id === upstreamCable.typeId);
+            if (cableType) {
+              const length_km = upstreamCable.length_m / 1000;
+              const R = cableType.R0_ohm_per_km * length_km;
+              const X = cableType.X0_ohm_per_km * length_km;
+              const Z = C(R, X);
+              const voltageImprovement = mul(Z, I_N_reduction);
+              voltageImprovementAtCompensator = abs(voltageImprovement);
+            }
+          }
+          
+          // Améliorer les tensions au nœud du compensateur
+          nodeMetrics.voltagesPerPhase.A += voltageImprovementAtCompensator;
+          nodeMetrics.voltagesPerPhase.B += voltageImprovementAtCompensator;
+          nodeMetrics.voltagesPerPhase.C += voltageImprovementAtCompensator;
+          
+          console.log(`📈 Amélioration tension au nœud compensateur: +${voltageImprovementAtCompensator.toFixed(2)}V`);
+          
+          // Propager aux nœuds en aval
           this.recalculateDownstreamVoltages(
             result,
             project,
@@ -848,6 +866,17 @@ export class SimulationCalculator extends ElectricalCalculator {
             I_C_total
           );
         }
+        
+        // Capturer les tensions APRÈS amélioration
+        compensator.u1p_V = nodeMetrics.voltagesPerPhase.A;
+        compensator.u2p_V = nodeMetrics.voltagesPerPhase.B;
+        compensator.u3p_V = nodeMetrics.voltagesPerPhase.C;
+        
+        console.log(`📊 Tensions finales au nœud compensateur ${compensator.nodeId}:`, {
+          U1p: compensator.u1p_V.toFixed(1) + 'V',
+          U2p: compensator.u2p_V.toFixed(1) + 'V',
+          U3p: compensator.u3p_V.toFixed(1) + 'V'
+        });
       }
     }
     
