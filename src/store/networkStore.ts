@@ -1157,9 +1157,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       maxPower_kVA: 30,
       tolerance_A: 5,
       enabled: true,
-      zPhase_Ohm: 0.5,
-      zNeutral_Ohm: 0.2,
-      fraction: 0.6
+      Zph_Ohm: 0.5,  // Impédance câble phase (modèle EQUI8)
+      Zn_Ohm: 0.2    // Impédance câble neutre (modèle EQUI8)
     };
 
     set({

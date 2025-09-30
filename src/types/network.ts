@@ -176,24 +176,26 @@ export interface NeutralCompensator {
   maxPower_kVA: number; // Puissance totale disponible pour compensation
   tolerance_A: number; // Seuil de courant de neutre pour déclencher la compensation
   enabled: boolean; // Actif dans la simulation
-  // Paramètres physiques
-  phaseImpedance?: number;   // Ω/phase (Zp)
-  neutralImpedance?: number; // Ω neutre (Zn)
-  // Compat héritée (fallback)
-  zPhase_Ohm?: number;
-  zNeutral_Ohm?: number;
-  fraction?: number;     // Fraction F (0-1)
-  // Résultats de simulation
-  currentIN_A?: number; // Courant de neutre après compensation (A)
-  compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase (si modélisé)
+  // Paramètres EQUI8 (modèle CME Transformateur)
+  Zph_Ohm: number; // Impédance câble phase réseau (Ω) - doit être > 0,15 Ω
+  Zn_Ohm: number;  // Impédance câble neutre réseau (Ω) - doit être > 0,15 Ω
+  // Résultats de simulation EQUI8
+  currentIN_A?: number; // Courant de neutre final I-EQUI8 (A)
   reductionPercent?: number; // Pourcentage de réduction du courant de neutre
   isLimited?: boolean; // True si limitation par puissance atteinte
-  // Sorties additionnelles EQUI8
+  // Tensions et courants EQUI8
   iN_initial_A?: number;    // Courant de neutre initial (A)
-  iN_absorbed_A?: number;   // Courant de neutre absorbé (A)
-  u1p_V?: number;           // Tension corrigée phase A (V)
-  u2p_V?: number;           // Tension corrigée phase B (V)
-  u3p_V?: number;           // Tension corrigée phase C (V)
+  iN_absorbed_A?: number;   // Courant de neutre absorbé par EQUI8 (A)
+  u1p_V?: number;           // UEQUI8-ph1 : Tension phase A après EQUI8 (V)
+  u2p_V?: number;           // UEQUI8-ph2 : Tension phase B après EQUI8 (V)
+  u3p_V?: number;           // UEQUI8-ph3 : Tension phase C après EQUI8 (V)
+  // Métriques intermédiaires EQUI8
+  umoy_init_V?: number;     // Moyenne des tensions initiales
+  umax_init_V?: number;     // Max des tensions initiales
+  umin_init_V?: number;     // Min des tensions initiales
+  ecart_init_V?: number;    // (Umax-Umin)init
+  ecart_equi8_V?: number;   // (Umax-Umin)EQUI8 après compensation
+  compensationQ_kVAr?: { A: number; B: number; C: number }; // Q par phase (si modélisé)
 }
 
 export interface CableUpgrade {

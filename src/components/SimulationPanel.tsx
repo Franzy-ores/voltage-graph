@@ -156,44 +156,65 @@ export const SimulationPanel = () => {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="text-xs">Z_phase (Ω)</Label>
+              <Label className="text-xs">Zph - Phase (Ω)</Label>
               <Input
                 type="number"
                 step="0.01"
-                value={compensator.zPhase_Ohm ?? 0.5}
+                value={compensator.Zph_Ohm ?? 0.5}
                 onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  zPhase_Ohm: Number(e.target.value)
+                  Zph_Ohm: Number(e.target.value)
                 })}
                 className="h-8"
+                disabled={!eligible}
               />
+              {compensator.Zph_Ohm < 0.15 && (
+                <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>
+              )}
             </div>
             <div>
-              <Label className="text-xs">Z_neutre (Ω)</Label>
+              <Label className="text-xs">Zn - Neutre (Ω)</Label>
               <Input
                 type="number"
                 step="0.01"
-                value={compensator.zNeutral_Ohm ?? 0.2}
+                value={compensator.Zn_Ohm ?? 0.2}
                 onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  zNeutral_Ohm: Number(e.target.value)
+                  Zn_Ohm: Number(e.target.value)
                 })}
                 className="h-8"
+                disabled={!eligible}
               />
+              {compensator.Zn_Ohm < 0.15 && (
+                <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>
+              )}
             </div>
           </div>
 
           {compensator.currentIN_A !== undefined && (
             <div className="bg-muted/50 p-2 rounded">
-              <div className="text-xs font-medium mb-1">Résultats simulation:</div>
+              <div className="text-xs font-medium mb-1">Résultats EQUI8:</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>I_N après: {compensator.currentIN_A.toFixed(1)} A</div>
+                <div>I-EQUI8: {compensator.currentIN_A.toFixed(1)} A</div>
                 <div>Réduction: {compensator.reductionPercent?.toFixed(1)}%</div>
               </div>
-              <div className="grid grid-cols-3 gap-2 text-xs mt-2">
-                <div>U1': {compensator.u1p_V?.toFixed(1)} V</div>
-                <div>U2': {compensator.u2p_V?.toFixed(1)} V</div>
-                <div>U3': {compensator.u3p_V?.toFixed(1)} V</div>
+              <Separator className="my-2" />
+              <div className="text-xs font-medium mb-1">Tensions (Ph-N):</div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>Ph1: {compensator.u1p_V?.toFixed(1)} V</div>
+                <div>Ph2: {compensator.u2p_V?.toFixed(1)} V</div>
+                <div>Ph3: {compensator.u3p_V?.toFixed(1)} V</div>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+              {compensator.umoy_init_V && (
+                <>
+                  <Separator className="my-2" />
+                  <div className="text-xs">
+                    <div>Umoy init: {compensator.umoy_init_V.toFixed(1)} V</div>
+                    <div>Écart init: {compensator.ecart_init_V?.toFixed(1)} V</div>
+                    <div>Écart EQUI8: {compensator.ecart_equi8_V?.toFixed(1)} V</div>
+                  </div>
+                </>
+              )}
+              <Separator className="my-2" />
+              <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>I_N initial: {compensator.iN_initial_A?.toFixed(1)} A</div>
                 <div>I_N absorbé: {compensator.iN_absorbed_A?.toFixed(1)} A</div>
               </div>
@@ -202,6 +223,12 @@ export const SimulationPanel = () => {
                   <div>Q_A: {compensator.compensationQ_kVAr.A.toFixed(1)} kVAr</div>
                   <div>Q_B: {compensator.compensationQ_kVAr.B.toFixed(1)} kVAr</div>
                   <div>Q_C: {compensator.compensationQ_kVAr.C.toFixed(1)} kVAr</div>
+                </div>
+              )}
+              {compensator.isLimited && (
+                <div className="mt-2 flex items-center gap-1 text-xs text-yellow-600">
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Limité par puissance max</span>
                 </div>
               )}
             </div>
