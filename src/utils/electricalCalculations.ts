@@ -771,7 +771,7 @@ export class ElectricalCalculator {
         addExtra((n as any).productions || [], -1);
       }
 
-      const runBFSForPhase = (angleDeg: number, S_map: Map<string, Complex>) => {
+      const runBFSForPhase = (angleDeg: number, S_map: Map<string, Complex>, phaseLabel: 'A'|'B'|'C') => {
         const V_node_phase = new Map<string, Complex>();
         const I_branch_phase = new Map<string, Complex>();
         const I_inj_node_phase = new Map<string, Complex>();
@@ -903,14 +903,85 @@ export class ElectricalCalculator {
       };
 
       // Déphasages corrects pour les phases A, B, C
-      const phaseA = runBFSForPhase(0, S_A_map);      // 0°
-      const phaseB = runBFSForPhase(-120, S_B_map);   // -120°
-      const phaseC = runBFSForPhase(120, S_C_map);    // +120°
+      const phaseA = runBFSForPhase(0, S_A_map, 'A');      // 0°
+      const phaseB = runBFSForPhase(-120, S_B_map, 'B');   // -120°
+      const phaseC = runBFSForPhase(120, S_C_map, 'C');    // +120°
+      
+      // Détection du système 400V pour le calcul du courant neutre
+      const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
+      
+      // ===== CORRECTION MAJEURE : Propagation de la chute de tension du conducteur neutre =====
+      // Pour les réseaux 400V phase-neutre, le courant neutre crée une chute de tension supplémentaire
+      // qui doit être ajoutée aux tensions phase-neutre calculées
+      if (is400V) {
+        // Calculer la tension du neutre à chaque nœud en propageant la chute Z_neutre * I_N
+        const V_neutral = new Map<string, Complex>();
+        V_neutral.set(source.id, C(0, 0)); // Le neutre à la source est à 0V (référence)
+        
+        // BFS depuis la source pour propager la tension du neutre
+        const stack3 = [source.id];
+        const visited3 = new Set<string>();
+        
+        while (stack3.length) {
+          const u = stack3.pop()!;
+          if (visited3.has(u)) continue;
+          visited3.add(u);
+          
+          const Vn_parent = V_neutral.get(u) || C(0, 0);
+          
+          for (const v of children.get(u) || []) {
+            const cab = parentCableOfChild.get(v);
+            if (!cab) continue;
+            
+            // Calcul du courant neutre sur ce segment (somme vectorielle complexe)
+            const IA = phaseA.I_branch_phase.get(cab.id) || C(0, 0);
+            const IB = phaseB.I_branch_phase.get(cab.id) || C(0, 0);
+            const IC = phaseC.I_branch_phase.get(cab.id) || C(0, 0);
+            const IN_phasor = add(add(IA, IB), IC); // Somme vectorielle complexe
+            
+            // Récupérer l'impédance du conducteur neutre (R0, X0)
+            const distalNode = nodeById.get(v)!;
+            const ct = cableTypeById.get(cab.typeId);
+            if (!ct) continue;
+            const length_m = this.calculateLengthMeters(cab.coordinates || []);
+            const L_km = length_m / 1000;
+            
+            // Utiliser R0/X0 pour le conducteur neutre
+            const Z_neutral = C(ct.R0_ohm_per_km * L_km, ct.X0_ohm_per_km * L_km);
+            
+            // Chute de tension dans le neutre (phasor)
+            const dVn = mul(Z_neutral, IN_phasor);
+            
+            // Tension du neutre au nœud enfant
+            const Vn_child = add(Vn_parent, dVn);
+            V_neutral.set(v, Vn_child);
+            
+            stack3.push(v);
+          }
+        }
+        
+        // Corriger les tensions phase-neutre en soustrayant la tension du neutre
+        // V_phase_neutre_corrigé = V_phase - V_neutral
+        for (const n of nodes) {
+          if (n.id === source.id) continue; // La source n'a pas besoin de correction
+          
+          const Vn = V_neutral.get(n.id);
+          if (!Vn) continue;
+          
+          // Corriger les 3 phases
+          const Va = phaseA.V_node_phase.get(n.id);
+          const Vb = phaseB.V_node_phase.get(n.id);
+          const Vc = phaseC.V_node_phase.get(n.id);
+          
+          if (Va) phaseA.V_node_phase.set(n.id, sub(Va, Vn));
+          if (Vb) phaseB.V_node_phase.set(n.id, sub(Vb, Vn));
+          if (Vc) phaseC.V_node_phase.set(n.id, sub(Vc, Vn));
+        }
+      }
 
       // Compose cable results (par phase)
       calculatedCables.length = 0;
       globalLosses = 0;
-      const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
 
       for (const cab of cables) {
         const childId = cableChildId.get(cab.id);

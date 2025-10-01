@@ -119,4 +119,80 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
       expect(maxLineVoltage).toBeLessThan(440);
     }
   });
+
+  it('Cas 5: réseau équilibré - courant neutre nul et tensions identiques en monophasé/polyphasé', () => {
+    const calc = new ElectricalCalculator(1.0);
+    
+    // Configuration réseau équilibré : 3 charges identiques de 10 kVA réparties uniformément
+    const nodes: Node[] = [
+      { id: 'src', name: 'Source', lat: 0, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [], isSource: true },
+      { id: 'n1', name: 'Node1', lat: degLatForMeters(100), lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [{ id: 'c1', label: 'Load1', S_kVA: 10 }], productions: [] },
+    ];
+    const cables: Cable[] = [
+      { id: 'cab1', name: 'C1', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n1', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: 0 }] }
+    ];
+    const cableTypes: CableType[] = [mkCableType('t1', 0.3, 0.1, 0.3, 0.1)];
+    const transformer = baseTransformer(400, 100, 4);
+
+    // Répartition manuelle équilibrée (33.33% sur chaque phase)
+    const equilibratedDistribution = { 
+      charges: { A: 33.33, B: 33.33, C: 33.34 }, 
+      productions: { A: 33.33, B: 33.33, C: 33.34 }
+    };
+
+    // Calcul en mode monophasé équilibré
+    const resultMono = calc.calculateScenario(
+      nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 
+      100, 100, transformer, 'monophase_reparti', 0, equilibratedDistribution
+    );
+
+    // Calcul en mode polyphasé équilibré
+    const resultPoly = calc.calculateScenario(
+      nodes, cables, cableTypes, 'PRÉLÈVEMENT' as CalculationScenario, 
+      100, 100, transformer, 'polyphase_equilibre', 0, undefined
+    );
+
+    // Vérifications pour le mode monophasé équilibré
+    const cableMono = resultMono.cables[0];
+    const nodeMetricsMono = resultMono.nodeMetricsPerPhase?.find(n => n.nodeId === 'n1');
+
+    // 1. Courant neutre doit être pratiquement nul (tolérance 0.1 A pour erreurs numériques)
+    expect(cableMono.currentsPerPhase_A?.N ?? 0).toBeLessThan(0.1);
+
+    // 2. Tensions des 3 phases doivent être pratiquement identiques (tolérance 0.1 V)
+    if (nodeMetricsMono) {
+      const voltages = [
+        nodeMetricsMono.voltagesPerPhase.A,
+        nodeMetricsMono.voltagesPerPhase.B,
+        nodeMetricsMono.voltagesPerPhase.C
+      ];
+      const avgVoltage = (voltages[0] + voltages[1] + voltages[2]) / 3;
+      const maxDeviation = Math.max(...voltages.map(v => Math.abs(v - avgVoltage)));
+      expect(maxDeviation).toBeLessThan(0.1); // Tensions équilibrées à 0.1 V près
+    }
+
+    // 3. Comparaison mono/poly : tensions doivent être identiques (tolérance 0.5 V)
+    const cablePoly = resultPoly.cables[0];
+    const nodeMetricsPoly = resultPoly.nodeMetricsPerPhase?.find(n => n.nodeId === 'n1');
+    
+    if (nodeMetricsMono && nodeMetricsPoly) {
+      const monoAvgVoltage = (
+        nodeMetricsMono.voltagesPerPhase.A + 
+        nodeMetricsMono.voltagesPerPhase.B + 
+        nodeMetricsMono.voltagesPerPhase.C
+      ) / 3;
+      
+      const polyAvgVoltage = (
+        nodeMetricsPoly.voltagesPerPhase.A + 
+        nodeMetricsPoly.voltagesPerPhase.B + 
+        nodeMetricsPoly.voltagesPerPhase.C
+      ) / 3;
+      
+      // Les tensions moyennes doivent être identiques entre mono et poly
+      expect(Math.abs(monoAvgVoltage - polyAvgVoltage)).toBeLessThan(0.5);
+    }
+
+    // 4. Chute de tension doit être identique entre mono et poly (tolérance 0.1%)
+    expect(Math.abs((cableMono.voltageDropPercent ?? 0) - (cablePoly.voltageDropPercent ?? 0))).toBeLessThan(0.1);
+  });
 });
