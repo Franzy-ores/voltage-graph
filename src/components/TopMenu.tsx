@@ -174,35 +174,37 @@ export const TopMenu = ({
           <div className="flex items-center justify-between gap-4">
             {/* Load Model Controls */}
             <div className="flex items-center gap-4">
-              {/* Load Model Selector */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Modèle:</Label>
-                <Select value={currentProject.loadModel || 'polyphase_equilibre'} onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => updateProjectConfig({
+              {/* Load Model and Scenario Selectors - Vertical Stack */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Modèle:</Label>
+                  <Select value={currentProject.loadModel || 'polyphase_equilibre'} onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => updateProjectConfig({
               loadModel: value
             })}>
-                  <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border z-[10000]">
-                    <SelectItem value="polyphase_equilibre">Polyphasé équilibré</SelectItem>
-                    <SelectItem value="monophase_reparti">Monophasé réparti</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                    <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border z-[10000]">
+                      <SelectItem value="polyphase_equilibre">Polyphasé équilibré</SelectItem>
+                      <SelectItem value="monophase_reparti">Monophasé réparti</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              {/* Scenario Selector */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Scénario:</Label>
-                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
-                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border z-[10000]">
-                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
-                    <SelectItem value="MIXTE">Mixte</SelectItem>
-                    <SelectItem value="PRODUCTION">Production</SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Scenario Selector */}
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">Scénario:</Label>
+                  <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
+                    <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background border z-[10000]">
+                      <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
+                      <SelectItem value="MIXTE">Mixte</SelectItem>
+                      <SelectItem value="PRODUCTION">Production</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
                 {/* Foisonnement Sliders - Vertical avec barres colorées */}
