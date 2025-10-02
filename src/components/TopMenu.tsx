@@ -39,8 +39,6 @@ export const TopMenu = ({
     setFoisonnementProductions,
     simulationPreview,
     editTarget,
-    toggleFocusMode,
-    focusMode,
   } = useNetworkStore();
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
@@ -81,29 +79,6 @@ export const TopMenu = ({
 
         {/* Menu Actions */}
         <div className="flex items-center gap-1">
-          {!focusMode && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={toggleFocusMode} 
-              title="Mode Focus (masque toolbar et panneau)"
-              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-            >
-              🎯 Focus
-            </Button>
-          )}
-          {focusMode && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={toggleFocusMode} 
-              title="Sortir du mode Focus"
-              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-            >
-              ↩️ Normal
-            </Button>
-          )}
-          
           <Button variant="ghost" size="sm" onClick={handleExportPDF} disabled={!currentProject || !calculationResults[selectedScenario]} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50">
             <FileDown className="h-4 w-4 mr-1" />
             PDF

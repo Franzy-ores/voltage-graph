@@ -8,7 +8,9 @@ export const Toolbar = () => {
     setSelectedTool, 
     currentProject, 
     calculateAll,
-    setSelectedNode
+    setSelectedNode,
+    focusMode,
+    toggleFocusMode,
   } = useNetworkStore();
 
   const handleCalculate = () => {
@@ -67,6 +69,19 @@ export const Toolbar = () => {
 
   return (
     <div className="w-16 bg-muted/30 border-r flex flex-col items-center py-4 gap-2">
+      {/* Bouton Mode Focus en haut */}
+      <Button
+        variant={focusMode ? "default" : "outline"}
+        size="icon"
+        onClick={toggleFocusMode}
+        title={focusMode ? "Sortir du mode Focus" : "Mode Focus (masque menus haut/droite)"}
+        className="w-12 h-12 mb-2"
+      >
+        <span className="text-lg">{focusMode ? '↩️' : '🎯'}</span>
+      </Button>
+      
+      <div className="w-full h-px bg-border mb-1" />
+      
       {tools.map((tool) => {
         return (
           <Button

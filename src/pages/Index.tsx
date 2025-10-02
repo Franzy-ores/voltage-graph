@@ -119,7 +119,7 @@ const Index = () => {
   };
 
   // Déterminer si on doit afficher le ResultsPanel
-  const shouldShowResults = resultsPanelOpen && editTarget !== 'simulation';
+  const shouldShowResults = resultsPanelOpen && editTarget !== 'simulation' && !focusMode;
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -134,7 +134,7 @@ const Index = () => {
       )}
       
       <div className="flex-1 flex relative">
-        {!focusMode && <Toolbar />}
+        <Toolbar />
         <MapView />
         <ResultsPanel
           results={resultsToUse}
