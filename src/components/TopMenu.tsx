@@ -10,7 +10,6 @@ import { PDFGenerator } from "@/utils/pdfGenerator";
 import { PhaseDistributionDisplay } from "@/components/PhaseDistributionDisplay";
 import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
 import { toast } from "sonner";
-
 interface TopMenuProps {
   onNewNetwork: () => void;
   onSave: () => void;
@@ -18,10 +17,15 @@ interface TopMenuProps {
   onSettings: () => void;
   onSimulation: () => void;
 }
-
-export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation }: TopMenuProps) => {
-  const { 
-    currentProject, 
+export const TopMenu = ({
+  onNewNetwork,
+  onSave,
+  onLoad,
+  onSettings,
+  onSimulation
+}: TopMenuProps) => {
+  const {
+    currentProject,
     showVoltages,
     setShowVoltages,
     selectedScenario,
@@ -34,13 +38,11 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
     setFoisonnementProductions,
     simulationPreview
   } = useNetworkStore();
-
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
       toast.error("Aucun projet ou scénario sélectionné.");
       return;
     }
-
     const generatePDF = async () => {
       const pdfGenerator = new PDFGenerator();
       await pdfGenerator.generateReport({
@@ -49,16 +51,13 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
         selectedScenario
       });
     };
-
     toast.promise(generatePDF(), {
       loading: "Génération du rapport PDF en cours...",
       success: "Rapport PDF généré avec succès !",
       error: "Erreur lors de la génération du rapport PDF."
     });
   };
-
-  return (
-    <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
+  return <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
       {/* Title Section */}
       <div className="flex items-center justify-between px-6 py-2 border-b border-primary-foreground/10">
         <div className="flex items-center gap-3">
@@ -73,74 +72,37 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
 
         {/* Menu Actions - Always Visible */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleExportPDF}
-            disabled={!currentProject || !calculationResults[selectedScenario]}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
-          >
+          <Button variant="ghost" size="sm" onClick={handleExportPDF} disabled={!currentProject || !calculationResults[selectedScenario]} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50">
             <FileDown className="h-4 w-4 mr-1" />
             PDF
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onNewNetwork}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={onNewNetwork} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <FileText className="h-4 w-4 mr-1" />
             Nouveau
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSave}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={onSave} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <Save className="h-4 w-4 mr-1" />
             Sauvegarder
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onLoad}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={onLoad} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <FolderOpen className="h-4 w-4 mr-1" />
             Charger
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={updateCableTypes}
-            disabled={!currentProject}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50"
-          >
+          <Button variant="ghost" size="sm" onClick={updateCableTypes} disabled={!currentProject} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50">
             <Settings className="h-4 w-4 mr-1" />
             Câbles
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSimulation}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={onSimulation} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <Zap className="h-4 w-4 mr-1" />
             Simulation
           </Button>
           
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSettings}
-            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-          >
+          <Button variant="ghost" size="sm" onClick={onSettings} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <Settings className="h-4 w-4 mr-1" />
             Paramètres
           </Button>
@@ -148,8 +110,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
       </div>
 
       {/* Controls - When Project Exists */}
-      {currentProject && (
-        <div className="px-6 py-2 space-y-2">
+      {currentProject && <div className="px-6 py-2 space-y-2">
           {/* First Row: Scenario, System Info, Voltage Switch */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -170,7 +131,7 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               </div>
 
               {/* System Info */}
-              <div className="text-xs text-primary-foreground/80">
+              <div className="text-xs text-primary-foreground/80 rounded-lg">
                 {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
@@ -179,79 +140,50 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
             <div className="flex items-center gap-4">
               {/* Voltage Display Switch */}
               <div className="flex items-center gap-2">
-                <Switch 
-                  id="voltage-display" 
-                  checked={showVoltages} 
-                  onCheckedChange={setShowVoltages}
-                  className="data-[state=checked]:bg-white/20"
-                />
+                <Switch id="voltage-display" checked={showVoltages} onCheckedChange={setShowVoltages} className="data-[state=checked]:bg-white/20" />
                 <Label htmlFor="voltage-display" className="text-sm font-medium">Tensions</Label>
               </div>
 
               {/* Change Voltage System Button */}
-              <Button
-                onClick={changeVoltageSystem}
-                variant="ghost"
-                size="sm"
-                className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
-              >
+              <Button onClick={changeVoltageSystem} variant="ghost" size="sm" className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
                 {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
               </Button>
             </div>
           </div>
 
           {/* Second Row: Virtual Busbar Info (if exists) */}
-          {calculationResults[selectedScenario]?.virtualBusbar && (
-            <div className="text-xs text-primary-foreground/90 font-medium bg-white/5 px-3 py-1 rounded">
+          {calculationResults[selectedScenario]?.virtualBusbar && <div className="text-xs text-primary-foreground/90 font-medium bg-white/5 px-3 py-1 rounded">
               {(() => {
-                const result = calculationResults[selectedScenario]!;
-                const busbar = result.virtualBusbar!;
-                const sourceNode = currentProject.nodes.find(node => node.isSource);
-                const sourceMetrics = sourceNode && result.nodeMetricsPerPhase?.find(m => m.nodeId === sourceNode.id);
-                
-                // Pour monophasé 400V, afficher les tensions phase-neutre
-                if (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && currentProject.loadModel === 'monophase_reparti' && sourceMetrics) {
-                  // Les voltagesPerPhase sont multipliées par √3 dans le calcul, il faut les diviser pour avoir les tensions phase-neutre
-                  const phaseNeutralA = sourceMetrics.voltagesPerPhase.A / Math.sqrt(3);
-                  const phaseNeutralB = sourceMetrics.voltagesPerPhase.B / Math.sqrt(3);
-                  const phaseNeutralC = sourceMetrics.voltagesPerPhase.C / Math.sqrt(3);
-                  
-                  return (
-                    <>
+          const result = calculationResults[selectedScenario]!;
+          const busbar = result.virtualBusbar!;
+          const sourceNode = currentProject.nodes.find(node => node.isSource);
+          const sourceMetrics = sourceNode && result.nodeMetricsPerPhase?.find(m => m.nodeId === sourceNode.id);
+
+          // Pour monophasé 400V, afficher les tensions phase-neutre
+          if (currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' && currentProject.loadModel === 'monophase_reparti' && sourceMetrics) {
+            // Les voltagesPerPhase sont multipliées par √3 dans le calcul, il faut les diviser pour avoir les tensions phase-neutre
+            const phaseNeutralA = sourceMetrics.voltagesPerPhase.A / Math.sqrt(3);
+            const phaseNeutralB = sourceMetrics.voltagesPerPhase.B / Math.sqrt(3);
+            const phaseNeutralC = sourceMetrics.voltagesPerPhase.C / Math.sqrt(3);
+            return <>
                       Jeu de barres: VA: {phaseNeutralA.toFixed(1)}V - VB: {phaseNeutralB.toFixed(1)}V - VC: {phaseNeutralC.toFixed(1)}V - 
                       {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
-                      {busbar.current_N !== undefined && (
-                        <> - I_N: {busbar.current_N.toFixed(1)}A</>
-                      )} - 
-                      ΔU: {typeof busbar.deltaU_V === 'number' ? 
-                        (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : 
-                        '0.00'}V
-                      {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && (
-                        <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>
-                      )}
-                    </>
-                  );
-                }
-                
-                // Affichage standard
-                return (
-                  <>
+                      {busbar.current_N !== undefined && <> - I_N: {busbar.current_N.toFixed(1)}A</>} - 
+                      ΔU: {typeof busbar.deltaU_V === 'number' ? (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : '0.00'}V
+                      {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>}
+                    </>;
+          }
+
+          // Affichage standard
+          return <>
                     Jeu de barres: {busbar.voltage_V.toFixed(1)}V - 
                     {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
-                    {busbar.current_N !== undefined && (
-                      <> - I_N: {busbar.current_N.toFixed(1)}A</>
-                    )} - 
-                    ΔU: {typeof busbar.deltaU_V === 'number' ? 
-                      (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : 
-                      '0.00'}V
-                    {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && (
-                      <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
+                    {busbar.current_N !== undefined && <> - I_N: {busbar.current_N.toFixed(1)}A</>} - 
+                    ΔU: {typeof busbar.deltaU_V === 'number' ? (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : '0.00'}V
+                    {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>}
+                  </>;
+        })()}
+            </div>}
 
           {/* Phase Distribution Display */}
           <PhaseDistributionDisplay />
@@ -263,12 +195,9 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
               {/* Load Model Selector */}
               <div className="flex items-center gap-2">
                 <Label className="text-sm font-medium">Modèle:</Label>
-                <Select 
-                  value={currentProject.loadModel || 'polyphase_equilibre'} 
-                  onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => 
-                    updateProjectConfig({ loadModel: value })
-                  }
-                >
+                <Select value={currentProject.loadModel || 'polyphase_equilibre'} onValueChange={(value: 'monophase_reparti' | 'polyphase_equilibre') => updateProjectConfig({
+              loadModel: value
+            })}>
                   <SelectTrigger className="w-[140px] bg-white/10 border-white/20 text-primary-foreground">
                     <SelectValue />
                   </SelectTrigger>
@@ -290,29 +219,15 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                       {/* Barre de fond */}
                       <div className="relative w-6 h-20 bg-muted rounded-md border">
                         {/* Barre de progression colorée */}
-                        <div 
-                          className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200"
-                          style={{ 
-                            height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%` 
-                          }}
-                        />
+                        <div className="absolute bottom-0 w-full bg-gradient-to-t from-blue-500 to-blue-300 rounded-md transition-all duration-200" style={{
+                    height: `${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%`
+                  }} />
                         {/* Curseur traditionnel par-dessus */}
-                        <Slider
-                          value={[currentProject.foisonnementCharges]}
-                          onValueChange={(value) => setFoisonnementCharges(value[0])}
-                          max={100}
-                          min={0}
-                          step={1}
-                          orientation="vertical"
-                          className="absolute inset-0 h-20 slider-charges opacity-80"
-                          disabled={simulationPreview.isActive}
-                        />
+                        <Slider value={[currentProject.foisonnementCharges]} onValueChange={value => setFoisonnementCharges(value[0])} max={100} min={0} step={1} orientation="vertical" className="absolute inset-0 h-20 slider-charges opacity-80" disabled={simulationPreview.isActive} />
                       </div>
                       <span className={`text-xs mt-1 font-medium ${simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? 'text-orange-300' : ''}`}>
                         {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
-                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && (
-                          <span className="text-xs ml-1 text-orange-200">(sim)</span>
-                        )}
+                        {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && <span className="text-xs ml-1 text-orange-200">(sim)</span>}
                       </span>
                     </div>
                   </div>
@@ -324,21 +239,11 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                       {/* Barre de fond */}
                       <div className="relative w-6 h-20 bg-muted rounded-md border">
                         {/* Barre de progression colorée */}
-                        <div 
-                          className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200"
-                          style={{ height: `${currentProject.foisonnementProductions}%` }}
-                        />
+                        <div className="absolute bottom-0 w-full bg-gradient-to-t from-green-500 to-green-300 rounded-md transition-all duration-200" style={{
+                    height: `${currentProject.foisonnementProductions}%`
+                  }} />
                         {/* Curseur traditionnel par-dessus */}
-                        <Slider
-                          value={[currentProject.foisonnementProductions]}
-                          onValueChange={(value) => setFoisonnementProductions(value[0])}
-                          max={100}
-                          min={0}
-                          step={1}
-                          orientation="vertical"
-                          className="absolute inset-0 h-20 slider-productions opacity-80"
-                          disabled={simulationPreview.isActive}
-                        />
+                        <Slider value={[currentProject.foisonnementProductions]} onValueChange={value => setFoisonnementProductions(value[0])} max={100} min={0} step={1} orientation="vertical" className="absolute inset-0 h-20 slider-productions opacity-80" disabled={simulationPreview.isActive} />
                       </div>
                       <span className="text-xs mt-1 font-medium">
                         {currentProject.foisonnementProductions}%
@@ -348,21 +253,17 @@ export const TopMenu = ({ onNewNetwork, onSave, onLoad, onSettings, onSimulation
                 </div>
 
               {/* Phase Distribution Sliders */}
-              {currentProject.loadModel === 'monophase_reparti' && (
-                <div className="flex items-center gap-4">
+              {currentProject.loadModel === 'monophase_reparti' && <div className="flex items-center gap-4">
                   <div className="flex gap-4">
                     <PhaseDistributionSliders type="charges" title="Charges" />
                     <PhaseDistributionSliders type="productions" title="Productions" />
                   </div>
-                </div>
-              )}
+                </div>}
             </div>
 
             {/* Spacer div pour maintenir la structure */}
             <div className="flex items-center gap-4"></div>
           </div>
-        </div>
-      )}
-    </div>
-  );
+        </div>}
+    </div>;
 };
