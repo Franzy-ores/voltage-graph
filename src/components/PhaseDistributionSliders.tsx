@@ -1,8 +1,5 @@
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { RotateCcw } from "lucide-react";
 import { useNetworkStore } from "@/store/networkStore";
 
 interface PhaseDistributionSlidersProps {
@@ -16,20 +13,6 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
   if (!currentProject || !currentProject.manualPhaseDistribution) return null;
   
   const distribution = currentProject.manualPhaseDistribution[type];
-  const isMonophaseMode = currentProject.loadModel === 'monophase_reparti';
-  
-  const initializeToBalance = () => {
-    updateProjectConfig({
-      manualPhaseDistribution: {
-        ...currentProject.manualPhaseDistribution,
-        [type]: {
-          A: 33.33,
-          B: 33.33,
-          C: 33.34
-        }
-      }
-    });
-  };
   
   // Calcul des valeurs kVA par phase
   const calculateKVAValues = () => {
@@ -104,28 +87,7 @@ export const PhaseDistributionSliders = ({ type, title }: PhaseDistributionSlide
 
   return (
     <div className="flex flex-col gap-3 p-3 bg-white/5 rounded border border-white/10">
-      <div className="flex items-center justify-center gap-2">
-        <Label className="text-xs font-medium text-primary-foreground text-center">{title}</Label>
-        {isMonophaseMode && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={initializeToBalance}
-                  className="h-6 w-6"
-                >
-                  <RotateCcw className="h-3 w-3" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Reset Equilibre</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-      </div>
+      <Label className="text-xs font-medium text-primary-foreground text-center">{title}</Label>
       <div className="flex justify-center gap-4">
         {(['A', 'B', 'C'] as const).map((phase) => (
           <div key={phase} className="flex flex-col items-center gap-2">
