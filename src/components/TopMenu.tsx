@@ -159,21 +159,24 @@ export const TopMenu = ({
           {/* Phase Distribution Display */}
           <PhaseDistributionDisplay />
 
+          {/* Voltage Controls Row */}
+          <div className="flex items-center gap-4">
+            {/* Voltage Display Switch */}
+            <div className="flex items-center gap-2">
+              <Switch id="voltage-display" checked={showVoltages} onCheckedChange={setShowVoltages} className="data-[state=checked]:bg-white/20" />
+              <Label htmlFor="voltage-display" className="text-sm font-medium">Tensions</Label>
+            </div>
+
+            {/* Change Voltage System Button */}
+            <Button onClick={changeVoltageSystem} variant="ghost" size="sm" className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
+              {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
+            </Button>
+          </div>
+
           {/* Third Row: Load Model and Controls */}
           <div className="flex items-center justify-between gap-4">
             {/* Load Model Controls */}
             <div className="flex items-center gap-4">
-              {/* Voltage Display Switch */}
-              <div className="flex items-center gap-2">
-                <Switch id="voltage-display" checked={showVoltages} onCheckedChange={setShowVoltages} className="data-[state=checked]:bg-white/20" />
-                <Label htmlFor="voltage-display" className="text-sm font-medium">Tensions</Label>
-              </div>
-
-              {/* Change Voltage System Button */}
-              <Button onClick={changeVoltageSystem} variant="ghost" size="sm" className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
-                {currentProject?.voltageSystem === 'TRIPHASÉ_230V' ? '230V → 400V' : '400V → 230V'}
-              </Button>
-
               {/* Load Model and Scenario Selectors - Vertical Stack */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2">
