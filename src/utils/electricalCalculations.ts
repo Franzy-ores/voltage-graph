@@ -1687,7 +1687,8 @@ export class ElectricalCalculator {
       nodePhasorsPerPhase: undefined, // Seulement en mode déséquilibré
       nodeMetricsPerPhase, // Maintenant toujours disponible
       cablePowerFlows,
-      virtualBusbar
+      virtualBusbar,
+      manualPhaseDistribution
     };
 
     console.log('✅ calculateScenario completed successfully for scenario:', scenario);

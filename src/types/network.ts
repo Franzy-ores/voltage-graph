@@ -256,6 +256,10 @@ export interface CalculationResult {
   }[];
   cablePowerFlows?: { cableId: string; P_kW: number; Q_kVAr: number; S_kVA: number; pf: number }[];
   virtualBusbar?: VirtualBusbar; // Informations du jeu de barres virtuel
+  manualPhaseDistribution?: {
+    charges: { A: number; B: number; C: number };
+    productions: { A: number; B: number; C: number };
+  };
   // Propriétés spécifiques au mode forcé
   convergenceStatus?: 'converged' | 'not_converged';
   finalLoadDistribution?: { A: number; B: number; C: number };

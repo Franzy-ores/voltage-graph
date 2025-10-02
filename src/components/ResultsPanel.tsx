@@ -328,17 +328,17 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
               <div className="text-xs">
                 <p className="text-muted-foreground mb-1">Déséquilibre</p>
                 {(() => {
-                  const manualDist = (currentResult as any)?.manualPhaseDistribution;
+                  const manualDist = currentResult?.manualPhaseDistribution;
                   if (manualDist) {
                     // Calculer les déséquilibres séparés
-                    const calcImbalance = (dist: { phase1: number; phase2: number; phase3: number }) => {
-                      const total = dist.phase1 + dist.phase2 + dist.phase3;
+                    const calcImbalance = (dist: { A: number; B: number; C: number }) => {
+                      const total = dist.A + dist.B + dist.C;
                       if (total === 0) return 0;
                       const ideal = total / 3;
                       const maxDiff = Math.max(
-                        Math.abs(dist.phase1 - ideal),
-                        Math.abs(dist.phase2 - ideal),
-                        Math.abs(dist.phase3 - ideal)
+                        Math.abs(dist.A - ideal),
+                        Math.abs(dist.B - ideal),
+                        Math.abs(dist.C - ideal)
                       );
                       return ((maxDiff / ideal) * 100);
                     };
@@ -359,9 +359,18 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
                       </div>
                     );
                   } else {
-                    // Fallback sur l'ancien système
+                    // Aucune distribution manuelle disponible
                     return (
-                      <p className="font-semibold">{currentProject?.desequilibrePourcent || 0}%</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-muted-foreground">Charges: </span>
+                          <span className="font-semibold">0.0%</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Productions: </span>
+                          <span className="font-semibold">0.0%</span>
+                        </div>
+                      </div>
                     );
                   }
                 })()}
