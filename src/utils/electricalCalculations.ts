@@ -200,11 +200,32 @@ export class ElectricalCalculator {
     }
   }
 
-  private selectRX(cableType: CableType, connectionType: ConnectionType): { R:number, X:number } {
-    const { useR0 } = this.getVoltageConfig(connectionType);
-    return useR0
-      ? { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km }
-      : { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
+  /**
+   * Sélection des impédances R/X selon le type de réseau et le mode de calcul
+   * @param cableType Type de câble
+   * @param is400V true si réseau 400V étoile, false si 230V triangle
+   * @param isUnbalanced true si calcul monophasé déséquilibré
+   * @param forNeutral true si sélection pour conducteur neutre
+   */
+  private selectRX(
+    cableType: CableType, 
+    is400V: boolean, 
+    isUnbalanced: boolean,
+    forNeutral: boolean = false
+  ): { R: number, X: number } {
+    // Réseau 230V triangle → toujours R12/X12 (pas de neutre)
+    if (!is400V) {
+      return { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
+    }
+    
+    // Conducteur neutre → toujours R0/X0
+    if (forNeutral) {
+      return { R: cableType.R0_ohm_per_km, X: cableType.X0_ohm_per_km };
+    }
+    
+    // Réseau 400V étoile : toujours R12/X12 pour les phases
+    // (R0/X0 utilisé séparément pour le neutre si nécessaire)
+    return { R: cableType.R12_ohm_per_km, X: cableType.X12_ohm_per_km };
   }
 
   /**
@@ -560,27 +581,6 @@ export class ElectricalCalculator {
       if (cab) parentCableOfChild.set(nodeId, cab);
     }
 
-    // Per-cable per-phase impedance (Ω)
-    const cableZ_phase = new Map<string, Complex>();
-    const cableChildId = new Map<string, string>();
-    const cableParentId = new Map<string, string>();
-
-    for (const [childId, cab] of parentCableOfChild.entries()) {
-      const parentId = parent.get(childId)!;
-      const distalNode = nodeById.get(childId)!;
-      const ct = cableTypeById.get(cab.typeId);
-      if (!ct) throw new Error(`Cable type ${cab.typeId} introuvable`);
-      const length_m = this.calculateLengthMeters(cab.coordinates || []);
-      const L_km = length_m / 1000;
-
-      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, distalNode.connectionType);
-      // Series impedance per phase for the full segment
-      const Z = C(R_ohm_per_km * L_km, X_ohm_per_km * L_km);
-      cableZ_phase.set(cab.id, Z);
-      cableChildId.set(cab.id, childId);
-      cableParentId.set(cab.id, parentId);
-    }
-
     // Node complex powers (per phase) and initial voltages
     const S_node_total_kVA = new Map<string, number>(); // signed (charges>0, productions<0)
     for (const n of nodes) {
@@ -598,39 +598,67 @@ export class ElectricalCalculator {
       U_line_base = isSrcThree ? 400 : 230;
     }
 
-    // ===== CORRECTION MAJEURE : Initialisation correcte de Vslack_phase =====
-    // Détection du type de système pour définir la tension de phase de calcul
+    // ---- Détection des équipements SRG2 actifs et mode déséquilibré ----
+    const hasSRG2Active = nodes.some(n => n.hasSRG2Device === true);
+    const isUnbalanced = loadModel === 'monophase_reparti' || hasSRG2Active;
+    
+    console.log(`🔍 Mode calculation decision: loadModel=${loadModel}, hasSRG2Active=${hasSRG2Active}, isUnbalanced=${isUnbalanced}`);
+    if (hasSRG2Active) {
+      console.log('🎯 SRG2 devices detected - forcing per-phase calculation for proper voltage regulation');
+    }
+
+    // Per-cable per-phase impedance (Ω) - construit après U_line_base et isUnbalanced
+    const cableZ_phase = new Map<string, Complex>();
+    const cableChildId = new Map<string, string>();
+    const cableParentId = new Map<string, string>();
+
+    for (const [childId, cab] of parentCableOfChild.entries()) {
+      const parentId = parent.get(childId)!;
+      const distalNode = nodeById.get(childId)!;
+      const ct = cableTypeById.get(cab.typeId);
+      if (!ct) throw new Error(`Cable type ${cab.typeId} introuvable`);
+      const length_m = this.calculateLengthMeters(cab.coordinates || []);
+      const L_km = length_m / 1000;
+
+      // Déterminer le type de réseau et le mode
+      const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
+      const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, is400V, isUnbalanced, false);
+      // Series impedance per phase for the full segment
+      const Z = C(R_ohm_per_km * L_km, X_ohm_per_km * L_km);
+      cableZ_phase.set(cab.id, Z);
+      cableChildId.set(cab.id, childId);
+      cableParentId.set(cab.id, parentId);
+    }
+
+    // ===== CORRECTION : Initialisation simplifiée et correcte de Vslack_phase =====
     let Vslack_phase: number;
     
-    // Cas spécial : Système 400V avec nœuds MONO_230V_PN
-    const hasMonoPNNodes = nodes.some(n => n.connectionType === 'MONO_230V_PN');
-    const is400VSystem = transformerConfig?.nominalVoltage_V && transformerConfig.nominalVoltage_V >= 350;
-    
+    // 1. Priorité absolue : tensionCible explicite
     if (source.tensionCible) {
-      // PRIORITÉ ABSOLUE à la tension forcée (tensionCible)
-      if (source.connectionType === 'MONO_230V_PN' || source.connectionType === 'MONO_230V_PP') {
-        // Tension forcée directe pour monophasé
-        Vslack_phase = source.tensionCible;
-      } else if (source.connectionType === 'TRI_230V_3F') {
-        // Triphasé 230V : tension forcée directe (travail en composé)
-        Vslack_phase = source.tensionCible;
+      if (source.connectionType === 'TÉTRA_3P+N_230_400V') {
+        // Source triphasée avec tension ligne fournie → convertir en phase
+        Vslack_phase = source.tensionCible / Math.sqrt(3);
       } else {
-        // Autres systèmes triphasés : conversion ligne -> phase si nécessaire
-        Vslack_phase = source.tensionCible / (isSrcThree ? Math.sqrt(3) : 1);
+        // Autres cas : tension fournie est déjà en phase
+        Vslack_phase = source.tensionCible;
       }
-    } else if (hasMonoPNNodes && is400VSystem && source.connectionType === 'MONO_230V_PN') {
-      // Système 400V avec nœuds phase-neutre : utiliser 230V SEULEMENT si la source elle-même est monophasée
-      Vslack_phase = 230;
-    } else if (source.connectionType === 'MONO_230V_PP' || source.connectionType === 'MONO_230V_PN') {
-      // Connexions monophasées standard
-      Vslack_phase = 230;
-    } else if (source.connectionType === 'TRI_230V_3F') {
-      // Triphasé 230V : travail direct en 230V composé
-      Vslack_phase = U_line_base;
-    } else {
-      // Autres systèmes triphasés : conversion ligne -> phase
-      Vslack_phase = U_line_base / (isSrcThree ? Math.sqrt(3) : 1);
     }
+    // 2. Sinon : utiliser tension nominale du transformateur ou base
+    else if (transformerConfig?.nominalVoltage_V) {
+      const U_line = transformerConfig.nominalVoltage_V;
+      Vslack_phase = U_line >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD ? U_line / Math.sqrt(3) : U_line;
+    }
+    else {
+      Vslack_phase = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD ? U_line_base / Math.sqrt(3) : U_line_base;
+    }
+    
+    // 3. Validation (safety)
+    if (!isFinite(Vslack_phase) || Vslack_phase < 200 || Vslack_phase > 450) {
+      console.warn(`⚠️ Vslack_phase hors limites: ${Vslack_phase}V, réinitialisation à 230V`);
+      Vslack_phase = 230;
+    }
+    
+    console.log(`✅ Vslack_phase initialisé: ${Vslack_phase.toFixed(1)}V (source: ${source.tensionCible ? 'tensionCible' : 'nominal'})`);
     const Vslack = C(Vslack_phase, 0);
 
     // Transformer series impedance (per phase)
@@ -668,17 +696,11 @@ export class ElectricalCalculator {
     }
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
-    // ---- Détection des équipements SRG2 actifs ----
-    const hasSRG2Active = nodes.some(n => n.hasSRG2Device === true);
-    
-    // ---- Mode déséquilibré (monophasé réparti) OU SRG2 actif -> calcul triphasé par phase ----
-    const isUnbalanced = loadModel === 'monophase_reparti' || hasSRG2Active;
-    
-    console.log(`🔍 Mode calculation decision: loadModel=${loadModel}, hasSRG2Active=${hasSRG2Active}, isUnbalanced=${isUnbalanced}`);
+    // ---- Power Flow using Backward-Forward Sweep (complex R+jX) ----
     
     if (hasSRG2Active) {
       console.log('🎯 SRG2 devices detected - forcing per-phase calculation for proper voltage regulation');
-      const srg2Nodes = nodes.filter(n => n.hasSRG2Device).map(n => ({ 
+      const srg2Nodes = nodes.filter(n => n.hasSRG2Device).map(n => ({
         id: n.id, 
         coefficients: n.srg2RegulationCoefficients 
       }));
@@ -946,14 +968,16 @@ export class ElectricalCalculator {
             const length_m = this.calculateLengthMeters(cab.coordinates || []);
             const L_km = length_m / 1000;
             
-            // Utiliser R0/X0 pour le conducteur neutre
-            const Z_neutral = C(ct.R0_ohm_per_km * L_km, ct.X0_ohm_per_km * L_km);
+            // Utiliser R0/X0 pour le conducteur neutre (forNeutral = true)
+            const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
+            const { R: R0, X: X0 } = this.selectRX(ct, is400V, isUnbalanced, true);
+            const Z_neutral = C(R0 * L_km, X0 * L_km);
             
             // Chute de tension dans le neutre (phasor)
             const dVn = mul(Z_neutral, IN_phasor);
             
-            // Tension du neutre au nœud enfant
-            const Vn_child = add(Vn_parent, dVn);
+            // ✅ CORRECTION CRITIQUE : Propagation cohérente du neutre (sub au lieu de add)
+            const Vn_child = sub(Vn_parent, dVn);
             V_neutral.set(v, Vn_child);
             
             stack3.push(v);
@@ -1061,28 +1085,10 @@ export class ElectricalCalculator {
           { nodeId: n.id, phase: 'C', V_real: Vc.re, V_imag: Vc.im, V_phase_V: Vc_mag, V_angle_deg: (Math.atan2(Vc.im, Vc.re)*180)/Math.PI },
         );
         
-        // CORRECTION EN50160: Pour les nœuds monophasés sur réseau triphasé, prendre la phase la plus élevée
-        // car c'est celle qui détermine la conformité (±10% de la norme EN50160)
+        // ✅ CORRECTION : Pour conformité EN50160, toujours prendre la PIRE phase (MIN pour chute de tension)
         let U_node_line_tension: number;
-        
-        if (n.connectionType === 'MONO_230V_PN') {
-          // Monophasé phase-neutre : afficher tension phase-neutre directement (PAS de √3 !)
-          // Prendre la phase la plus élevée pour conformité EN50160
-          U_node_line_tension = Math.max(Va_mag, Vb_mag, Vc_mag);
-          
-        } else if (n.connectionType === 'TRI_230V_3F') {
-          // Triphasé 230V : tensions composées = tensions de phase (système 230V)
-          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag);
-          
-        } else if (n.connectionType === 'TÉTRA_3P+N_230_400V') {
-          // Triphasé 400V : afficher tensions composées (√3 × phase)
-          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * Math.sqrt(3);
-          
-        } else {
-          // Autres cas : logique avec scaling
-          const scaleLine = this.getDisplayLineScale(n.connectionType);
-          U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
-        }
+        const scaleLine = this.getDisplayLineScale(n.connectionType);
+        U_node_line_tension = Math.min(Va_mag, Vb_mag, Vc_mag) * scaleLine;
 
         // ===== CORRECTION 2 BIS : RÉFÉRENCE DE TENSION POUR CONFORMITÉ =====
         let U_ref_display: number;
@@ -1438,7 +1444,8 @@ export class ElectricalCalculator {
       let Z = cableZ_phase.get(cab.id);
       if (!Z) {
         // In case edge is not in the tree (shouldn't happen in radial), compute on the fly
-        const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, distalNode.connectionType);
+        const is400V = U_line_base >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD;
+        const { R: R_ohm_per_km, X: X_ohm_per_km } = this.selectRX(ct, is400V, false, false);
         Z = C(R_ohm_per_km * L_km, X_ohm_per_km * L_km);
       }
 
