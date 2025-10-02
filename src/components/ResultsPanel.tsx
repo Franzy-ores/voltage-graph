@@ -301,7 +301,15 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
               </div>
               <div>
                 <p className="text-muted-foreground">Production foisonnée</p>
-                <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
+                <p className="font-semibold">{(() => {
+                  if (!currentProject?.nodes || !currentProject?.cables) return '0.0';
+                  const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+                  const connectedNodesData = currentProject.nodes.filter(node => connectedNodes.has(node.id));
+                  const totalProdContractuelle = connectedNodesData.reduce((sum, node) => 
+                    sum + node.productions.reduce((prodSum, prod) => prodSum + prod.S_kVA, 0), 0);
+                  const foisonnement = currentProject?.foisonnementProductions || 100;
+                  return (totalProdContractuelle * foisonnement / 100).toFixed(1);
+                })()} kVA</p>
               </div>
             </div>
 
