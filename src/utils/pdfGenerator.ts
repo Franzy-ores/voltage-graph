@@ -258,27 +258,34 @@ export class PDFGenerator {
       sum + node.productions.reduce((prodSum, prod) => prodSum + prod.S_kVA, 0), 0);
     const productionFoisonnee = productionContractuelle * (data.project.foisonnementProductions / 100);
 
-    // Charges, productions et pertes
+    // Bilan énergétique
     this.addBoldText('Bilan énergétique :', 10);
     this.addText(`Charge contractuelle: ${chargeContractuelle.toFixed(1)} kVA`);
-    this.addHighlightedBoldText(`Foisonnement charges: ${data.project.foisonnementCharges}%`);
-    this.addHighlightedBoldText(`Charge foisonnée: ${currentResult.totalLoads_kVA.toFixed(1)} kVA`);
     this.addText(`Production contractuelle: ${productionContractuelle.toFixed(1)} kVA`);
+    this.addHighlightedBoldText(`Foisonnement charges: ${data.project.foisonnementCharges}%`);
     this.addHighlightedBoldText(`Foisonnement productions: ${data.project.foisonnementProductions}%`);
+    this.addHighlightedBoldText(`Charge foisonnée: ${currentResult.totalLoads_kVA.toFixed(1)} kVA`);
     this.addHighlightedBoldText(`Production foisonnée: ${productionFoisonnee.toFixed(1)} kVA`);
-    this.addText(`Pertes globales: ${currentResult.globalLosses_kW.toFixed(3)} kW`);
-    this.addText(`Chute de tension max: ${currentResult.maxVoltageDropPercent.toFixed(2)}%${currentResult.maxVoltageDropCircuitNumber ? ` (Circuit ${currentResult.maxVoltageDropCircuitNumber})` : ''}`);
-    this.currentY += 5;
-
-    // Modèle de calcul
-    this.addBoldText('Modèle de calcul :', 10);
+    
     const loadModelText = data.project.loadModel === 'monophase_reparti' 
       ? 'Monophasé réparti' 
       : 'Polyphasé équilibré';
     this.addText(`Modèle de charge: ${loadModelText}`);
     this.currentY += 3;
 
-    // Informations transformateur et jeu de barres
+    // Jeu de barres (mode monophasé uniquement)
+    if (data.project.loadModel === 'monophase_reparti' && currentResult.virtualBusbar && currentResult.virtualBusbar.current_N !== undefined) {
+      this.addBoldText('Jeu de barres :', 10);
+      this.addText(`I_N: ${currentResult.virtualBusbar.current_N.toFixed(1)}A - ΔU: ${currentResult.virtualBusbar.deltaU_V >= 0 ? '+' : ''}${currentResult.virtualBusbar.deltaU_V.toFixed(2)}V`);
+      this.currentY += 3;
+    }
+    
+    // Chute max et pertes globales
+    this.addText(`Chute de tension max: ${currentResult.maxVoltageDropPercent.toFixed(2)}%${currentResult.maxVoltageDropCircuitNumber ? ` (Circuit ${currentResult.maxVoltageDropCircuitNumber})` : ''}`);
+    this.addText(`Pertes globales: ${currentResult.globalLosses_kW.toFixed(3)} kW`);
+    this.currentY += 5;
+
+    // Informations transformateur et jeu de barres complet
     if (currentResult.virtualBusbar) {
       this.addBoldText('Transformateur :', 10);
       this.addText(`Puissance: ${data.project.transformerConfig.rating}`);
@@ -292,14 +299,6 @@ export class PDFGenerator {
       this.addText(`Puissance nette: ${currentResult.virtualBusbar.netSkVA.toFixed(1)} kVA`);
       this.addText(`Chute de tension: ${currentResult.virtualBusbar.deltaU_percent?.toFixed(2) || 0}%`);
       this.currentY += 3;
-      
-      // Données du neutre (mode monophasé uniquement)
-      if (data.project.loadModel === 'monophase_reparti' && currentResult.virtualBusbar.current_N !== undefined) {
-        this.addBoldText('Données du neutre :', 10);
-        this.addText(`Courant neutre (I_N): ${currentResult.virtualBusbar.current_N.toFixed(1)} A`);
-        this.addText(`Chute de tension neutre (ΔU_N): ${currentResult.virtualBusbar.deltaU_V >= 0 ? '+' : ''}${currentResult.virtualBusbar.deltaU_V.toFixed(2)} V`);
-        this.currentY += 3;
-      }
       
       this.currentY += 2;
     }
