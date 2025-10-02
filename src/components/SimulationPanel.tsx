@@ -11,7 +11,10 @@ import { useNetworkStore } from "@/store/networkStore";
 import { NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
+import { toast } from "sonner";
 import { DocumentationPanel } from "@/components/DocumentationPanel";
+import { SRG2Panel } from "@/components/SRG2Panel";
+import { ForcedModePanel } from "@/components/ForcedModePanel";
 import { Settings, Play, RotateCcw, Trash2, Plus, AlertTriangle, CheckCircle, Cable } from "lucide-react";
 export const SimulationPanel = () => {
   const {
@@ -247,7 +250,69 @@ export const SimulationPanel = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
-          <DocumentationPanel />
+          <Tabs defaultValue="equi8" className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="equi8">EQUI8</TabsTrigger>
+              <TabsTrigger value="srg2">SRG2</TabsTrigger>
+              <TabsTrigger value="forced">Mode Forcé</TabsTrigger>
+              <TabsTrigger value="doc">Documentation</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="equi8" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium">Compensateurs de neutre (EQUI8)</h3>
+                <Button size="sm" onClick={() => {
+                  // Trouver le premier nœud qui n'a pas encore de compensateur
+                  const usedNodeIds = simulationEquipment.neutralCompensators.map(c => c.nodeId);
+                  const availableNode = nodes.find(n => !usedNodeIds.includes(n.id));
+                  if (availableNode) {
+                    addNeutralCompensator(availableNode.id);
+                  } else {
+                    toast.error('Aucun nœud disponible pour ajouter un compensateur');
+                  }
+                }}>
+                  <Plus className="h-3 w-3 mr-1" />
+                  Ajouter
+                </Button>
+              </div>
+
+              {simulationEquipment.neutralCompensators.length === 0 ? (
+                <Card className="bg-muted/50">
+                  <CardContent className="p-4 text-sm text-muted-foreground text-center">
+                    Aucun compensateur configuré
+                  </CardContent>
+                </Card>
+              ) : (
+                simulationEquipment.neutralCompensators.map((comp) => (
+                  <CompensatorCard key={comp.id} compensator={comp} />
+                ))
+              )}
+
+              {simulationEquipment.cableUpgrades.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-medium mb-2">Propositions de renforcement</h3>
+                    {simulationEquipment.cableUpgrades.map((upgrade) => (
+                      <UpgradeCard key={upgrade.originalCableId} upgrade={upgrade} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </TabsContent>
+
+            <TabsContent value="srg2" className="mt-4">
+              <SRG2Panel />
+            </TabsContent>
+
+            <TabsContent value="forced" className="mt-4">
+              <ForcedModePanel />
+            </TabsContent>
+
+            <TabsContent value="doc" className="mt-4">
+              <DocumentationPanel />
+            </TabsContent>
+          </Tabs>
         </div>
       </ScrollArea>
 
