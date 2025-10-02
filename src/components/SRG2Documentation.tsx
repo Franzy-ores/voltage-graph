@@ -1,7 +1,8 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Activity, Zap, Settings, TrendingUp, AlertCircle } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Activity, Zap, Settings, TrendingUp, AlertCircle, ChevronDown } from "lucide-react";
+import { useState } from "react";
 
 export const SRG2Documentation = () => {
   return (
@@ -111,50 +112,44 @@ export const SRG2Documentation = () => {
             Paramètres techniques
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="consigne">
-              <AccordionTrigger className="text-sm">Tension de consigne</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <p><strong>Objectif:</strong> Maintenir 230V en sortie</p>
-                  <p>Le SRG2 sélectionne automatiquement la position optimale pour se rapprocher de cette consigne.</p>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+        <CardContent className="space-y-3">
+          <div className="space-y-3">
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Tension de consigne</h4>
+              <div className="text-xs space-y-2">
+                <p><strong>Objectif:</strong> Maintenir 230V en sortie</p>
+                <p>Le SRG2 sélectionne automatiquement la position optimale pour se rapprocher de cette consigne.</p>
+              </div>
+            </div>
 
-            <AccordionItem value="hysteresis">
-              <AccordionTrigger className="text-sm">Hystérésis et temporisation</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Hystérésis:</strong> ±2V (SRG2-400) ou ±1V (SRG2-230)</p>
-                    <p className="mt-1">Évite les commutations intempestives lorsque la tension oscille autour d'un seuil.</p>
-                  </div>
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Temporisation:</strong> 7 secondes</p>
-                    <p className="mt-1">Délai avant changement de position pour filtrer les variations transitoires.</p>
-                  </div>
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Hystérésis et temporisation</h4>
+              <div className="text-xs space-y-2">
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Hystérésis:</strong> ±2V (SRG2-400) ou ±1V (SRG2-230)</p>
+                  <p className="mt-1">Évite les commutations intempestives lorsque la tension oscille autour d'un seuil.</p>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Temporisation:</strong> 7 secondes</p>
+                  <p className="mt-1">Délai avant changement de position pour filtrer les variations transitoires.</p>
+                </div>
+              </div>
+            </div>
 
-            <AccordionItem value="limits">
-              <AccordionTrigger className="text-sm">Limites de puissance</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <div className="p-2 bg-green-500/10 rounded border border-green-500/20">
-                    <p><strong>Injection max:</strong> 85 kVA</p>
-                    <p className="mt-1">Puissance maximale que le SRG2 peut injecter dans le réseau (production).</p>
-                  </div>
-                  <div className="p-2 bg-orange-500/10 rounded border border-orange-500/20">
-                    <p><strong>Consommation max:</strong> 100 kVA</p>
-                    <p className="mt-1">Puissance maximale que le SRG2 peut transiter en mode consommation.</p>
-                  </div>
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Limites de puissance</h4>
+              <div className="text-xs space-y-2">
+                <div className="p-2 bg-green-500/10 rounded border border-green-500/20">
+                  <p><strong>Injection max:</strong> 85 kVA</p>
+                  <p className="mt-1">Puissance maximale que le SRG2 peut injecter dans le réseau (production).</p>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+                <div className="p-2 bg-orange-500/10 rounded border border-orange-500/20">
+                  <p><strong>Consommation max:</strong> 100 kVA</p>
+                  <p className="mt-1">Puissance maximale que le SRG2 peut transiter en mode consommation.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

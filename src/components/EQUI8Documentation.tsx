@@ -1,6 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Settings, Zap, CheckCircle, AlertTriangle, TrendingDown } from "lucide-react";
 
 export const EQUI8Documentation = () => {
@@ -160,54 +159,48 @@ export const EQUI8Documentation = () => {
             Paramètres de configuration
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="power">
-              <AccordionTrigger className="text-sm">Puissance maximale (kVA)</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <p>Limite la puissance réactive totale que l'EQUI8 peut injecter.</p>
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Exemple:</strong> 50 kVA</p>
-                    <p className="mt-1">Si les Q calculés dépassent cette limite, l'EQUI8 applique une réduction proportionnelle.</p>
-                  </div>
+        <CardContent className="space-y-3">
+          <div className="space-y-3">
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Puissance maximale (kVA)</h4>
+              <div className="text-xs space-y-2">
+                <p>Limite la puissance réactive totale que l'EQUI8 peut injecter.</p>
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Exemple:</strong> 50 kVA</p>
+                  <p className="mt-1">Si les Q calculés dépassent cette limite, l'EQUI8 applique une réduction proportionnelle.</p>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
+              </div>
+            </div>
 
-            <AccordionItem value="threshold">
-              <AccordionTrigger className="text-sm">Seuil de déclenchement I_N (A)</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <p>Courant de neutre minimal pour activer la compensation.</p>
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Exemple:</strong> 10A</p>
-                    <p className="mt-1">Si I_N &lt; 10A, l'EQUI8 reste inactif (déséquilibre négligeable).</p>
-                  </div>
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Seuil de déclenchement I_N (A)</h4>
+              <div className="text-xs space-y-2">
+                <p>Courant de neutre minimal pour activer la compensation.</p>
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Exemple:</strong> 10A</p>
+                  <p className="mt-1">Si I_N &lt; 10A, l'EQUI8 reste inactif (déséquilibre négligeable).</p>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
+              </div>
+            </div>
 
-            <AccordionItem value="impedances">
-              <AccordionTrigger className="text-sm">Impédances Zph et Zn (Ω)</AccordionTrigger>
-              <AccordionContent>
-                <div className="text-xs space-y-2">
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Zph (impédance phase):</strong> Résistance/réactance du conducteur de phase</p>
-                    <p className="mt-1">Valeur typique: 0.5Ω</p>
-                  </div>
-                  <div className="p-2 bg-muted/50 rounded">
-                    <p><strong>Zn (impédance neutre):</strong> Résistance/réactance du conducteur neutre</p>
-                    <p className="mt-1">Valeur typique: 0.2Ω</p>
-                  </div>
-                  <div className="p-2 bg-warning/10 rounded border border-warning/20 mt-2">
-                    <p><strong>⚠️ Contrainte:</strong> Zph et Zn doivent être &gt; 0.15Ω</p>
-                    <p className="mt-1">Sinon l'EQUI8 ne peut pas compenser efficacement.</p>
-                  </div>
+            <div className="p-3 bg-muted/50 rounded">
+              <h4 className="font-semibold text-sm mb-2">Impédances Zph et Zn (Ω)</h4>
+              <div className="text-xs space-y-2">
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Zph (impédance phase):</strong> Résistance/réactance du conducteur de phase</p>
+                  <p className="mt-1">Valeur typique: 0.5Ω</p>
                 </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+                <div className="p-2 bg-muted/50 rounded">
+                  <p><strong>Zn (impédance neutre):</strong> Résistance/réactance du conducteur neutre</p>
+                  <p className="mt-1">Valeur typique: 0.2Ω</p>
+                </div>
+                <div className="p-2 bg-warning/10 rounded border border-warning/20 mt-2">
+                  <p><strong>⚠️ Contrainte:</strong> Zph et Zn doivent être &gt; 0.15Ω</p>
+                  <p className="mt-1">Sinon l'EQUI8 ne peut pas compenser efficacement.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
