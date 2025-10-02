@@ -130,7 +130,7 @@ export const TopMenu = ({
               </div>
 
               {/* System Info */}
-              <div className="text-xs text-primary-foreground/80 rounded-lg">
+              <div className={`text-xs text-primary-foreground rounded-lg px-3 py-1 ${currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 'bg-fuchsia-500/30' : 'bg-cyan-500/30'}`}>
                 {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
