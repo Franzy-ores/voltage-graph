@@ -114,21 +114,6 @@ export const TopMenu = ({
           {/* First Row: Scenario, System Info, Voltage Switch */}
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              {/* Scenario Selector */}
-              <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium">Scénario:</Label>
-                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
-                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background border z-[10000]">
-                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
-                    <SelectItem value="MIXTE">Mixte</SelectItem>
-                    <SelectItem value="PRODUCTION">Production</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               {/* System Info */}
               <div className={`text-xs text-primary-foreground rounded-lg px-3 py-1 ${currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 'bg-fuchsia-500/30' : 'bg-cyan-500/30'}`}>
                 {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
@@ -201,6 +186,21 @@ export const TopMenu = ({
                   <SelectContent className="bg-background border z-[10000]">
                     <SelectItem value="polyphase_equilibre">Polyphasé équilibré</SelectItem>
                     <SelectItem value="monophase_reparti">Monophasé réparti</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Scenario Selector */}
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium">Scénario:</Label>
+                <Select value={selectedScenario || 'PRÉLÈVEMENT'} onValueChange={setSelectedScenario}>
+                  <SelectTrigger className="w-[120px] bg-white/10 border-white/20 text-primary-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-[10000]">
+                    <SelectItem value="PRÉLÈVEMENT">Prélèvement</SelectItem>
+                    <SelectItem value="MIXTE">Mixte</SelectItem>
+                    <SelectItem value="PRODUCTION">Production</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
