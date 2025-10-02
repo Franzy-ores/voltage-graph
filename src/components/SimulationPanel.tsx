@@ -14,20 +14,7 @@ import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 import { ForcedModePanel } from "@/components/ForcedModePanel";
 import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
 import { SRG2Panel } from "@/components/SRG2Panel";
-import { 
-  Settings, 
-  TrendingUp, 
-  Cable, 
-  Play, 
-  RotateCcw,
-  Trash2,
-  Plus,
-  AlertTriangle,
-  CheckCircle,
-  Target,
-  Activity
-} from "lucide-react";
-
+import { Settings, TrendingUp, Cable, Play, RotateCcw, Trash2, Plus, AlertTriangle, CheckCircle, Target, Activity } from "lucide-react";
 export const SimulationPanel = () => {
   const {
     currentProject,
@@ -45,25 +32,22 @@ export const SimulationPanel = () => {
     updateProjectConfig,
     updateNode
   } = useNetworkStore();
-
   if (!currentProject) return null;
-
   const nodes = currentProject.nodes.filter(n => !n.isSource);
   const currentResult = simulationResults[selectedScenario];
   const baseline = currentResult?.baselineResult;
-
-  const CompensatorCard = ({ compensator }: { compensator: NeutralCompensator }) => {
+  const CompensatorCard = ({
+    compensator
+  }: {
+    compensator: NeutralCompensator;
+  }) => {
     const node = currentProject?.nodes.find(n => n.id === compensator.nodeId);
     const is400V = currentProject?.voltageSystem === 'TÉTRAPHASÉ_400V';
-    const nodeConnectionType = node && currentProject 
-      ? getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource) 
-      : null;
+    const nodeConnectionType = node && currentProject ? getNodeConnectionType(currentProject.voltageSystem, currentProject.loadModel || 'polyphase_equilibre', node.isSource) : null;
     const isMonoPN = nodeConnectionType === 'MONO_230V_PN';
     const hasDeseq = (currentProject?.loadModel ?? 'polyphase_equilibre') === 'monophase_reparti' && (currentProject?.desequilibrePourcent ?? 0) > 0;
     const eligible = is400V && isMonoPN && hasDeseq;
-    
-    return (
-      <Card className="mb-4">
+    return <Card className="mb-4">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -71,24 +55,18 @@ export const SimulationPanel = () => {
               <CardTitle className="text-sm">Compensateur de neutre</CardTitle>
             </div>
             <div className="flex items-center gap-2">
-              <Switch
-                checked={compensator.enabled}
-                onCheckedChange={(enabled) => {
-                  if (!eligible) return;
-                  updateNeutralCompensator(compensator.id, { enabled });
-                  // Déclencher automatiquement la simulation quand un compensateur est activé
-                  if (enabled) {
-                    console.log('🔄 Auto-triggering simulation after compensator activation');
-                    setTimeout(() => runSimulation(), 100);
-                  }
-                }}
-                disabled={!eligible}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => removeNeutralCompensator(compensator.id)}
-              >
+              <Switch checked={compensator.enabled} onCheckedChange={enabled => {
+              if (!eligible) return;
+              updateNeutralCompensator(compensator.id, {
+                enabled
+              });
+              // Déclencher automatiquement la simulation quand un compensateur est activé
+              if (enabled) {
+                console.log('🔄 Auto-triggering simulation after compensator activation');
+                setTimeout(() => runSimulation(), 100);
+              }
+            }} disabled={!eligible} />
+              <Button variant="ghost" size="sm" onClick={() => removeNeutralCompensator(compensator.id)}>
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -98,99 +76,67 @@ export const SimulationPanel = () => {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {!eligible && (
-            <div className="bg-muted/50 p-2 rounded text-xs space-y-2">
+          {!eligible && <div className="bg-muted/50 p-2 rounded text-xs space-y-2">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-3 w-3 text-yellow-500" />
                 <span>Disponible uniquement sur réseau 400V, monophasé (PN) et en mode déséquilibré.</span>
               </div>
               <div className="grid grid-cols-1 gap-1">
                 <div>• Réseau 400V: {is400V ? 'OK' : 'Non'}</div>
-                <div>• Nœud en MONO 230V (PN): {isMonoPN ? 'OK' : (nodeConnectionType || 'Non')}</div>
-                <div>• Mode déséquilibré: {(currentProject.loadModel === 'monophase_reparti') ? `OK (${currentProject.desequilibrePourcent || 0}%)` : 'Non'}</div>
+                <div>• Nœud en MONO 230V (PN): {isMonoPN ? 'OK' : nodeConnectionType || 'Non'}</div>
+                <div>• Mode déséquilibré: {currentProject.loadModel === 'monophase_reparti' ? `OK (${currentProject.desequilibrePourcent || 0}%)` : 'Non'}</div>
               </div>
               <div className="flex items-center gap-2 flex-wrap pt-1">
-                {!isMonoPN && node && (
-                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ loadModel: 'monophase_reparti' })}>
+                {!isMonoPN && node && <Button size="sm" variant="outline" onClick={() => updateProjectConfig({
+              loadModel: 'monophase_reparti'
+            })}>
                     Activer le mode monophasé réparti
-                  </Button>
-                )}
-                {currentProject.loadModel !== 'monophase_reparti' && (
-                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ loadModel: 'monophase_reparti' })}>
+                  </Button>}
+                {currentProject.loadModel !== 'monophase_reparti' && <Button size="sm" variant="outline" onClick={() => updateProjectConfig({
+              loadModel: 'monophase_reparti'
+            })}>
                     Activer le mode déséquilibré
-                  </Button>
-                )}
-                {currentProject.loadModel === 'monophase_reparti' && ((currentProject.desequilibrePourcent || 0) === 0) && (
-                  <Button size="sm" variant="outline" onClick={() => updateProjectConfig({ desequilibrePourcent: 10 })}>
+                  </Button>}
+                {currentProject.loadModel === 'monophase_reparti' && (currentProject.desequilibrePourcent || 0) === 0 && <Button size="sm" variant="outline" onClick={() => updateProjectConfig({
+              desequilibrePourcent: 10
+            })}>
                     Déséquilibre 10%
-                  </Button>
-                )}
+                  </Button>}
               </div>
-            </div>
-          )}
+            </div>}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Puissance max (kVA)</Label>
-              <Input
-                type="number"
-                value={compensator.maxPower_kVA}
-                onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  maxPower_kVA: Number(e.target.value)
-                })}
-                className="h-8"
-                disabled={!eligible}
-              />
+              <Input type="number" value={compensator.maxPower_kVA} onChange={e => updateNeutralCompensator(compensator.id, {
+              maxPower_kVA: Number(e.target.value)
+            })} className="h-8" disabled={!eligible} />
             </div>
             <div>
               <Label className="text-xs">Seuil I_N (A)</Label>
-              <Input
-                type="number"
-                value={compensator.tolerance_A}
-                onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  tolerance_A: Number(e.target.value)
-                })}
-                className="h-8"
-              />
+              <Input type="number" value={compensator.tolerance_A} onChange={e => updateNeutralCompensator(compensator.id, {
+              tolerance_A: Number(e.target.value)
+            })} className="h-8" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Zph - Phase (Ω)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={compensator.Zph_Ohm ?? 0.5}
-                onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  Zph_Ohm: Number(e.target.value)
-                })}
-                className="h-8"
-                disabled={!eligible}
-              />
-              {compensator.Zph_Ohm < 0.15 && (
-                <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>
-              )}
+              <Input type="number" step="0.01" value={compensator.Zph_Ohm ?? 0.5} onChange={e => updateNeutralCompensator(compensator.id, {
+              Zph_Ohm: Number(e.target.value)
+            })} className="h-8" disabled={!eligible} />
+              {compensator.Zph_Ohm < 0.15 && <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>}
             </div>
             <div>
               <Label className="text-xs">Zn - Neutre (Ω)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={compensator.Zn_Ohm ?? 0.2}
-                onChange={(e) => updateNeutralCompensator(compensator.id, {
-                  Zn_Ohm: Number(e.target.value)
-                })}
-                className="h-8"
-                disabled={!eligible}
-              />
-              {compensator.Zn_Ohm < 0.15 && (
-                <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>
-              )}
+              <Input type="number" step="0.01" value={compensator.Zn_Ohm ?? 0.2} onChange={e => updateNeutralCompensator(compensator.id, {
+              Zn_Ohm: Number(e.target.value)
+            })} className="h-8" disabled={!eligible} />
+              {compensator.Zn_Ohm < 0.15 && <p className="text-xs text-yellow-500 mt-1">⚠️ Doit être &gt; 0,15 Ω</p>}
             </div>
           </div>
 
-          {compensator.currentIN_A !== undefined && (
-            <div className="bg-muted/50 p-2 rounded">
+          {compensator.currentIN_A !== undefined && <div className="bg-muted/50 p-2 rounded">
               <div className="text-xs font-medium mb-1">Résultats EQUI8:</div>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>I-EQUI8: {compensator.currentIN_A.toFixed(1)} A</div>
@@ -203,48 +149,41 @@ export const SimulationPanel = () => {
                 <div>Ph2: {compensator.u2p_V?.toFixed(1)} V</div>
                 <div>Ph3: {compensator.u3p_V?.toFixed(1)} V</div>
               </div>
-              {compensator.umoy_init_V && (
-                <>
+              {compensator.umoy_init_V && <>
                   <Separator className="my-2" />
                   <div className="text-xs">
                     <div>Umoy init: {compensator.umoy_init_V.toFixed(1)} V</div>
                     <div>Écart init: {compensator.ecart_init_V?.toFixed(1)} V</div>
                     <div>Écart EQUI8: {compensator.ecart_equi8_V?.toFixed(1)} V</div>
                   </div>
-                </>
-              )}
+                </>}
               <Separator className="my-2" />
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>I_N initial: {compensator.iN_initial_A?.toFixed(1)} A</div>
                 <div>I_N absorbé: {compensator.iN_absorbed_A?.toFixed(1)} A</div>
               </div>
-              {compensator.compensationQ_kVAr && (
-                <div className="mt-2 text-xs">
+              {compensator.compensationQ_kVAr && <div className="mt-2 text-xs">
                   <div>Q_A: {compensator.compensationQ_kVAr.A.toFixed(1)} kVAr</div>
                   <div>Q_B: {compensator.compensationQ_kVAr.B.toFixed(1)} kVAr</div>
                   <div>Q_C: {compensator.compensationQ_kVAr.C.toFixed(1)} kVAr</div>
-                </div>
-              )}
-              {compensator.isLimited && (
-                <div className="mt-2 flex items-center gap-1 text-xs text-yellow-600">
+                </div>}
+              {compensator.isLimited && <div className="mt-2 flex items-center gap-1 text-xs text-yellow-600">
                   <AlertTriangle className="h-3 w-3" />
                   <span>Limité par puissance max</span>
-                </div>
-              )}
-            </div>
-          )}
+                </div>}
+            </div>}
         </CardContent>
-      </Card>
-    );
+      </Card>;
   };
-
-  const UpgradeCard = ({ upgrade }: { upgrade: CableUpgrade }) => {
+  const UpgradeCard = ({
+    upgrade
+  }: {
+    upgrade: CableUpgrade;
+  }) => {
     const cable = currentProject.cables.find(c => c.id === upgrade.originalCableId);
     const originalType = currentProject.cableTypes.find(t => t.id === cable?.typeId);
     const newType = currentProject.cableTypes.find(t => t.id === upgrade.newCableTypeId);
-    
-    return (
-      <Card className="mb-4">
+    return <Card className="mb-4">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -253,12 +192,8 @@ export const SimulationPanel = () => {
                 {cable?.name || upgrade.originalCableId}
               </CardTitle>
             </div>
-            <Badge variant={
-              upgrade.reason === 'both' ? 'destructive' :
-              upgrade.reason === 'voltage_drop' ? 'secondary' : 'default'
-            }>
-              {upgrade.reason === 'both' ? 'ΔU + Surcharge' :
-               upgrade.reason === 'voltage_drop' ? 'Chute tension' : 'Surcharge'}
+            <Badge variant={upgrade.reason === 'both' ? 'destructive' : upgrade.reason === 'voltage_drop' ? 'secondary' : 'default'}>
+              {upgrade.reason === 'both' ? 'ΔU + Surcharge' : upgrade.reason === 'voltage_drop' ? 'Chute tension' : 'Surcharge'}
             </Badge>
           </div>
           <CardDescription>
@@ -287,36 +222,24 @@ export const SimulationPanel = () => {
               <div className="text-green-600">
                 -{upgrade.improvement.lossReduction_kW.toFixed(2)} kW
               </div>
-              {upgrade.after.estimatedCost && (
-                <div className="text-xs text-muted-foreground">
+              {upgrade.after.estimatedCost && <div className="text-xs text-muted-foreground">
                   ~{upgrade.after.estimatedCost}€
-                </div>
-              )}
+                </div>}
             </div>
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   };
-
-  return (
-    <div className="fixed right-0 top-0 w-96 h-screen bg-background border-l shadow-lg overflow-hidden flex flex-col z-50">
+  return <div className="fixed right-0 top-0 w-96 h-screen bg-background border-l shadow-lg overflow-hidden flex flex-col z-50">
       <div className="p-4 border-b bg-muted/50">
         <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold">Module Simulation</h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={closeEditPanel}
-          >
+          <Button variant="ghost" size="sm" onClick={closeEditPanel}>
             ×
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Switch
-            checked={simulationMode}
-            onCheckedChange={toggleSimulationMode}
-          />
+          <Switch checked={simulationMode} onCheckedChange={toggleSimulationMode} />
           <span className="text-sm">Mode simulation</span>
           <Badge variant={simulationMode ? "default" : "secondary"}>
             {simulationMode ? "Actif" : "Inactif"}
@@ -328,10 +251,7 @@ export const SimulationPanel = () => {
         <div className="p-4">
           <Tabs defaultValue="calibration" className="w-full">
             <TabsList className="grid w-full grid-cols-4 text-xs">
-              <TabsTrigger value="calibration" className="text-xs">
-                <Target className="h-3 w-3 mr-1" />
-                Calibration
-              </TabsTrigger>
+              
               <TabsTrigger value="srg2" className="text-xs">
                 <Activity className="h-3 w-3 mr-1" />
                 SRG2
@@ -340,10 +260,7 @@ export const SimulationPanel = () => {
                 <Settings className="h-3 w-3 mr-1" />
                 Neutre
               </TabsTrigger>
-              <TabsTrigger value="upgrades" className="text-xs">
-                <TrendingUp className="h-3 w-3 mr-1" />
-                Câbles
-              </TabsTrigger>
+              
             </TabsList>
 
             <TabsContent value="calibration" className="mt-4">
@@ -358,33 +275,19 @@ export const SimulationPanel = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">Compensateurs de neutre</h3>
-                  <NodeSelector
-                    nodes={currentProject.nodes}
-                    onNodeSelected={(nodeId) => addNeutralCompensator(nodeId)}
-                    title="Ajouter un compensateur de neutre"
-                    description="Réduction du courant de neutre (EQUI8)"
-                    trigger={
-                      <Button size="sm" variant="outline" disabled={!nodes.length}>
+                  <NodeSelector nodes={currentProject.nodes} onNodeSelected={nodeId => addNeutralCompensator(nodeId)} title="Ajouter un compensateur de neutre" description="Réduction du courant de neutre (EQUI8)" trigger={<Button size="sm" variant="outline" disabled={!nodes.length}>
                         <Plus className="h-3 w-3 mr-1" />
                         Ajouter
-                      </Button>
-                    }
-                  />
+                      </Button>} />
                 </div>
 
-                {simulationEquipment.neutralCompensators.length === 0 ? (
-                  <Card className="p-4 text-center text-muted-foreground">
+                {simulationEquipment.neutralCompensators.length === 0 ? <Card className="p-4 text-center text-muted-foreground">
                     <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Aucun compensateur</p>
                     <p className="text-xs">
                       Ajoutez des compensateurs pour réduire le courant de neutre
                     </p>
-                  </Card>
-                ) : (
-                  simulationEquipment.neutralCompensators.map(compensator => (
-                    <CompensatorCard key={compensator.id} compensator={compensator} />
-                  ))
-                )}
+                  </Card> : simulationEquipment.neutralCompensators.map(compensator => <CompensatorCard key={compensator.id} compensator={compensator} />)}
               </div>
             </TabsContent>
 
@@ -392,55 +295,39 @@ export const SimulationPanel = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium">Renforcements de câbles</h3>
-                  <Button 
-                    size="sm" 
-                    variant="outline"
-                    onClick={() => proposeCableUpgrades()}
-                    disabled={!simulationMode}
-                  >
+                  <Button size="sm" variant="outline" onClick={() => proposeCableUpgrades()} disabled={!simulationMode}>
                     <TrendingUp className="h-3 w-3 mr-1" />
                     Analyser
                   </Button>
                 </div>
 
-                {!simulationMode && (
-                  <Card className="p-4 bg-muted/50">
+                {!simulationMode && <Card className="p-4 bg-muted/50">
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <AlertTriangle className="h-4 w-4" />
                       Activez le mode simulation pour analyser les renforcements
                     </div>
-                  </Card>
-                )}
+                  </Card>}
 
-                {simulationEquipment.cableUpgrades.length === 0 ? (
-                  <Card className="p-4 text-center text-muted-foreground">
+                {simulationEquipment.cableUpgrades.length === 0 ? <Card className="p-4 text-center text-muted-foreground">
                     <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">Aucun renforcement proposé</p>
                     <p className="text-xs">
                       Analysez le réseau pour identifier les améliorations
                     </p>
-                  </Card>
-                ) : (
-                  simulationEquipment.cableUpgrades.map((upgrade, index) => (
-                    <UpgradeCard key={index} upgrade={upgrade} />
-                  ))
-                )}
+                  </Card> : simulationEquipment.cableUpgrades.map((upgrade, index) => <UpgradeCard key={index} upgrade={upgrade} />)}
               </div>
             </TabsContent>
           </Tabs>
         </div>
       </ScrollArea>
 
-      {simulationMode && (
-        <div className="p-4 border-t bg-muted/50">
+      {simulationMode && <div className="p-4 border-t bg-muted/50">
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Actions simulation</span>
-              {currentResult?.convergenceStatus && (
-                <Badge variant={currentResult.convergenceStatus === 'converged' ? "default" : "destructive"}>
+              {currentResult?.convergenceStatus && <Badge variant={currentResult.convergenceStatus === 'converged' ? "default" : "destructive"}>
                   {currentResult.convergenceStatus === 'converged' ? 'Convergé' : 'Non convergé'}
-                </Badge>
-              )}
+                </Badge>}
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={() => runSimulation()} className="flex-1">
@@ -453,19 +340,15 @@ export const SimulationPanel = () => {
               </Button>
             </div>
 
-            {baseline && currentResult && (
-              <div className="text-xs bg-background p-2 rounded border">
+            {baseline && currentResult && <div className="text-xs bg-background p-2 rounded border">
                 <div className="grid grid-cols-2 gap-1">
                   <div>Baseline: {baseline.maxVoltageDropPercent.toFixed(1)}% ΔU</div>
                   <div>Simulation: {currentResult.maxVoltageDropPercent.toFixed(1)}% ΔU</div>
                   <div>Pertes baseline: {baseline.globalLosses_kW.toFixed(2)} kW</div>
                   <div>Pertes simulation: {currentResult.globalLosses_kW.toFixed(2)} kW</div>
                 </div>
-              </div>
-            )}
+              </div>}
           </div>
-        </div>
-      )}
-    </div>
-  );
+        </div>}
+    </div>;
 };
