@@ -230,9 +230,16 @@ export class ElectricalCalculator {
 
   /**
    * Calcule le courant RMS par phase (A) à partir de la puissance apparente S_kVA.
-   * Conventions:
-   * - Triphasé: I = |S_kVA| * 1000 / (√3 · U_line)
-   * - Monophasé: I = |S_kVA| * 1000 / U_phase
+   * ===== CONVENTIONS √3 HARMONISÉES =====
+   * Principe: toutes les tensions internes sont en phase-neutre (230V).
+   * La conversion √3 est appliquée UNIQUEMENT pour :
+   * - Les charges triphasées ligne-ligne lors du calcul du courant
+   * - L'affichage des tensions ligne-ligne
+   * 
+   * Formules:
+   * - Monophasé phase-neutre: I = S / U_phase
+   * - Triphasé équilibré ligne-ligne: I = S / (√3 · U_ligne)
+   * 
    * S_kVA est la puissance apparente totale (kVA), positive en consommation, négative en injection.
    * sourceVoltage, s'il est fourni, est interprété comme U_line (tri) ou U_phase (mono).
    */
@@ -245,16 +252,22 @@ export class ElectricalCalculator {
 
     const Sabs_kVA = Math.abs(S_kVA);
     
-    // Correction pour le calcul du courant selon le type de connexion
+    // ===== CONVENTION UNIFIÉE : √3 appliqué SEULEMENT pour triphasé ligne-ligne =====
     let denom: number;
     if (connectionType === 'MONO_230V_PN') {
-      denom = U_base; // I = S / 230V pour monophasé phase-neutre
+      // Monophasé phase-neutre: I = S / U_phase
+      denom = U_base;
     } else if (connectionType === 'MONO_230V_PP') {
-      denom = U_base; // I = S / tension_entre_phases
+      // Monophasé phase-phase: I = S / U_phase-phase
+      denom = U_base;
     } else if (connectionType === 'TRI_230V_3F') {
-      // Pour TRI_230V_3F : pas de √3, calcul direct en tension composée
-      denom = U_base; // I = S / 230V directement (pas de √3)
+      // Triangle 230V : I = S / (√3 × 230V)
+      denom = Math.sqrt(3) * U_base;
+    } else if (connectionType === 'TÉTRA_3P+N_230_400V') {
+      // Étoile 400V : I = S / (√3 × 400V)
+      denom = Math.sqrt(3) * U_base;
     } else {
+      // Fallback générique
       denom = isThreePhase ? (Math.sqrt(3) * U_base) : U_base;
     }
     
@@ -630,14 +643,22 @@ export class ElectricalCalculator {
       cableParentId.set(cab.id, parentId);
     }
 
-    // ===== CORRECTION : Initialisation simplifiée et correcte de Vslack_phase =====
+    // ===== CONVENTION UNIFIÉE : Toutes les tensions internes sont phase-neutre (230V) =====
+    // La conversion √3 est appliquée UNIQUEMENT à l'entrée (si tension ligne fournie)
+    // et à la sortie (affichage des tensions ligne-ligne)
     let Vslack_phase: number;
     
     // 1. Priorité absolue : tensionCible explicite
     if (source.tensionCible) {
-      if (source.connectionType === 'TÉTRA_3P+N_230_400V') {
-        // Source triphasée avec tension ligne fournie → convertir en phase
+      // Détecter si la tension fournie est ligne-ligne ou phase-neutre
+      if (source.connectionType === 'TÉTRA_3P+N_230_400V' && source.tensionCible >= ElectricalCalculator.VOLTAGE_400V_THRESHOLD) {
+        // Source triphasée 400V avec tension ligne fournie → convertir en phase
         Vslack_phase = source.tensionCible / Math.sqrt(3);
+        console.log(`📐 Conversion √3: ${source.tensionCible}V ligne → ${Vslack_phase.toFixed(1)}V phase`);
+      } else if (source.connectionType === 'TRI_230V_3F' && source.tensionCible <= 250) {
+        // Triangle 230V : tension fournie est ligne-ligne, convertir en phase
+        Vslack_phase = source.tensionCible / Math.sqrt(3);
+        console.log(`📐 Conversion √3 (triangle): ${source.tensionCible}V ligne → ${Vslack_phase.toFixed(1)}V phase`);
       } else {
         // Autres cas : tension fournie est déjà en phase
         Vslack_phase = source.tensionCible;

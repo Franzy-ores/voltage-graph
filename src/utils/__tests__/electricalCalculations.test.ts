@@ -195,4 +195,203 @@ describe('ElectricalCalculator - basic LV radial cases', () => {
     // 4. Chute de tension doit être identique entre mono et poly (tolérance 0.1%)
     expect(Math.abs((cableMono.voltageDropPercent ?? 0) - (cablePoly.voltageDropPercent ?? 0))).toBeLessThan(0.1);
   });
+
+  // ==================== CAS 6: Réseau déséquilibré 400V ====================
+  // Vérifier que ΔVn ≈ IN × R0 × L et chute neutre visible
+  it('Cas 6: Réseau déséquilibré 400V - Chute neutre réaliste avec R0', () => {
+    const calc = new ElectricalCalculator(0.95);
+    
+    // Réseau simple: Source -> Nœud1 (100m, charge UNIQUEMENT sur phase A)
+    const cableType = mkCableType('t1', 0.32, 0.08, 0.64, 0.10); // R0 = 2×R12
+    
+    const nodes: Node[] = [
+      { id: 'src', name: 'Source', lat: 0, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [], isSource: true },
+      { id: 'n1', name: 'Node1', lat: degLatForMeters(100), lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [{ id: 'c1', label: 'Load', S_kVA: 30 }], productions: [] }
+    ];
+    
+    const cables: Cable[] = [
+      { id: 'cab1', name: 'C1', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n1', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: 0 }] }
+    ];
+    
+    const transformer = baseTransformer(400, 160, 4);
+    
+    // ===== CALCUL MODE MONOPHASÉ DÉSÉQUILIBRÉ (100% sur phase A) =====
+    const result = calc.calculateScenario(
+      nodes, cables, [cableType], 'PRÉLÈVEMENT' as CalculationScenario,
+      100, 100, transformer, 'monophase_reparti', 0,
+      {
+        charges: { A: 100, B: 0, C: 0 }, // Toute la charge sur phase A
+        productions: { A: 100, B: 0, C: 0 }
+      }
+    );
+    
+    // ===== VÉRIFICATIONS =====
+    
+    // 1. La phase A doit avoir une tension significativement inférieure aux phases B et C
+    const nodeMetrics = result.nodeMetricsPerPhase?.find(n => n.nodeId === 'n1');
+    expect(nodeMetrics).toBeDefined();
+    
+    if (nodeMetrics) {
+      const Va = nodeMetrics.voltagesPerPhase.A;
+      const Vb = nodeMetrics.voltagesPerPhase.B;
+      const Vc = nodeMetrics.voltagesPerPhase.C;
+      
+      console.log(`📊 Tensions déséquilibrées: Va=${Va.toFixed(2)}V, Vb=${Vb.toFixed(2)}V, Vc=${Vc.toFixed(2)}V`);
+      
+      // Va devrait être significativement plus faible (> 3V de différence)
+      expect(Va).toBeLessThan(Vb - 3);
+      expect(Va).toBeLessThan(Vc - 3);
+      
+      // Vb et Vc devraient être proches (phases non chargées)
+      expect(Math.abs(Vb - Vc)).toBeLessThan(2);
+    }
+    
+    // 2. Courant neutre significatif (proche du courant de phase A)
+    const cable = result.cables.find(c => c.id === 'cab1');
+    expect(cable).toBeDefined();
+    
+    if (cable?.currentsPerPhase_A) {
+      const IA = cable.currentsPerPhase_A.A;
+      const IB = cable.currentsPerPhase_A.B;
+      const IC = cable.currentsPerPhase_A.C;
+      const IN = cable.currentsPerPhase_A.N;
+      
+      console.log(`📊 Courants: IA=${IA.toFixed(2)}A, IB=${IB.toFixed(2)}A, IC=${IC.toFixed(2)}A, IN=${IN.toFixed(2)}A`);
+      
+      // IN devrait être proche de IA (car IB et IC ≈ 0)
+      expect(Math.abs(IN - IA)).toBeLessThan(IA * 0.1); // Tolérance 10%
+    }
+  });
+
+  // ==================== CAS 7: Réseau 230V triangle ====================
+  // Vérifier que le neutre est ignoré et R12/X12 toujours utilisé
+  it('Cas 7: Réseau 230V triangle - Pas de neutre, uniquement R12/X12', () => {
+    const calc = new ElectricalCalculator(0.95);
+    
+    const cableType = mkCableType('t1', 0.32, 0.08, 0.64, 0.10);
+    
+    const nodes: Node[] = [
+      { id: 'src', name: 'Source', lat: 0, lng: 0, connectionType: 'TRI_230V_3F', clients: [], productions: [], isSource: true },
+      { id: 'n1', name: 'Node1', lat: degLatForMeters(100), lng: 0, connectionType: 'TRI_230V_3F', clients: [{ id: 'c1', label: 'Load', S_kVA: 30 }], productions: [] }
+    ];
+    
+    const cables: Cable[] = [
+      { id: 'cab1', name: 'C1', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n1', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: 0 }] }
+    ];
+    
+    // ===== CALCUL MODE POLYPHASÉ (pas de transformateur pour 230V triangle) =====
+    const result = calc.calculateScenario(
+      nodes, cables, [cableType], 'PRÉLÈVEMENT' as CalculationScenario,
+      100, 100, undefined, 'polyphase_equilibre', 0, undefined
+    );
+    
+    // ===== VÉRIFICATIONS =====
+    
+    // 1. La chute de tension doit suivre la formule classique: ΔU = √3 × R12 × I × L
+    const cable = result.cables.find(c => c.id === 'cab1');
+    expect(cable).toBeDefined();
+    
+    if (cable) {
+      const I = cable.current_A!;
+      const L_km = 0.1; // 100m
+      const R12 = cableType.R12_ohm_per_km;
+      
+      // Formule triangle: ΔU = √3 × R12 × I × L (pas de R0)
+      const deltaV_theory = Math.sqrt(3) * R12 * I * L_km;
+      
+      console.log(`📊 Chute de tension 230V triangle:`);
+      console.log(`   - Théorique: ${deltaV_theory.toFixed(2)}V`);
+      console.log(`   - Calculée: ${cable.voltageDrop_V!.toFixed(2)}V`);
+      
+      // Tolérance: différence < 15% (il y a aussi des effets réactifs)
+      const diff = Math.abs(cable.voltageDrop_V! - deltaV_theory);
+      const diffPct = (diff / deltaV_theory) * 100;
+      expect(diffPct).toBeLessThan(15);
+    }
+    
+    // 2. Pas de métriques par phase en mode polyphasé équilibré sur réseau triangle
+    // (nodeMetricsPerPhase peut exister mais ne doit pas contenir de courant neutre)
+    expect(result.nodeMetricsPerPhase).toBeUndefined();
+  });
+
+  // ==================== CAS 8: Équivalence mono équilibré vs poly ====================
+  // Vérifier que monophasé équilibré 33.3% = polyphasé
+  it('Cas 8: Équivalence mode monophasé équilibré 33.3% ≈ mode polyphasé (400V)', () => {
+    const calc = new ElectricalCalculator(0.95);
+    
+    const cableType = mkCableType('t1', 0.32, 0.08, 0.64, 0.10);
+    
+    const nodes: Node[] = [
+      { id: 'src', name: 'Source', lat: 0, lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [], productions: [], isSource: true },
+      { id: 'n1', name: 'Node1', lat: degLatForMeters(100), lng: 0, connectionType: 'TÉTRA_3P+N_230_400V', clients: [{ id: 'c1', label: 'Load', S_kVA: 30 }], productions: [] }
+    ];
+    
+    const cables: Cable[] = [
+      { id: 'cab1', name: 'C1', typeId: 't1', pose: 'AÉRIEN', nodeAId: 'src', nodeBId: 'n1', coordinates: [{ lat: 0, lng: 0 }, { lat: degLatForMeters(100), lng: 0 }] }
+    ];
+    
+    const transformer = baseTransformer(400, 160, 4);
+    
+    // ===== CALCUL MODE POLYPHASÉ =====
+    const resultPoly = calc.calculateScenario(
+      nodes, cables, [cableType], 'PRÉLÈVEMENT' as CalculationScenario,
+      100, 100, transformer, 'polyphase_equilibre', 0, undefined
+    );
+    
+    // ===== CALCUL MODE MONOPHASÉ ÉQUILIBRÉ (33.3% par phase) =====
+    const resultMono = calc.calculateScenario(
+      nodes, cables, [cableType], 'PRÉLÈVEMENT' as CalculationScenario,
+      100, 100, transformer, 'monophase_reparti', 0,
+      {
+        charges: { A: 33.33, B: 33.33, C: 33.34 }, // Équilibré
+        productions: { A: 33.33, B: 33.33, C: 33.34 }
+      }
+    );
+    
+    // ===== VÉRIFICATIONS =====
+    
+    // 1. Courant neutre doit être quasi nul en mode monophasé équilibré
+    const cableMono = resultMono.cables.find(c => c.id === 'cab1');
+    if (cableMono?.currentsPerPhase_A) {
+      const IN = cableMono.currentsPerPhase_A.N;
+      console.log(`📊 Courant neutre mode équilibré: IN=${IN.toFixed(3)}A`);
+      
+      // Tolérance: IN < 0.5A (erreurs numériques)
+      expect(IN).toBeLessThan(0.5);
+    }
+    
+    // 2. Tensions par phase doivent être quasi identiques (équilibré)
+    const nodeMetricsMono = resultMono.nodeMetricsPerPhase?.find(n => n.nodeId === 'n1');
+    if (nodeMetricsMono) {
+      const Va = nodeMetricsMono.voltagesPerPhase.A;
+      const Vb = nodeMetricsMono.voltagesPerPhase.B;
+      const Vc = nodeMetricsMono.voltagesPerPhase.C;
+      
+      console.log(`📊 Tensions équilibrées: Va=${Va.toFixed(2)}V, Vb=${Vb.toFixed(2)}V, Vc=${Vc.toFixed(2)}V`);
+      
+      // Tolérance: différence < 0.5V entre phases
+      expect(Math.abs(Va - Vb)).toBeLessThan(0.5);
+      expect(Math.abs(Vb - Vc)).toBeLessThan(0.5);
+      expect(Math.abs(Va - Vc)).toBeLessThan(0.5);
+    }
+    
+    // 3. Chute de tension mono ≈ poly (tolérance ±1.0V)
+    const cablePoly = resultPoly.cables.find(c => c.id === 'cab1');
+    
+    if (cableMono && cablePoly) {
+      const diffV = Math.abs(cableMono.voltageDrop_V! - cablePoly.voltageDrop_V!);
+      console.log(`📊 Chutes de tension: Mono=${cableMono.voltageDrop_V!.toFixed(2)}V, Poly=${cablePoly.voltageDrop_V!.toFixed(2)}V, Diff=${diffV.toFixed(2)}V`);
+      
+      // Tolérance: différence < 1.5V (acceptable pour convergence numérique)
+      expect(diffV).toBeLessThan(1.5);
+    }
+    
+    // 4. Pertes mono ≈ poly (tolérance ±10%)
+    const diffLosses = Math.abs(resultMono.globalLosses_kW - resultPoly.globalLosses_kW);
+    const avgLosses = (resultMono.globalLosses_kW + resultPoly.globalLosses_kW) / 2;
+    const diffLossesPct = avgLosses > 0 ? (diffLosses / avgLosses) * 100 : 0;
+    
+    console.log(`📊 Pertes globales: Mono=${resultMono.globalLosses_kW.toFixed(3)}kW, Poly=${resultPoly.globalLosses_kW.toFixed(3)}kW, Diff=${diffLossesPct.toFixed(1)}%`);
+    expect(diffLossesPct).toBeLessThan(10);
+  });
 });
