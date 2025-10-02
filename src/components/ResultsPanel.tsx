@@ -323,54 +323,24 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
               </div>
             </div>
 
-            {/* Section 3: Déséquilibre (mode monophasé uniquement) */}
+            {/* Section 3: Jeu de barres (mode monophasé uniquement) */}
             {currentProject?.loadModel === 'monophase_reparti' && (
               <div className="text-xs">
-                <p className="text-muted-foreground mb-1">Déséquilibre</p>
+                <p className="text-muted-foreground mb-1">Jeu de barres</p>
                 {(() => {
-                  const manualDist = currentResult?.manualPhaseDistribution;
-                  if (manualDist) {
-                    // Calculer les déséquilibres séparés
-                    const calcImbalance = (dist: { A: number; B: number; C: number }) => {
-                      const total = dist.A + dist.B + dist.C;
-                      if (total === 0) return 0;
-                      const ideal = total / 3;
-                      const maxDiff = Math.max(
-                        Math.abs(dist.A - ideal),
-                        Math.abs(dist.B - ideal),
-                        Math.abs(dist.C - ideal)
-                      );
-                      return ((maxDiff / ideal) * 100);
-                    };
-
-                    const chargeImbalance = manualDist.charges ? calcImbalance(manualDist.charges) : 0;
-                    const prodImbalance = manualDist.productions ? calcImbalance(manualDist.productions) : 0;
-
+                  const busbar = currentResult?.virtualBusbar;
+                  if (busbar) {
                     return (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <span className="text-muted-foreground">Charges: </span>
-                          <span className="font-semibold">{chargeImbalance.toFixed(1)}%</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Productions: </span>
-                          <span className="font-semibold">{prodImbalance.toFixed(1)}%</span>
-                        </div>
-                      </div>
+                      <p className="font-semibold">
+                        I_N: {busbar.current_N !== undefined ? busbar.current_N.toFixed(1) : '0.0'}A - 
+                        ΔU: {busbar.deltaU_V >= 0 ? '+' : ''}{busbar.deltaU_V.toFixed(2)}V
+                      </p>
                     );
                   } else {
-                    // Aucune distribution manuelle disponible
                     return (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <span className="text-muted-foreground">Charges: </span>
-                          <span className="font-semibold">0.0%</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Productions: </span>
-                          <span className="font-semibold">0.0%</span>
-                        </div>
-                      </div>
+                      <p className="font-semibold text-muted-foreground">
+                        Données non disponibles
+                      </p>
                     );
                   }
                 })()}

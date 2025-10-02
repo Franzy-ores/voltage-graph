@@ -169,7 +169,6 @@ export const TopMenu = ({
                       {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
                       {busbar.current_N !== undefined && <> - I_N: {busbar.current_N.toFixed(1)}A</>} - 
                       ΔU: {typeof busbar.deltaU_V === 'number' ? (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : '0.00'}V
-                      {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>}
                     </>;
           }
 
@@ -179,7 +178,6 @@ export const TopMenu = ({
                     {typeof busbar.current_A === 'number' ? Math.abs(busbar.current_A).toFixed(1) : '0.0'}A
                     {busbar.current_N !== undefined && <> - I_N: {busbar.current_N.toFixed(1)}A</>} - 
                     ΔU: {typeof busbar.deltaU_V === 'number' ? (busbar.deltaU_V >= 0 ? '+' : '') + busbar.deltaU_V.toFixed(2) : '0.00'}V
-                    {currentProject.desequilibrePourcent !== undefined && currentProject.desequilibrePourcent > 0 && <> - Déséquilibre: {currentProject.desequilibrePourcent.toFixed(1)}%</>}
                   </>;
         })()}
             </div>}
