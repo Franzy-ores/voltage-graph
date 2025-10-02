@@ -265,57 +265,117 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid grid-cols-1 gap-3 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Charge contractuelle</p>
-                  <p className="font-semibold">{(() => {
-                    if (!currentProject?.nodes || !currentProject?.cables) return '0.0';
-                    const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
-                    const connectedNodesData = currentProject.nodes.filter(node => connectedNodes.has(node.id));
-                    return connectedNodesData.reduce((sum, node) => 
-                      sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0).toFixed(1);
-                  })()} kVA</p>
-                </div>
+            {/* Section 1: Charges et Productions en 2 colonnes */}
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+              <div>
+                <p className="text-muted-foreground">Charge contract.</p>
+                <p className="font-semibold">{(() => {
+                  if (!currentProject?.nodes || !currentProject?.cables) return '0.0';
+                  const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+                  const connectedNodesData = currentProject.nodes.filter(node => connectedNodes.has(node.id));
+                  return connectedNodesData.reduce((sum, node) => 
+                    sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0).toFixed(1);
+                })()} kVA</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Production contract.</p>
+                <p className="font-semibold">{(() => {
+                  if (!currentProject?.nodes || !currentProject?.cables) return '0.0';
+                  const connectedNodes = getConnectedNodes(currentProject.nodes, currentProject.cables);
+                  const connectedNodesData = currentProject.nodes.filter(node => connectedNodes.has(node.id));
+                  return connectedNodesData.reduce((sum, node) => 
+                    sum + node.productions.reduce((prodSum, prod) => prodSum + prod.S_kVA, 0), 0).toFixed(1);
+                })()} kVA</p>
+              </div>
               <div>
                 <p className="text-muted-foreground">Foisonnement charges</p>
                 <p className="font-semibold">{currentProject?.foisonnementCharges || 100}%</p>
               </div>
               <div>
+                <p className="text-muted-foreground">Foisonnement production</p>
+                <p className="font-semibold">{currentProject?.foisonnementProductions || 100}%</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Charge foisonnée</p>
+                <p className="font-semibold">{currentResult.totalLoads_kVA.toFixed(1)} kVA</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Production foisonnée</p>
+                <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
+              </div>
+            </div>
+
+            {/* Section 2: Modèle de charge */}
+            <div className="pt-2 border-t">
+              <div className="text-xs">
                 <p className="text-muted-foreground">Modèle de charge</p>
                 <p className="font-semibold">
                   {currentProject?.loadModel === 'monophase_reparti' ? 'Monophasé réparti' : 'Polyphasé équilibré'}
                 </p>
               </div>
-              {currentProject?.loadModel === 'monophase_reparti' && (
-                <div>
-                  <p className="text-muted-foreground">Déséquilibre</p>
-                  <p className="font-semibold">{currentProject?.desequilibrePourcent || 0}%</p>
-                </div>
-              )}
-              <div>
-                <p className="text-muted-foreground">Charge foisonnée</p>
-                <p className="font-semibold">{currentResult.totalLoads_kVA.toFixed(1)} kVA</p>
+            </div>
+
+            {/* Section 3: Déséquilibre (mode monophasé uniquement) */}
+            {currentProject?.loadModel === 'monophase_reparti' && (
+              <div className="text-xs">
+                <p className="text-muted-foreground mb-1">Déséquilibre</p>
+                {(() => {
+                  const manualDist = (currentResult as any)?.manualPhaseDistribution;
+                  if (manualDist) {
+                    // Calculer les déséquilibres séparés
+                    const calcImbalance = (dist: { phase1: number; phase2: number; phase3: number }) => {
+                      const total = dist.phase1 + dist.phase2 + dist.phase3;
+                      if (total === 0) return 0;
+                      const ideal = total / 3;
+                      const maxDiff = Math.max(
+                        Math.abs(dist.phase1 - ideal),
+                        Math.abs(dist.phase2 - ideal),
+                        Math.abs(dist.phase3 - ideal)
+                      );
+                      return ((maxDiff / ideal) * 100);
+                    };
+
+                    const chargeImbalance = manualDist.charges ? calcImbalance(manualDist.charges) : 0;
+                    const prodImbalance = manualDist.productions ? calcImbalance(manualDist.productions) : 0;
+
+                    return (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-muted-foreground">Charges: </span>
+                          <span className="font-semibold">{chargeImbalance.toFixed(1)}%</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Productions: </span>
+                          <span className="font-semibold">{prodImbalance.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    // Fallback sur l'ancien système
+                    return (
+                      <p className="font-semibold">{currentProject?.desequilibrePourcent || 0}%</p>
+                    );
+                  }
+                })()}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-muted-foreground">Productions totales</p>
-                  <p className="font-semibold">{currentResult.totalProductions_kVA.toFixed(1)} kVA</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Pertes globales</p>
-                  <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
-                </div>
-              </div>
+            )}
+
+            {/* Section 4: Chute max. et Pertes globales */}
+            <div className="pt-2 border-t grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
               <div>
                 <p className="text-muted-foreground">Chute max.</p>
                 <p className="font-semibold">
                   {currentResult.maxVoltageDropPercent.toFixed(2)}%
                   {currentResult.maxVoltageDropCircuitNumber && (
                     <span className="text-muted-foreground text-xs ml-1">
-                      (Circuit {currentResult.maxVoltageDropCircuitNumber})
+                      (C{currentResult.maxVoltageDropCircuitNumber})
                     </span>
                   )}
                 </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Pertes globales</p>
+                <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
               </div>
             </div>
             
