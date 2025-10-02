@@ -115,7 +115,7 @@ export const TopMenu = ({
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               {/* System Info */}
-              <div className={`text-xs text-primary-foreground rounded-lg px-3 py-1 ${currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 'bg-fuchsia-500/30' : 'bg-cyan-500/30'}`}>
+              <div className={`text-xs text-primary-foreground rounded-lg px-3 py-1 ${currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 'bg-fuchsia-600' : 'bg-cyan-600'}`}>
                 {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
