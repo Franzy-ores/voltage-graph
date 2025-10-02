@@ -11,10 +11,8 @@ import { useNetworkStore } from "@/store/networkStore";
 import { NeutralCompensator, CableUpgrade } from "@/types/network";
 import { NodeSelector } from "@/components/NodeSelector";
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
-import { ForcedModePanel } from "@/components/ForcedModePanel";
-import { PhaseDistributionSliders } from "@/components/PhaseDistributionSliders";
-import { SRG2Panel } from "@/components/SRG2Panel";
-import { Settings, TrendingUp, Cable, Play, RotateCcw, Trash2, Plus, AlertTriangle, CheckCircle, Target, Activity } from "lucide-react";
+import { DocumentationPanel } from "@/components/DocumentationPanel";
+import { Settings, Play, RotateCcw, Trash2, Plus, AlertTriangle, CheckCircle, Cable } from "lucide-react";
 export const SimulationPanel = () => {
   const {
     currentProject,
@@ -249,75 +247,7 @@ export const SimulationPanel = () => {
 
       <ScrollArea className="flex-1">
         <div className="p-4">
-          <Tabs defaultValue="calibration" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 text-xs">
-              
-              <TabsTrigger value="srg2" className="text-xs">
-                <Activity className="h-3 w-3 mr-1" />
-                SRG2
-              </TabsTrigger>
-              <TabsTrigger value="compensators" className="text-xs">
-                <Settings className="h-3 w-3 mr-1" />
-                Neutre
-              </TabsTrigger>
-              
-            </TabsList>
-
-            <TabsContent value="calibration" className="mt-4">
-              <ForcedModePanel />
-            </TabsContent>
-
-            <TabsContent value="srg2" className="mt-4">
-              <SRG2Panel />
-            </TabsContent>
-
-            <TabsContent value="compensators" className="mt-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Compensateurs de neutre</h3>
-                  <NodeSelector nodes={currentProject.nodes} onNodeSelected={nodeId => addNeutralCompensator(nodeId)} title="Ajouter un compensateur de neutre" description="Réduction du courant de neutre (EQUI8)" trigger={<Button size="sm" variant="outline" disabled={!nodes.length}>
-                        <Plus className="h-3 w-3 mr-1" />
-                        Ajouter
-                      </Button>} />
-                </div>
-
-                {simulationEquipment.neutralCompensators.length === 0 ? <Card className="p-4 text-center text-muted-foreground">
-                    <Settings className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucun compensateur</p>
-                    <p className="text-xs">
-                      Ajoutez des compensateurs pour réduire le courant de neutre
-                    </p>
-                  </Card> : simulationEquipment.neutralCompensators.map(compensator => <CompensatorCard key={compensator.id} compensator={compensator} />)}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="upgrades" className="mt-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium">Renforcements de câbles</h3>
-                  <Button size="sm" variant="outline" onClick={() => proposeCableUpgrades()} disabled={!simulationMode}>
-                    <TrendingUp className="h-3 w-3 mr-1" />
-                    Analyser
-                  </Button>
-                </div>
-
-                {!simulationMode && <Card className="p-4 bg-muted/50">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <AlertTriangle className="h-4 w-4" />
-                      Activez le mode simulation pour analyser les renforcements
-                    </div>
-                  </Card>}
-
-                {simulationEquipment.cableUpgrades.length === 0 ? <Card className="p-4 text-center text-muted-foreground">
-                    <Cable className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Aucun renforcement proposé</p>
-                    <p className="text-xs">
-                      Analysez le réseau pour identifier les améliorations
-                    </p>
-                  </Card> : simulationEquipment.cableUpgrades.map((upgrade, index) => <UpgradeCard key={index} upgrade={upgrade} />)}
-              </div>
-            </TabsContent>
-          </Tabs>
+          <DocumentationPanel />
         </div>
       </ScrollArea>
 
