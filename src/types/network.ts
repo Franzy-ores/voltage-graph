@@ -292,6 +292,8 @@ export interface NetworkState {
   editPanelOpen: boolean;
   editTarget: 'node' | 'cable' | 'project' | 'simulation' | null;
   showVoltages: boolean;
+  resultsPanelOpen: boolean;
+  focusMode: boolean;
   simulationMode: boolean;
   simulationEquipment: SimulationEquipment;
 }

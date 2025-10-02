@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -36,7 +37,10 @@ export const TopMenu = ({
     updateProjectConfig,
     setFoisonnementCharges,
     setFoisonnementProductions,
-    simulationPreview
+    simulationPreview,
+    editTarget,
+    toggleFocusMode,
+    focusMode,
   } = useNetworkStore();
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
@@ -58,20 +62,48 @@ export const TopMenu = ({
     });
   };
   return <div className="bg-gradient-primary text-primary-foreground shadow-lg border-b border-primary/20">
-      {/* Title Section */}
-      <div className="flex items-center justify-between px-6 py-2 border-b border-primary-foreground/10">
+      {/* Title Section avec badge simulation */}
+      <div className="flex items-center justify-between px-6 py-1.5 border-b border-primary-foreground/10">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-white/10 rounded-lg">
-            <Zap className="h-5 w-5" />
+          <div className="p-1.5 bg-white/10 rounded-lg">
+            <Zap className="h-4 w-4" />
           </div>
           <div>
-            <h1 className="text-lg font-bold">Calcul de Chute de Tension</h1>
+            <h1 className="text-base font-bold">Calcul de Chute de Tension</h1>
             <p className="text-primary-foreground/80 text-xs">Réseau Électrique BT</p>
           </div>
+          {editTarget === 'simulation' && (
+            <Badge variant="default" className="animate-pulse bg-orange-500">
+              🔬 Mode Simulation Actif
+            </Badge>
+          )}
         </div>
 
-        {/* Menu Actions - Always Visible */}
+        {/* Menu Actions */}
         <div className="flex items-center gap-1">
+          {!focusMode && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={toggleFocusMode} 
+              title="Mode Focus (masque toolbar et panneau)"
+              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+            >
+              🎯 Focus
+            </Button>
+          )}
+          {focusMode && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={toggleFocusMode} 
+              title="Sortir du mode Focus"
+              className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+            >
+              ↩️ Normal
+            </Button>
+          )}
+          
           <Button variant="ghost" size="sm" onClick={handleExportPDF} disabled={!currentProject || !calculationResults[selectedScenario]} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground disabled:opacity-50">
             <FileDown className="h-4 w-4 mr-1" />
             PDF

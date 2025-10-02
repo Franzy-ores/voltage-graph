@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalculationResult, CalculationScenario, VirtualBusbar } from "@/types/network";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useNetworkStore } from '@/store/networkStore';
 import { jsPDF } from 'jspdf';
@@ -13,10 +14,11 @@ interface ResultsPanelProps {
     [key in CalculationScenario]: CalculationResult | null;
   };
   selectedScenario: CalculationScenario;
+  isCollapsed?: boolean;
 }
 
-export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) => {
-  const { currentProject, simulationResults } = useNetworkStore();
+export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }: ResultsPanelProps) => {
+  const { currentProject, simulationResults, toggleResultsPanel } = useNetworkStore();
   
   const currentResult = results[selectedScenario];
 
@@ -251,6 +253,22 @@ export const ResultsPanel = ({ results, selectedScenario }: ResultsPanelProps) =
   }
 
   const circuitStats = getCircuitStatistics();
+
+  if (isCollapsed) {
+    return (
+      <div className="w-12 bg-card border-l border-border flex flex-col items-center py-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleResultsPanel}
+          title="Afficher les résultats"
+          className="rotate-180"
+        >
+          <span className="text-lg">📊</span>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-80 bg-card border-l border-border overflow-y-auto">

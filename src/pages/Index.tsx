@@ -9,16 +9,16 @@ import { useNetworkStore } from "@/store/networkStore";
 const Index = () => {
   const { 
     currentProject, 
-    selectedScenario, 
     calculationResults,
     simulationResults,
     simulationEquipment,
-    selectedTool,
-    editTarget,
+    selectedScenario,
     createNewProject,
     loadProject,
     openEditPanel,
-    calculateAll
+    editTarget,
+    resultsPanelOpen,
+    focusMode,
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
@@ -118,22 +118,28 @@ const Index = () => {
     openEditPanel('simulation');
   };
 
+  // Déterminer si on doit afficher le ResultsPanel
+  const shouldShowResults = resultsPanelOpen && editTarget !== 'simulation';
+
   return (
     <div className="h-screen flex flex-col bg-background">
-      <TopMenu 
-        onNewNetwork={handleNewNetwork}
-        onSave={handleSave}
-        onLoad={handleLoad}
-        onSettings={handleSettings}
-        onSimulation={handleSimulation}
-      />
+      {!focusMode && (
+        <TopMenu 
+          onNewNetwork={handleNewNetwork}
+          onSave={handleSave}
+          onLoad={handleLoad}
+          onSettings={handleSettings}
+          onSimulation={handleSimulation}
+        />
+      )}
       
       <div className="flex-1 flex relative">
-        <Toolbar />
+        {!focusMode && <Toolbar />}
         <MapView />
         <ResultsPanel
           results={resultsToUse}
           selectedScenario={selectedScenario}
+          isCollapsed={!shouldShowResults}
         />
       </div>
       

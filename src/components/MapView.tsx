@@ -54,6 +54,11 @@ export const MapView = () => {
     showVoltages,
     moveNode,
     simulationMode,
+    toggleResultsPanel,
+    resultsPanelOpen,
+    editTarget,
+    focusMode,
+    toggleFocusMode,
   } = useNetworkStore();
 
   // Déterminer quels résultats utiliser - simulation si équipements actifs (peu importe simulationMode)
@@ -952,6 +957,17 @@ export const MapView = () => {
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000]">
         <AddressSearch onLocationSelect={handleLocationSelect} />
       </div>
+      
+      {/* Bouton toggle ResultsPanel */}
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={toggleResultsPanel}
+        title={resultsPanelOpen ? "Masquer les résultats" : "Afficher les résultats"}
+        className="absolute top-4 right-4 z-[1000] bg-background/90 backdrop-blur-sm"
+      >
+        <span className="text-lg">{resultsPanelOpen ? '👁️' : '📊'}</span>
+      </Button>
       
       {/* Sélecteur de type de carte */}
       <div className="absolute bottom-4 right-4 z-[1000] flex flex-col gap-2">

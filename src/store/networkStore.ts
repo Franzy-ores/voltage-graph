@@ -123,6 +123,8 @@ interface NetworkActions {
   
   // Display settings
   setShowVoltages: (show: boolean) => void;
+  toggleResultsPanel: () => void;
+  toggleFocusMode: () => void;
   changeVoltageSystem: () => void;
   setFoisonnementCharges: (value: number) => void;
   setFoisonnementProductions: (value: number) => void;
@@ -278,6 +280,8 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   editPanelOpen: false,
   editTarget: null,
   showVoltages: true,
+  resultsPanelOpen: true,
+  focusMode: false,
   simulationMode: false,
   simulationEquipment: {
     srg2Devices: [],
@@ -1302,4 +1306,10 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       }
     });
   },
+
+  toggleResultsPanel: () => set(state => ({ resultsPanelOpen: !state.resultsPanelOpen })),
+  toggleFocusMode: () => set(state => ({ 
+    focusMode: !state.focusMode,
+    resultsPanelOpen: !state.focusMode ? false : state.resultsPanelOpen
+  })),
 }));
