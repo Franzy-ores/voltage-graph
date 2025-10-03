@@ -31,6 +31,71 @@ export const SRG2Panel = () => {
 
   const nodes = currentProject.nodes.filter(n => !n.isSource);
 
+  // Fonction pour trouver tous les nœuds en aval d'un nœud donné (incluant le nœud lui-même)
+  const findDownstreamNodes = (startNodeId: string): string[] => {
+    const downstream: string[] = [startNodeId]; // Inclure le nœud de départ
+    const visited = new Set<string>([startNodeId]);
+    const queue: string[] = [startNodeId];
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      
+      const connectedCables = currentProject.cables.filter(
+        c => c.nodeAId === currentId || c.nodeBId === currentId
+      );
+      
+      for (const cable of connectedCables) {
+        const nextNodeId = cable.nodeAId === currentId ? cable.nodeBId : cable.nodeAId;
+        
+        if (!visited.has(nextNodeId)) {
+          visited.add(nextNodeId);
+          downstream.push(nextNodeId);
+          queue.push(nextNodeId);
+        }
+      }
+    }
+    
+    return downstream;
+  };
+
+  // Fonction pour calculer les puissances foisonnées en aval
+  const calculateDownstreamPowers = (srg2: SRG2Config) => {
+    const downstreamNodeIds = findDownstreamNodes(srg2.nodeId);
+    
+    let totalChargeKVA = 0;
+    let totalProductionKVA = 0;
+    
+    downstreamNodeIds.forEach(nodeId => {
+      const node = currentProject.nodes.find(n => n.id === nodeId);
+      if (!node) return;
+      
+      // Charges brutes
+      const chargesBrutes = node.clients.reduce((sum, client) => sum + client.S_kVA, 0);
+      const chargesFoisonnees = chargesBrutes * (currentProject.foisonnementCharges / 100);
+      totalChargeKVA += chargesFoisonnees;
+      
+      // Productions brutes
+      const productionsBrutes = node.productions.reduce((sum, prod) => sum + prod.S_kVA, 0);
+      const productionsFoisonnees = productionsBrutes * (currentProject.foisonnementProductions / 100);
+      totalProductionKVA += productionsFoisonnees;
+    });
+    
+    const bilanNet = totalProductionKVA - totalChargeKVA; // positif = injection, négatif = prélèvement
+    const isInjection = bilanNet > 0;
+    const limit = isInjection ? 85 : 110;
+    const ratio = Math.abs(bilanNet) / limit;
+    
+    return {
+      totalChargeKVA,
+      totalProductionKVA,
+      bilanNet,
+      isInjection,
+      ratio,
+      isWithinLimits: ratio <= 1.0,
+      nodeCount: downstreamNodeIds.length
+    };
+  };
+
   const SRG2Card = ({ srg2 }: { srg2: SRG2Config }) => {
     const node = currentProject.nodes.find(n => n.id === srg2.nodeId);
     
@@ -220,28 +285,24 @@ export const SRG2Panel = () => {
             </div>
           </div>
 
-          {/* Limites de puissance */}
+          {/* Limites de puissance - Informations fixes */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-xs">Injection max (kVA)</Label>
               <Input
                 type="number"
-                value={srg2.puissanceMaxInjection_kVA || 85}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  puissanceMaxInjection_kVA: Number(e.target.value)
-                })}
-                className="h-8"
+                value={85}
+                disabled
+                className="h-8 bg-muted"
               />
             </div>
             <div>
               <Label className="text-xs">Prélèvement max (kVA)</Label>
               <Input
                 type="number"
-                value={srg2.puissanceMaxPrelevement_kVA || 100}
-                onChange={(e) => updateSRG2Device(srg2.id, {
-                  puissanceMaxPrelevement_kVA: Number(e.target.value)
-                })}
-                className="h-8"
+                value={110}
+                disabled
+                className="h-8 bg-muted"
               />
             </div>
           </div>
@@ -337,6 +398,56 @@ export const SRG2Panel = () => {
           }
         />
       </div>
+
+      {/* Affichage des puissances aval pour tous les SRG2 */}
+      {simulationEquipment.srg2Devices && simulationEquipment.srg2Devices.length > 0 && (
+        <Card className="p-3">
+          <div className="text-xs font-medium mb-2">Puissances aval foisonnées:</div>
+          <div className="space-y-2">
+            {simulationEquipment.srg2Devices.map(srg2 => {
+              const powers = calculateDownstreamPowers(srg2);
+              const node = currentProject.nodes.find(n => n.id === srg2.nodeId);
+              
+              let badgeVariant: "default" | "warning" | "destructive" = "default";
+              let badgeLabel = "Dans les limites";
+              
+              if (powers.ratio > 1.0) {
+                badgeVariant = "destructive";
+                badgeLabel = "Limite dépassée";
+              } else if (powers.ratio > 0.8) {
+                badgeVariant = "warning";
+                badgeLabel = "Proche limite";
+              }
+              
+              return (
+                <div key={srg2.id} className="border rounded p-2 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium">{srg2.name}</span>
+                    <Badge variant={badgeVariant} className="text-xs">
+                      {badgeLabel}
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                    <div>Production: <span className="font-medium text-foreground">{powers.totalProductionKVA.toFixed(1)} kVA</span></div>
+                    <div>Charge: <span className="font-medium text-foreground">{powers.totalChargeKVA.toFixed(1)} kVA</span></div>
+                  </div>
+                  <div className="text-xs">
+                    Bilan net: <span className={`font-medium ${powers.isInjection ? 'text-blue-600' : 'text-orange-600'}`}>
+                      {powers.bilanNet > 0 ? '+' : ''}{powers.bilanNet.toFixed(1)} kVA
+                    </span>
+                    <span className="text-muted-foreground ml-1">
+                      ({powers.isInjection ? 'injection' : 'prélèvement'})
+                    </span>
+                    <span className="text-muted-foreground ml-1">
+                      • {powers.nodeCount} nœud{powers.nodeCount > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {simulationEquipment.srg2Devices?.length === 0 ? (
         <Card className="p-4 text-center text-muted-foreground">
