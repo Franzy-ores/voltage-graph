@@ -18,7 +18,7 @@ interface ResultsPanelProps {
 }
 
 export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }: ResultsPanelProps) => {
-  const { currentProject, simulationResults, toggleResultsPanel, simulationEquipment, isSimulationActive } = useNetworkStore();
+  const { currentProject, simulationResults, toggleResultsPanel, toggleResultsPanelFullscreen, simulationEquipment, isSimulationActive, resultsPanelFullscreen } = useNetworkStore();
   
   const currentResult = results[selectedScenario];
 
@@ -271,15 +271,29 @@ export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }:
   }
 
   return (
-    <div className="w-80 bg-card border-l border-border overflow-y-auto">
+    <div className={resultsPanelFullscreen 
+      ? "fixed inset-0 z-50 w-full bg-card overflow-y-auto"
+      : "w-80 bg-card border-l border-border overflow-y-auto"
+    }>
       <div className="p-4 space-y-4">
         
         {/* Global Summary */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center justify-between">
-              Résumé Global
-              {getComplianceBadge(currentResult.compliance)}
+              <span>Résumé Global</span>
+              <div className="flex items-center gap-2">
+                {getComplianceBadge(currentResult.compliance)}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleResultsPanelFullscreen}
+                  title={resultsPanelFullscreen ? "Vue normale" : "Plein écran"}
+                  className="h-8 w-8"
+                >
+                  {resultsPanelFullscreen ? '👁️‍🗨️' : '👁️'}
+                </Button>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">

@@ -18,14 +18,16 @@ const Index = () => {
     openEditPanel,
     editTarget,
     resultsPanelOpen,
+    resultsPanelFullscreen,
     focusMode,
+    isSimulationActive,
   } = useNetworkStore();
 
-  // Déterminer quels résultats utiliser - simulation si équipements actifs, sinon calculs normaux
+  // Déterminer quels résultats utiliser - simulation si équipements actifs ET isSimulationActive, sinon calculs normaux
   const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
                                simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
+  const resultsToUse = (isSimulationActive && activeEquipmentCount > 0) ? simulationResults : calculationResults;
 
   const handleNewNetwork = () => {
     createNewProject("Nouveau Réseau", "TÉTRAPHASÉ_400V");
@@ -134,8 +136,8 @@ const Index = () => {
       )}
       
       <div className="flex-1 flex relative">
-        <Toolbar />
-        <MapView />
+        {!resultsPanelFullscreen && <Toolbar />}
+        {!resultsPanelFullscreen && <MapView />}
         <ResultsPanel
           results={resultsToUse}
           selectedScenario={selectedScenario}

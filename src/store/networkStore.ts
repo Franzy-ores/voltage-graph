@@ -71,6 +71,7 @@ interface NetworkStoreState extends NetworkState {
     isActive: boolean;
   };
   isSimulationActive: boolean;
+  resultsPanelFullscreen: boolean;
 }
 
 interface NetworkActions {
@@ -126,6 +127,7 @@ interface NetworkActions {
   // Display settings
   setShowVoltages: (show: boolean) => void;
   toggleResultsPanel: () => void;
+  toggleResultsPanelFullscreen: () => void;
   toggleFocusMode: () => void;
   changeVoltageSystem: () => void;
   setFoisonnementCharges: (value: number) => void;
@@ -284,6 +286,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   editTarget: null,
   showVoltages: true,
   resultsPanelOpen: true,
+  resultsPanelFullscreen: false,
   focusMode: false,
   simulationMode: false,
   simulationEquipment: {
@@ -1333,6 +1336,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   toggleResultsPanel: () => set(state => ({ resultsPanelOpen: !state.resultsPanelOpen })),
+  toggleResultsPanelFullscreen: () => set(state => ({ resultsPanelFullscreen: !state.resultsPanelFullscreen })),
   toggleFocusMode: () => set(state => ({ 
     focusMode: !state.focusMode,
     resultsPanelOpen: !state.focusMode ? false : state.resultsPanelOpen
