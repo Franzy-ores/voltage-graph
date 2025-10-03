@@ -107,7 +107,7 @@ interface Project {
 }
 ```
 
-## Moteur de calcul électrique
+## 3. Moteur de calcul électrique
 
 ### Principe général
 
@@ -204,17 +204,38 @@ interface NetworkState {
   selectedCableType: string;
   showVoltages: boolean;
   
-  // Calculs
+  // Calculs standards
   calculationResults: Record<CalculationScenario, CalculationResult | null>;
   selectedScenario: CalculationScenario;
   
-  // Actions
+  // Simulation
+  simulationMode: boolean;
+  simulationEquipment: SimulationEquipment;
+  simulationResults: Record<CalculationScenario, CalculationResult | null>;
+  isSimulationActive: boolean;
+  
+  // Mode déséquilibré
+  loadModel?: 'polyphase_equilibre' | 'monophase_reparti';
+  desequilibrePourcent?: number;
+  
+  // Actions standard
   addNode: (lat: number, lng: number, connectionType: ConnectionType) => void;
   addCable: (nodeAId: string, nodeBId: string, typeId: string, coordinates: any[]) => void;
   updateNode: (nodeId: string, updates: Partial<Node>) => void;
   deleteNode: (nodeId: string) => void;
   deleteCable: (cableId: string) => void;
   calculateNetwork: () => void;
+  
+  // Actions simulation
+  toggleSimulationMode: () => void;
+  addNeutralCompensator: (nodeId: string) => void;
+  updateNeutralCompensator: (id: string, updates: Partial<NeutralCompensator>) => void;
+  removeNeutralCompensator: (id: string) => void;
+  addSRG2Device: (nodeId: string) => void;
+  updateSRG2Device: (id: string, updates: Partial<SRG2Config>) => void;
+  removeSRG2Device: (id: string) => void;
+  runSimulation: () => void;
+  
   // ... autres actions
 }
 ```
@@ -439,14 +460,22 @@ console.log('Résultat:', result);
 
 ## Roadmap
 
+### Fonctionnalités implémentées
+
+- ✅ **Import/export de projets** (.json) → Sauvegarde et chargement complets
+- ✅ **Support des transformateurs** → Configuration complète HT/BT avec Ucc, X/R
+- ✅ **Module de simulation** → EQUI8, SRG2, mode déséquilibré
+- ✅ **Export PDF avancé** → Intégration des résultats de simulation
+- ✅ **Adaptation automatique** → SRG2 et EQUI8 lors du changement de tension
+
 ### Améliorations prévues
 
-- [ ] Import/export de projets (.json)
-- [ ] Calculs de court-circuit
-- [ ] Support des transformateurs  
-- [ ] API REST pour calculs serveur
-- [ ] Mode multi-utilisateurs
-- [ ] Historique des modifications (Git-like)
+- [ ] Calculs de court-circuit (Icc, pouvoir de coupure)
+- [ ] API REST pour calculs serveur côté backend
+- [ ] Mode multi-utilisateurs avec collaboration temps réel
+- [ ] Historique des modifications (Git-like) avec diff visuel
+- [ ] Export vers formats CAO (DXF, DWG)
+- [ ] Bibliothèque de réseaux types prédéfinis
 
 ---
 
