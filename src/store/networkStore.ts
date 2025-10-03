@@ -265,7 +265,7 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
     }
   ],
   cables: [],
-  cableTypes: [...defaultCableTypes]
+  cableTypes: defaultCableTypes
 });
 
 export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
@@ -275,7 +275,16 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
   isSimulationActive: false,
   // State
-  currentProject: createDefaultProject(),
+  currentProject: (() => {
+    const project = createDefaultProject();
+    console.log('🔍 Initial project created:', { 
+      projectId: project.id, 
+      nodesCount: project.nodes.length,
+      hasSource: project.nodes.some(n => n.isSource),
+      nodes: project.nodes
+    });
+    return project;
+  })(),
   selectedScenario: 'MIXTE',
   calculationResults: {
     PRÉLÈVEMENT: null,
@@ -309,7 +318,13 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   // Actions
   createNewProject: (name, voltageSystem) => {
     const project = createDefaultProject2(name, voltageSystem);
-    set({ 
+    console.log('🔍 New project created:', { 
+      projectId: project.id, 
+      nodesCount: project.nodes.length,
+      hasSource: project.nodes.some(n => n.isSource),
+      nodes: project.nodes
+    });
+    set({
       currentProject: project,
       selectedNodeId: null,
       selectedCableId: null,
