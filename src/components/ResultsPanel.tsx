@@ -18,7 +18,7 @@ interface ResultsPanelProps {
 }
 
 export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }: ResultsPanelProps) => {
-  const { currentProject, simulationResults, toggleResultsPanel } = useNetworkStore();
+  const { currentProject, simulationResults, toggleResultsPanel, simulationEquipment, isSimulationActive } = useNetworkStore();
   
   const currentResult = results[selectedScenario];
 

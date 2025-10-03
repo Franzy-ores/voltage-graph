@@ -39,6 +39,9 @@ export const TopMenu = ({
     setFoisonnementProductions,
     simulationPreview,
     editTarget,
+    simulationEquipment,
+    isSimulationActive,
+    toggleSimulationActive,
   } = useNetworkStore();
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
@@ -74,6 +77,24 @@ export const TopMenu = ({
             <Badge variant="default" className="animate-pulse bg-orange-500">
               🔬 Mode Simulation Actif
             </Badge>
+          )}
+          
+          {/* Toggle Simulation Global - Visible seulement si des équipements existent */}
+          {((simulationEquipment.srg2Devices?.length || 0) > 0 || 
+            simulationEquipment.neutralCompensators.length > 0) && (
+            <div className="flex items-center gap-2 ml-4">
+              <Switch 
+                checked={isSimulationActive} 
+                onCheckedChange={toggleSimulationActive}
+                className="data-[state=checked]:bg-green-500"
+              />
+              <Label htmlFor="simulation-toggle" className="text-sm font-medium cursor-pointer">
+                Simulation
+              </Label>
+              <Badge variant={isSimulationActive ? "default" : "secondary"} className={isSimulationActive ? "bg-green-600" : ""}>
+                {isSimulationActive ? '✓ Active' : '✗ Inactive'}
+              </Badge>
+            </div>
           )}
         </div>
 

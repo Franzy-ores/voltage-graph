@@ -238,13 +238,6 @@ export const SimulationPanel = () => {
             ×
           </Button>
         </div>
-        <div className="flex items-center gap-2">
-          <Switch checked={simulationMode} onCheckedChange={toggleSimulationMode} />
-          <span className="text-sm">Mode simulation</span>
-          <Badge variant={simulationMode ? "default" : "secondary"}>
-            {simulationMode ? "Actif" : "Inactif"}
-          </Badge>
-        </div>
       </div>
 
       <ScrollArea className="flex-1">

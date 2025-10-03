@@ -6,23 +6,24 @@ interface NodePhaseDisplayProps {
 }
 
 export const NodePhaseDisplay = ({ nodeId }: NodePhaseDisplayProps) => {
-  const { calculationResults, simulationResults, selectedScenario, currentProject, simulationEquipment, simulationMode } = useNetworkStore();
+  const { calculationResults, simulationResults, selectedScenario, currentProject, simulationEquipment, isSimulationActive } = useNetworkStore();
   
   if (!currentProject || currentProject.loadModel !== 'monophase_reparti') {
     return null;
   }
 
-  // Utiliser les résultats de simulation si du matériel de simulation est actif (peu importe simulationMode)
+  // Utiliser les résultats de simulation si active ET du matériel de simulation est actif
   const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
                                simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
   
-  const resultsToUse = activeEquipmentCount > 0 ? simulationResults : calculationResults;
+  const useSimulation = isSimulationActive && activeEquipmentCount > 0;
+  const resultsToUse = useSimulation ? simulationResults : calculationResults;
   
   console.log('🐛 NodePhaseDisplay logic:', {
-    simulationMode,
+    isSimulationActive,
     activeEquipmentCount,
-    usingSimulation: activeEquipmentCount > 0,
-    resultsType: activeEquipmentCount > 0 ? 'simulation' : 'calculation'
+    useSimulation,
+    resultsType: useSimulation ? 'simulation' : 'calculation'
   });
   
   if (!resultsToUse[selectedScenario]?.nodeMetricsPerPhase) {

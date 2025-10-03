@@ -70,6 +70,7 @@ interface NetworkStoreState extends NetworkState {
     desequilibrePourcent?: number;
     isActive: boolean;
   };
+  isSimulationActive: boolean;
 }
 
 interface NetworkActions {
@@ -104,6 +105,7 @@ interface NetworkActions {
   
   // Simulation actions
   toggleSimulationMode: () => void;
+  toggleSimulationActive: () => void;
   updateSimulationPreview: (preview: Partial<NetworkStoreState['simulationPreview']>) => void;
   clearSimulationPreview: () => void;
   // Méthodes SRG2
@@ -258,6 +260,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   simulationPreview: {
     isActive: false
   },
+  isSimulationActive: false,
   // State
   currentProject: createDefaultProject(),
   selectedScenario: 'MIXTE',
@@ -301,6 +304,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       editTarget: null,
       showVoltages: true,
       simulationMode: false,
+      isSimulationActive: false,
       calculationResults: {
         PRÉLÈVEMENT: null,
         MIXTE: null,
@@ -362,6 +366,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       editTarget: null,
       showVoltages: true,
       simulationMode: false,
+      isSimulationActive: false,
       calculationResults: {
         PRÉLÈVEMENT: null,
         MIXTE: null,
@@ -1074,6 +1079,26 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
         cableUpgrades: simulationEquipment.cableUpgrades
       }
     });
+  },
+
+  toggleSimulationActive: () => {
+    const { isSimulationActive, simulationEquipment } = get();
+    const newActiveState = !isSimulationActive;
+    
+    // Désactiver/activer tous les équipements SRG2 et EQUI8
+    set({ 
+      isSimulationActive: newActiveState,
+      simulationEquipment: {
+        ...simulationEquipment,
+        srg2Devices: simulationEquipment.srg2Devices?.map(s => ({ ...s, enabled: newActiveState })) || [],
+        neutralCompensators: simulationEquipment.neutralCompensators.map(c => ({ ...c, enabled: newActiveState }))
+      }
+    });
+    
+    // Recalculer après changement
+    if (newActiveState) {
+      get().runSimulation();
+    }
   },
 
   // Méthodes SRG2
