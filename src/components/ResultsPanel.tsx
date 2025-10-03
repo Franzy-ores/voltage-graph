@@ -383,6 +383,136 @@ export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }:
                 <p className="font-semibold">{currentResult.globalLosses_kW.toFixed(3)} kW</p>
               </div>
             </div>
+
+            {/* Section SRG2 - Affichage si simulation active */}
+            {isSimulationActive && simulationEquipment?.srg2Devices?.some(srg2 => srg2.enabled) && (
+              <div className="pt-3 border-t space-y-2">
+                {simulationEquipment.srg2Devices
+                  .filter(srg2 => srg2.enabled)
+                  .map(srg2 => {
+                    const node = currentProject?.nodes.find(n => n.id === srg2.nodeId);
+                    return (
+                      <Card key={srg2.id} className="border-orange-300 border-2 bg-orange-50/50">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">
+                            📍 SRG2 - {node?.name || srg2.nodeId}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-xs space-y-2">
+                          <div>
+                            <p className="text-muted-foreground font-medium mb-1">
+                              Résultats de régulation:
+                            </p>
+                            {srg2.tensionEntree && (
+                              <div className="pl-2">
+                                <p className="text-muted-foreground">Tensions d'entrée:</p>
+                                <p className="font-mono">
+                                  A: {srg2.tensionEntree.A.toFixed(1)}V, 
+                                  B: {srg2.tensionEntree.B.toFixed(1)}V, 
+                                  C: {srg2.tensionEntree.C.toFixed(1)}V
+                                </p>
+                              </div>
+                            )}
+                            {srg2.etatCommutateur && (
+                              <div className="pl-2">
+                                <p className="text-muted-foreground">États commutateurs:</p>
+                                <p className="font-mono">
+                                  A: {srg2.etatCommutateur.A}, 
+                                  B: {srg2.etatCommutateur.B}, 
+                                  C: {srg2.etatCommutateur.C}
+                                </p>
+                              </div>
+                            )}
+                            {srg2.coefficientsAppliques && (
+                              <div className="pl-2">
+                                <p className="text-muted-foreground">Coefficients:</p>
+                                <p className="font-mono">
+                                  A: {srg2.coefficientsAppliques.A > 0 ? '+' : ''}
+                                  {srg2.coefficientsAppliques.A.toFixed(1)}%, 
+                                  B: {srg2.coefficientsAppliques.B > 0 ? '+' : ''}
+                                  {srg2.coefficientsAppliques.B.toFixed(1)}%, 
+                                  C: {srg2.coefficientsAppliques.C > 0 ? '+' : ''}
+                                  {srg2.coefficientsAppliques.C.toFixed(1)}%
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
+
+            {/* Section EQUI8 - Affichage si simulation active */}
+            {isSimulationActive && simulationEquipment?.neutralCompensators?.some(comp => comp.enabled) && (
+              <div className="pt-3 border-t space-y-2">
+                {simulationEquipment.neutralCompensators
+                  .filter(comp => comp.enabled)
+                  .map(comp => {
+                    const node = currentProject?.nodes.find(n => n.id === comp.nodeId);
+                    return (
+                      <Card key={comp.id} className="border-orange-300 border-2 bg-orange-50/50">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm">
+                            📍 EQUI8 - {node?.name || comp.nodeId}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-xs space-y-2">
+                          <div>
+                            <p className="text-muted-foreground font-medium mb-1">
+                              Résultats EQUI8:
+                            </p>
+                            <div className="pl-2 space-y-1">
+                              {comp.currentIN_A !== undefined && (
+                                <p>I-EQUI8: <span className="font-mono">{comp.currentIN_A.toFixed(1)} A</span></p>
+                              )}
+                              {comp.reductionPercent !== undefined && (
+                                <p>Réduction: <span className="font-mono">{comp.reductionPercent.toFixed(1)}%</span></p>
+                              )}
+                              {comp.u1p_V !== undefined && (
+                                <>
+                                  <p className="text-muted-foreground">Tensions (Ph-N):</p>
+                                  <p className="font-mono">
+                                    Ph1: {comp.u1p_V.toFixed(1)} V, 
+                                    Ph2: {comp.u2p_V?.toFixed(1)} V, 
+                                    Ph3: {comp.u3p_V?.toFixed(1)} V
+                                  </p>
+                                </>
+                              )}
+                              {comp.umoy_init_V !== undefined && (
+                                <p>Umoy init: <span className="font-mono">{comp.umoy_init_V.toFixed(1)} V</span></p>
+                              )}
+                              {comp.ecart_init_V !== undefined && (
+                                <p>Écart init: <span className="font-mono">{comp.ecart_init_V.toFixed(1)} V</span></p>
+                              )}
+                              {comp.ecart_equi8_V !== undefined && (
+                                <p>Écart EQUI8: <span className="font-mono">{comp.ecart_equi8_V.toFixed(1)} V</span></p>
+                              )}
+                              {comp.iN_initial_A !== undefined && (
+                                <p>I_N initial: <span className="font-mono">{comp.iN_initial_A.toFixed(1)} A</span></p>
+                              )}
+                              {comp.iN_absorbed_A !== undefined && (
+                                <p>I_N absorbé: <span className="font-mono">{comp.iN_absorbed_A.toFixed(1)} A</span></p>
+                              )}
+                              {comp.compensationQ_kVAr && (
+                                <>
+                                  <p className="text-muted-foreground">Puissances réactives:</p>
+                                  <p className="font-mono">
+                                    Q_A: {comp.compensationQ_kVAr.A.toFixed(1)} kVAr, 
+                                    Q_B: {comp.compensationQ_kVAr.B.toFixed(1)} kVAr, 
+                                    Q_C: {comp.compensationQ_kVAr.C.toFixed(1)} kVAr
+                                  </p>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
             
             {/* Infos Transformateur et Jeu de Barres */}
             {currentResult.virtualBusbar && (
