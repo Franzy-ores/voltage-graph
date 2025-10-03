@@ -33,6 +33,7 @@ export const TopMenu = ({
     setSelectedScenario,
     changeVoltageSystem,
     calculationResults,
+    simulationResults,
     updateCableTypes,
     updateProjectConfig,
     setFoisonnementCharges,
@@ -48,12 +49,24 @@ export const TopMenu = ({
       toast.error("Aucun projet ou scénario sélectionné.");
       return;
     }
+    
+    // Appliquer la même logique que Index.tsx pour déterminer les résultats à utiliser
+    const activeEquipmentCount = (simulationEquipment.srg2Devices?.filter(s => s.enabled).length || 0) + 
+                                 simulationEquipment.neutralCompensators.filter(c => c.enabled).length;
+    
+    const resultsToUse = (isSimulationActive && activeEquipmentCount > 0) 
+      ? simulationResults 
+      : calculationResults;
+    
     const generatePDF = async () => {
       const pdfGenerator = new PDFGenerator();
       await pdfGenerator.generateReport({
         project: currentProject,
-        results: calculationResults,
-        selectedScenario
+        results: resultsToUse,
+        selectedScenario,
+        simulationResults: (isSimulationActive && activeEquipmentCount > 0) 
+          ? simulationResults[selectedScenario] 
+          : undefined
       });
     };
     toast.promise(generatePDF(), {
