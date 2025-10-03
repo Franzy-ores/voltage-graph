@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manuel Utilisateur - Calcul de Chute de Tension BT</title>
+  <style>
+:root{--bg:#0b0d10;--panel:#12161c;--text:#e8eef6;--muted:#9fb3c8;--brand:#4ea1ff;--accent:#22c55e;--warn:#f59e0b;--danger:#ef4444;--link:#60a5fa;--code-bg:#0f1722;--border:#223047;--page-bg:#2b2f36}
+[data-theme="light"]{--bg:#f7fafc;--panel:#fff;--text:#12202f;--muted:#546577;--brand:#2563eb;--accent:#0f9d58;--warn:#b45309;--danger:#b91c1c;--link:#1d4ed8;--code-bg:#f2f6fb;--border:#e2e8f0;--page-bg:#e9ecef}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,"Helvetica Neue",Arial,"Apple Color Emoji","Segoe UI Emoji";color:var(--text);background:var(--page-bg)}
+.container{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+.aside{background:var(--panel);border-right:1px solid var(--border);position:sticky;top:0;height:100vh;overflow:auto}
+.header{position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:color-mix(in lab,var(--panel) 70%,transparent);border-bottom:1px solid var(--border)}
+.header-inner{display:flex;align-items:center;gap:.75rem;padding:.6rem 1rem}
+.logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--brand),#06b6d4);display:grid;place-items:center;color:#fff;font-weight:700}
+.title{font-size:1.05rem;font-weight:700}.badge{font-size:.75rem;color:var(--muted)}
+.tools{margin-left:auto;display:flex;gap:.5rem;align-items:center}
+.search{position:relative}
+.search input{width:280px;max-width:48vw;padding:.5rem .75rem .5rem 2rem;border-radius:8px;background:var(--code-bg);border:1px solid var(--border);color:var(--text)}
+.search svg{position:absolute;top:8px;left:8px;opacity:.6}
+.btn{border:1px solid var(--border);background:var(--panel);color:var(--text);padding:.45rem .7rem;border-radius:8px;cursor:pointer}.btn:hover{border-color:var(--brand)}
+main{padding:1rem 1.25rem 4rem 1.25rem}.content{max-width:980px;margin:0 auto}
+.toc{padding:1rem;position:sticky;top:52px}
+.toc h3{margin:.2rem 0 .5rem 0;font-size:.9rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.toc a{display:block;padding:.25rem .25rem;color:var(--muted);text-decoration:none;border-left:2px solid transparent}
+.toc a.active{color:var(--text);border-color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent);border-radius:0 6px 6px 0}
+.toc .lvl-2{padding-left:.25rem}.toc .lvl-3{padding-left:1rem}
+
+h1{font-size:2rem;margin:.6rem 0}
+h2{margin-top:2rem;font-size:1.4rem;border-bottom:1px dashed var(--border);padding-bottom:.35rem}
+h3{margin-top:1rem;font-size:1.15rem}
+
+p,li{color:var(--text)}blockquote{margin:1rem 0;padding:.5rem .75rem;border-left:4px solid var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent);border-radius:0 8px 8px 0}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;background:var(--code-bg);padding:.15rem .35rem;border-radius:6px}
+pre{background:var(--code-bg);padding:1rem;border-radius:10px;overflow:auto;border:1px solid var(--border)}
+.section{position:relative}.section .section-actions{position:absolute;right:-2.2rem;top:.1rem;display:flex;flex-direction:column;gap:.35rem}
+.section .iconbtn{width:28px;height:28px;display:grid;place-items:center;border:1px solid var(--border);background:var(--panel);border-radius:6px;cursor:pointer}
+.section.collapsed + .section-body{display:none}.section-body{margin-top:.5rem}
+
+.mark{background:#fff176;color:#222;padding:0 .15rem;border-radius:3px}
+kbd{background:var(--panel);border:1px solid var(--border);border-bottom-width:3px;border-radius:6px;padding:0 .35rem;font-size:.85em}
+.backtotop{position:fixed;right:1rem;bottom:1rem;z-index:20;padding:.6rem .8rem;border-radius:999px;background:var(--brand);color:#fff;border:none;box-shadow:0 8px 20px rgba(0,0,0,.35);display:none}.backtotop.show{display:block}
+
+@media (max-width:980px){.container{grid-template-columns:1fr}.aside{display:none}.search input{width:52vw}}
+@page{size:A4;margin:14mm}
+@media print{.aside,.header,.tools,.section .section-actions,.backtotop{display:none!important}body{background:#fff}a[href]::after{content:" (" attr(href) ")";font-size:.8em;color:#555}}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <div class="logo">⚡</div>
+      <div class="title">Manuel Utilisateur - Calcul de Chute de Tension BT</div>
+      <div class="badge">HTML interactif – V2 (fond gris, DOCX)</div>
+      <div class="tools">
+        <div class="search">
+          <svg width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M10 18a8 8 0 1 1 5.293-14.293A8 8 0 0 1 10 18Zm11 3l-6-6"/></svg>
+          <input id="search" type="search" placeholder="Rechercher… (ex. EQUI8, SRG2, 400V)" />
+        </div>
+        <button class="btn" id="expandAll">Tout déplier</button>
+        <button class="btn" id="collapseAll">Tout replier</button>
+        <button class="btn" id="themeToggle">Mode clair/sombre</button>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <aside class="aside">
+      <div class="toc">
+        <h3>Sommaire</h3>
+        <nav id="toc">
+          <div>
+            <a href="#1-demarrage-rapide" class="lvl-2">1. Démarrage rapide</a>
+            <a href="#11-creation-et-initialisation-du-projet" class="lvl-3">1.1. Création et initialisation du projet</a>
+            <a href="#12-premieres-etapes-nuds-cables-charges" class="lvl-3">1.2. Premières étapes : Nœuds, Câbles, Charges</a>
+            <a href="#2-linterface-du-logiciel" class="lvl-2">2. L'Interface du Logiciel</a>
+            <a href="#21-menu-principal" class="lvl-3">2.1. Menu principal</a>
+            <a href="#22-barre-doutils" class="lvl-3">2.2. Barre d'outils</a>
+            <a href="#23-panneau-de-resultats" class="lvl-3">2.3. Panneau de résultats</a>
+            <a href="#3-modelisation-du-reseau" class="lvl-2">3. Modélisation du Réseau</a>
+            <a href="#31-configuration-des-elements" class="lvl-3">3.1. Configuration des éléments</a>
+            <a href="#nuds-points-de-connexion" class="lvl-3">Nœuds (points de connexion)</a>
+            <a href="#cables" class="lvl-3">Câbles</a>
+            <a href="#transformateur" class="lvl-3">Transformateur</a>
+            <a href="#32-gestion-des-scenarios" class="lvl-3">3.2. Gestion des Scénarios</a>
+            <a href="#4-analyse-des-resultats" class="lvl-2">4. Analyse des Résultats</a>
+            <a href="#41-lecture-des-indicateurs-sur-la-carte" class="lvl-3">4.1. Lecture des indicateurs sur la carte</a>
+            <a href="#42-panneau-de-resultats-detailles" class="lvl-3">4.2. Panneau de résultats détaillés</a>
+            <a href="#5-gestion-et-outils-avances" class="lvl-2">5. Gestion et Outils Avancés</a>
+            <a href="#51-gestion-des-projets" class="lvl-3">5.1. Gestion des Projets</a>
+            <a href="#sauvegarder-un-projet" class="lvl-3">Sauvegarder un projet</a>
+            <a href="#charger-un-projet-existant" class="lvl-3">Charger un projet existant</a>
+            <a href="#exporter-un-rapport-pdf" class="lvl-3">Exporter un rapport PDF</a>
+            <a href="#52-outils-avances" class="lvl-3">5.2. Outils Avancés</a>
+            <a href="#mise-a-jour-automatique-des-cables" class="lvl-3">Mise à jour automatique des câbles</a>
+            <a href="#recherche-dadresse" class="lvl-3">Recherche d'adresse</a>
+            <a href="#calcul-avec-tension-cible" class="lvl-3">Calcul avec tension cible</a>
+            <a href="#6-simulations-et-optimisation" class="lvl-2">6. Simulations et Optimisation</a>
+            <a href="#61-le-mode-desequilibre" class="lvl-3">6.1. Le Mode Déséquilibré</a>
+            <a href="#quest-ce-que-le-mode-desequilibre" class="lvl-3">Qu'est-ce que le mode déséquilibré ?</a>
+            <a href="#comment-lactiver" class="lvl-3">Comment l'activer ?</a>
+            <a href="#repartition-des-phases" class="lvl-3">Répartition des phases</a>
+            <a href="#visualisation-desequilibre" class="lvl-3">Visualisation</a>
+            <a href="#62-le-module-de-simulation" class="lvl-3">6.2. Le Module de Simulation</a>
+            <a href="#acceder-au-module-simulation" class="lvl-3">Accéder au module simulation</a>
+            <a href="#63-equi8-compensation-de-courant-de-neutre" class="lvl-3">6.3. EQUI8 - Compensation de Courant de Neutre</a>
+            <a href="#64-srg2-regulation-de-tension-triphasee" class="lvl-3">6.4. SRG2 - Régulation de Tension Triphasée</a>
+            <a href="#7-conformite-et-support" class="lvl-2">7. Conformité et Support</a>
+            <a href="#71-normes-et-limites-reglementaires" class="lvl-3">7.1. Normes et Limites Réglementaires</a>
+            <a href="#limites-reglementaires" class="lvl-3">Limites réglementaires</a>
+            <a href="#cas-particuliers" class="lvl-3">Cas particuliers</a>
+            <a href="#72-resolution-des-problemes-courants" class="lvl-3">7.2. Résolution des Problèmes courants</a>
+            <a href="#circuit-non-conforme" class="lvl-3">Circuit non conforme</a>
+            <a href="#erreurs-de-calcul" class="lvl-3">Erreurs de calcul</a>
+            <a href="#performance" class="lvl-3">Performance</a>
+            <a href="#equi8-ne-sactive-pas" class="lvl-3">EQUI8 ne s'active pas</a>
+            <a href="#srg2-affiche-quotlimite-puissance-atteintequot" class="lvl-3">SRG2 affiche "Limite puissance atteinte"</a>
+            <a href="#les-resultats-de-simulation-ne-saffichent-pas" class="lvl-3">Les résultats de simulation ne s'affichent pas</a>
+            <a href="#73-support-technique" class="lvl-3">7.3. Support technique</a>
+          </div>
+        </nav>
+      </div>
+    </aside>
+    <main>
+      <div class="content">
+<p>📘 Manuel Utilisateur - Calcul de Chute de Tension BT</p>
+
+<h1 id="manuel-utilisateur-calcul-de-chute-de-tension-bt">Manuel Utilisateur - Calcul de Chute de Tension BT</h1>
+
+<p>📋 Vue d'ensemble</p>
+
+<p>Cette application permet de calculer et d'analyser les chutes de tension dans les réseaux électriques basse tension (BT). Elle offre une interface cartographique intuitive pour concevoir, modéliser et analyser des réseaux électriques avec différents scénarios de charge.</p>
+
+<p>🚀 Démarrage rapide</p>
+
+<h2 id="1-demarrage-rapide">1. Démarrage rapide</h2>
+
+<h3 id="11-creation-et-initialisation-du-projet">1.1. Création et initialisation du projet</h3>
+
+<p>- Cliquez sur <strong>"Nouveau Réseau"</strong> dans le menu principal</p>
+<p>- Choisissez le système de tension (230V triphasé ou 400V tétraphasé)</p>
+<p>- Votre projet est automatiquement initialisé avec un transformateur par défaut</p>
+
+<h3 id="12-premieres-etapes-nuds-cables-charges">1.2. Premières étapes : Nœuds, Câbles, Charges</h3>
+
+<ol>
+  <li><strong>Ajoutez des nœuds</strong> : Cliquez sur l'outil "Nœud" puis sur la carte</li>
+  <li><strong>Connectez les nœuds</strong> : Utilisez l'outil "Câble" pour relier les points</li>
+  <li><strong>Configurez les charges</strong> : Double-cliquez sur un nœud pour ajouter des consommations</li>
+  <li><strong>Lancez le calcul</strong> : Les résultats s'affichent automatiquement</li>
+</ol>
+
+<h2 id="2-linterface-du-logiciel">2. L'Interface du Logiciel</h2>
+
+<p>🛠️ Interface utilisateur</p>
+
+<h3 id="21-menu-principal">2.1. Menu principal (en haut)</h3>
+
+<p>- <strong>Scénario</strong> : Choix entre Prélèvement, Mixte, ou Production</p>
+<p>- <strong>Curseurs de foisonnement</strong> :</p>
+<p>- <strong>Charges</strong> : Pourcentage de la puissance des charges (0-100%)</p>
+<p>- <strong>Productions</strong> : Pourcentage de la puissance PV (0-100%)</p>
+<p>- <strong>Affichage tensions</strong> : Active/désactive l'affichage des tensions sur la carte</p>
+<p>- <strong>Changement de système</strong> : Bascule entre 230V et 400V</p>
+<p>- ⚡ <strong>Adaptation automatique</strong> : Les équipements de simulation (SRG2, EQUI8) s'adaptent automatiquement au nouveau système</p>
+
+<h3 id="22-barre-doutils">2.2. Barre d'outils (à gauche)</h3>
+
+<p>- 🏠 <strong>Nœud</strong> : Ajouter un point de connexion</p>
+<p>- 🔌 <strong>Câble</strong> : Connecter deux nœuds</p>
+<p>- ✋ <strong>Sélection</strong> : Sélectionner et déplacer des éléments</p>
+<p>- 📍 <strong>Adresse</strong> : Rechercher une adresse sur la carte</p>
+
+<h3 id="23-panneau-de-resultats">2.3. Panneau de résultats (à droite)</h3>
+
+<p>- <strong>Conformité globale</strong> : Statut du réseau (Conforme/Non conforme)</p>
+<p>- <strong>Chute de tension max</strong> : Circuit le plus critique</p>
+<p>- <strong>Détails par circuit</strong> : Intensité, chute de tension, pertes</p>
+<p>- <strong>Jeu de barres virtuel</strong> : Analyse du transformateur</p>
+
+<h2 id="3-modelisation-du-reseau">3. Modélisation du Réseau</h2>
+
+<h3 id="31-configuration-des-elements">3.1. Configuration des éléments</h3>
+
+<p>🗃️ Configuration des éléments</p>
+
+<h4 id="nuds-points-de-connexion">Nœuds (points de connexion)</h4>
+
+<p><strong>Double-clic sur un nœud</strong> pour configurer :</p>
+
+<h4>Charges électriques</h4>
+
+<ul>
+<li><strong>Type de connexion</strong> : Monophasé, triphasé, tétra</li>
+<li><strong>Puissance</strong> : En kW ou kVA</li>
+<li><strong>Cos φ</strong> : Facteur de puissance (0.8 à 1.0)</li>
+<li><strong>Nom</strong> : Identification de la charge</li>
+</ul>
+
+<h4>Productions photovoltaïques</h4>
+
+<ul>
+<li><strong>Puissance crête</strong> : En kWc</li>
+<li><strong>Cos φ</strong> : Généralement 1.0 pour les onduleurs</li>
+<li><strong>Type de connexion</strong> : Selon le raccordement</li>
+</ul>
+
+<h4 id="cables">Câbles</h4>
+
+<p><strong>Double-clic sur un câble</strong> pour configurer :</p>
+
+<ul>
+<li><strong>Type de câble</strong> : Section et matériau (cuivre/aluminium)</li>
+<li><strong>Mode de pose</strong> : Aérien ou souterrain</li>
+<li><strong>Longueur</strong> : Calculée automatiquement ou saisie manuelle</li>
+</ul>
+
+<h4 id="transformateur">Transformateur</h4>
+
+<p><strong>Paramètres généraux</strong> → <strong>Configuration transformateur</strong> :</p>
+
+<ul>
+<li><strong>Puissance nominale</strong> : En kVA</li>
+<li><strong>Tension de court-circuit</strong> : En %</li>
+<li><strong>Rapport X/R</strong> : Réactance/Résistance</li>
+<li><strong>Cos φ</strong> : Facteur de puissance</li>
+</ul>
+
+<h3 id="32-gestion-des-scenarios">3.2. Gestion des Scénarios</h3>
+
+<p>⚡ Types de scénarios</p>
+
+<p>📋 Production (PV max)</p>
+
+<p>- <strong>Charges</strong> : 0% (pas de consommation)</p>
+<p>- <strong>Productions</strong> : 100% (injection PV maximale)</p>
+<p>- <strong>Usage</strong> : Vérifier les remontées de tension en cas de surproduction</p>
+
+<p>🔄 Mixte</p>
+
+<p>- <strong>Charges</strong> : 30% (consommation réduite)</p>
+<p>- <strong>Productions</strong> : 100% (injection PV maximale)</p>
+<p>- <strong>Usage</strong> : Conditions intermédiaires, autoconsommation partielle</p>
+
+<p>📊 Prélèvement (Charge max)</p>
+
+<p>- <strong>Charges</strong> : 30% (consommation normale)</p>
+<p>- <strong>Productions</strong> : 0% (pas d'injection PV)</p>
+<p>- <strong>Usage</strong> : Conditions de pointe, vérification des chutes de tension</p>
+
+<blockquote>💡 <strong>Astuce</strong> : Le choix du scénario ajuste automatiquement les curseurs de foisonnement</blockquote>
+
+<h2 id="4-analyse-des-resultats">4. Analyse des Résultats</h2>
+
+<p>📊 Lecture des résultats</p>
+
+<h3 id="41-lecture-des-indicateurs-sur-la-carte">4.1. Lecture des indicateurs sur la carte</h3>
+
+<p><strong>Câbles</strong> :</p>
+
+<ul>
+<li>🟢 <strong>Vert</strong> : Chute de tension ≤ 3% (conforme)</li>
+<li>🟡 <strong>Orange</strong> : Chute de tension 3-5% (attention)</li>
+<li>🔴 <strong>Rouge</strong> : Chute de tension > 5% (non conforme)</li>
+</ul>
+
+<p><strong>Badges d'équipements de simulation</strong> :</p>
+
+<ul>
+<li>🟢 <strong>Badge vert</strong> : EQUI8 actif sur le nœud</li>
+<li>🔵 <strong>Badge bleu</strong> : SRG2 actif sur le nœud</li>
+<li>🟡 <strong>Badge jaune</strong> : Équipement présent mais désactivé</li>
+</ul>
+
+<h3 id="42-panneau-de-resultats-detailles">4.2. Panneau de résultats détaillés</h3>
+
+<h4>Conformité globale</h4>
+
+<ul>
+<li><strong>Conforme</strong> : Tous les circuits respectent les 3%</li>
+<li><strong>Non conforme</strong> : Au moins un circuit dépasse les 3%</li>
+</ul>
+
+<h4>Détails par circuit</h4>
+
+<ul>
+<li><strong>I (A)</strong> : Intensité circulant dans le câble</li>
+<li><strong>ΔU (%)</strong> : Chute de tension en pourcentage</li>
+<li><strong>ΔU (V)</strong> : Chute de tension en volts</li>
+<li><strong>Pertes (W)</strong> : Pertes par effet Joule</li>
+<li><strong>Longueur</strong> : Distance en mètres</li>
+</ul>
+
+<h4>Jeu de barres virtuel</h4>
+
+<ul>
+<li><strong>Tension</strong> : Tension au secondaire du transformateur</li>
+<li><strong>Intensité</strong> : Courant total au secondaire</li>
+<li><strong>ΔU</strong> : Variation de tension due au transformateur</li>
+</ul>
+
+<h2 id="5-gestion-et-outils-avances">5. Gestion et Outils Avancés</h2>
+
+<h3 id="51-gestion-des-projets">5.1. Gestion des Projets</h3>
+
+<p>💾 Gestion des projets</p>
+
+<h4 id="sauvegarder-un-projet">Sauvegarder un projet</h4>
+
+<ol>
+<li>Cliquez sur <strong>"Sauvegarder"</strong></li>
+<li>Le fichier JSON est téléchargé automatiquement</li>
+<li>Conservez ce fichier pour vos archives</li>
+</ol>
+
+<h4 id="charger-un-projet-existant">Charger un projet existant</h4>
+
+<ol>
+<li>Cliquez sur <strong>"Charger"</strong></li>
+<li>Sélectionnez votre fichier JSON</li>
+<li>Le projet s'ouvre avec tous ses paramètres</li>
+</ol>
+
+<h4 id="exporter-un-rapport-pdf">Exporter un rapport PDF</h4>
+
+<ol>
+<li>Cliquez sur <strong>"Exporter PDF"</strong></li>
+<li>Le rapport complet est généré automatiquement</li>
+<li>Contenu enrichi :
+  <ul>
+    <li>✅ Schéma du réseau et tableaux de calculs détaillés</li>
+    <li>✅ <strong>Données de simulation</strong> si le module est actif (EQUI8, SRG2)</li>
+    <li>✅ <strong>Détails EQUI8</strong> : Réduction I_N, tensions Ph-N, puissances réactives</li>
+    <li>✅ <strong>Détails SRG2</strong> : Tensions entrée/sortie, états commutateurs, coefficients</li>
+    <li>✅ <strong>Comparaison baseline vs simulation</strong> : Tableaux avant/après</li>
+  </ul>
+</li>
+</ol>
+
+<blockquote>💡 <strong>Astuce</strong> : Pour exporter uniquement les calculs standards (sans simulation), désactivez tous les équipements avant d'exporter le PDF.</blockquote>
+
+<h3 id="52-outils-avances">5.2. Outils Avancés</h3>
+
+<p>🔧 Fonctionnalités avancées</p>
+
+<h4 id="mise-a-jour-automatique-des-cables">Mise à jour automatique des câbles</h4>
+
+<ul>
+<li><strong>"Mettre à jour câbles"</strong> : Actualise la base de données des types de câbles</li>
+<li>Ajoute les dernières références normalisées</li>
+</ul>
+
+<h4 id="recherche-dadresse">Recherche d'adresse</h4>
+
+<ol>
+<li>Cliquez sur l'outil <strong>"Adresse"</strong></li>
+<li>Tapez l'adresse recherchée</li>
+<li>La carte se centre automatiquement</li>
+</ol>
+
+<h4 id="calcul-avec-tension-cible">Calcul avec tension cible</h4>
+
+<ul>
+<li>Permet de déterminer la section de câble nécessaire</li>
+<li>Pour atteindre une tension spécifique en bout de ligne</li>
+</ul>
+
+<h2 id="6-simulations-et-optimisation">6. Simulations et Optimisation</h2>
+
+<h3 id="61-le-mode-desequilibre">6.1. Le Mode Déséquilibré</h3>
+
+<p>🔄 Mode Déséquilibré</p>
+
+<h4 id="quest-ce-que-le-mode-desequilibre">Qu'est-ce que le mode déséquilibré ?</h4>
+
+<p>Le mode déséquilibré permet de modéliser des réseaux réels où :</p>
+
+<ul>
+<li>Les charges et productions monophasées ne sont <strong>pas réparties uniformément</strong> sur les trois phases</li>
+<li>Il existe un <strong>courant de neutre non nul</strong> (I_N)</li>
+<li>Les tensions phase-neutre (Ph-N) sont <strong>différentes</strong> pour chaque phase</li>
+</ul>
+
+<p>Ce mode est <strong>indispensable</strong> pour utiliser l'EQUI8, car sans déséquilibre, il n'y a pas de courant de neutre à compenser.</p>
+
+<h4 id="comment-lactiver">Comment l'activer ?</h4>
+
+<ol>
+<li>Ouvrir le menu <strong>"Paramètres généraux"</strong> (icône ⚙️ dans le menu principal)</li>
+<li>Cocher la case <strong>"Mode monophasé réparti"</strong></li>
+<li>Ajuster le curseur <strong>"Déséquilibre (%)"</strong> :
+  <ul>
+    <li><strong>0%</strong> = Charges équilibrées parfaitement (33.33% sur chaque phase)</li>
+    <li><strong>50%</strong> = Déséquilibre modéré</li>
+    <li><strong>100%</strong> = Déséquilibre maximal (répartition très inégale)</li>
+  </ul>
+</li>
+</ol>
+
+<h4 id="repartition-des-phases">Répartition des phases</h4>
+
+<p>Trois curseurs permettent de définir la distribution manuelle des charges/productions :</p>
+
+<ul>
+<li><strong>Phase A (%)</strong> : Pourcentage de puissance sur la phase A</li>
+<li><strong>Phase B (%)</strong> : Pourcentage de puissance sur la phase B</li>
+<li><strong>Phase C (%)</strong> : Pourcentage de puissance sur la phase C</li>
+</ul>
+
+<blockquote>📌 <strong>Note</strong> : Le total des trois phases doit toujours égaler 100%. Les curseurs s'ajustent automatiquement pour respecter cette contrainte.</blockquote>
+
+<h4 id="visualisation-desequilibre">Visualisation</h4>
+
+<p><strong>Sur la carte</strong> :</p>
+
+<ul>
+<li>Les tensions Ph-N s'affichent différemment pour chaque phase si le mode est activé</li>
+<li>Les nœuds monophasés montrent leur phase de connexion (A, B ou C)</li>
+</ul>
+
+<p><strong>Dans les résultats</strong> :</p>
+
+<ul>
+<li>Le <strong>courant de neutre (I_N)</strong> apparaît dans les calculs</li>
+<li>Les tensions <strong>Ph-N</strong> sont affichées individuellement (V_A-N, V_B-N, V_C-N)</li>
+<li>Les déséquilibres de phase sont quantifiés</li>
+</ul>
+
+<blockquote>💡 <strong>Astuce - Recentrage automatique</strong> : Lorsque vous quittez le mode plein écran du panneau de résultats (icône œil 👁️), la carte se recentre automatiquement sur votre projet pour vous faciliter la navigation.</blockquote>
+
+<h3 id="62-le-module-de-simulation">6.2. Le Module de Simulation</h3>
+
+<p>🔬 Module de Simulation</p>
+
+<p>Le module de simulation vous permet d'ajouter des équipements de compensation et de régulation pour optimiser votre réseau électrique.</p>
+
+<h4 id="acceder-au-module-simulation">Accéder au module simulation</h4>
+
+<p><strong>Où le trouver ?</strong></p>
+
+<ol>
+<li>Double-cliquez sur un nœud du réseau</li>
+<li>Dans le panneau d'édition, cliquez sur le bouton <strong>"Simulation"</strong></li>
+<li>Un panneau latéral droit s'ouvre avec 3 onglets :
+  <ul>
+    <li>🟢 <strong>EQUI8</strong> : Compensateurs de courant de neutre</li>
+    <li>🔵 <strong>SRG2</strong> : Régulateurs de tension</li>
+    <li>📖 <strong>Documentation</strong> : Aide contextuelle sur les équipements</li>
+  </ul>
+</li>
+</ol>
+
+<h3 id="63-equi8-compensation-de-courant-de-neutre">6.3. EQUI8 - Compensation de Courant de Neutre</h3>
+
+<p>8.2 EQUI8 - Compensateur de Courant de Neutre</p>
+
+<h4>Qu'est-ce que l'EQUI8 ?</h4>
+
+<p>L'EQUI8 est un dispositif intelligent qui :</p>
+
+<ul>
+<li><strong>Réduit le courant dans le conducteur neutre</strong> (I_N) en injectant des puissances réactives</li>
+<li><strong>Protège contre l'échauffement</strong> du conducteur neutre</li>
+<li><strong>Équilibre automatiquement</strong> les tensions phase-neutre (Ph-N) entre les phases A, B et C</li>
+<li><strong>S'adapte en temps réel</strong> aux conditions de charge du réseau</li>
+</ul>
+
+<p><strong>Bénéfices</strong> :</p>
+
+<ul>
+<li>Économies sur la section du conducteur neutre</li>
+<li>Réduction des pertes par effet Joule</li>
+<li>Amélioration de la qualité de la tension</li>
+<li>Conformité aux normes de sécurité</li>
+</ul>
+
+<h4>Comment l'utiliser ?</h4>
+
+<ol>
+<li><strong>Ouvrir l'onglet EQUI8</strong> dans le panneau de simulation</li>
+<li><strong>Cliquer sur "+ Ajouter"</strong> pour créer un nouveau compensateur</li>
+<li><strong>Sélectionner un nœud éligible</strong> dans la liste déroulante
+  <ul><li>Le nœud doit remplir toutes les conditions d'éligibilité (voir ci-dessous)</li></ul>
+</li>
+<li><strong>Configurer les paramètres</strong> :
+  <ul>
+    <li><strong>Puissance max (kVA)</strong> : Limite de puissance réactive disponible (par défaut: 50 kVA)</li>
+    <li><strong>Seuil I_N (A)</strong> : Courant minimal pour activer le compensateur (par défaut: 10A)</li>
+    <li><strong>Zph - Phase (Ω)</strong> : Impédance de phase, doit être > 0.15Ω (par défaut: 0.5Ω)</li>
+    <li><strong>Zn - Neutre (Ω)</strong> : Impédance de neutre, doit être > 0.15Ω (par défaut: 0.2Ω)</li>
+  </ul>
+</li>
+<li><strong>Activer le compensateur</strong> en basculant le switch vert</li>
+<li><strong>Lancer la simulation</strong> en cliquant sur le bouton <strong>"Simuler"</strong> en bas du panneau</li>
+</ol>
+
+<h4>Conditions d'utilisation</h4>
+
+<p>Pour qu'un EQUI8 puisse fonctionner, <strong>toutes</strong> ces conditions doivent être remplies :</p>
+
+<ul>
+<li>✅ <strong>Réseau 400V tétraphasé</strong> (3 phases + neutre)
+  <ul><li>Vérifiez dans Paramètres généraux → Système de tension = "400V tétraphasé"</li></ul>
+</li>
+<li>✅ <strong>Nœud monophasé Phase-Neutre</strong> (MONO_230V_PN)
+  <ul><li>Le nœud doit être connecté entre une phase et le neutre</li></ul>
+</li>
+<li>✅ <strong>Mode "Monophasé réparti"</strong> activé
+  <ul><li>Allez dans Paramètres généraux → Cochez "Mode monophasé réparti"</li></ul>
+</li>
+<li>✅ <strong>Déséquilibre > 0%</strong> configuré
+  <ul><li>Ajustez le curseur "Déséquilibre" dans Paramètres généraux</li></ul>
+</li>
+</ul>
+
+<blockquote>⚠️ <strong>Important</strong> : Si l'EQUI8 apparaît grisé ou désactivé, le panneau affiche des boutons rapides pour activer automatiquement le mode déséquilibré et configurer les paramètres nécessaires.</blockquote>
+
+<h4>Lecture des résultats EQUI8</h4>
+
+<p>Une fois la simulation exécutée, les résultats s'affichent dans des cartes récapitulatives :</p>
+
+<p><strong>Indicateurs principaux</strong> :</p>
+
+<ul>
+<li><strong>I-EQUI8 (A)</strong> : Courant absorbé par l'EQUI8 lui-même</li>
+<li><strong>Réduction (%)</strong> : Pourcentage de réduction du courant de neutre
+  <ul><li>Exemple : 45% signifie que I_N a été réduit de 45%</li></ul>
+</li>
+<li><strong>I_N initial / I_N compensé</strong> : Comparaison avant/après
+  <ul><li>Exemple : 85A → 47A</li></ul>
+</li>
+</ul>
+
+<p><strong>Tensions équilibrées</strong> :</p>
+
+<ul>
+<li><strong>Ph1-N (V)</strong> : Tension phase A - neutre après compensation</li>
+<li><strong>Ph2-N (V)</strong> : Tension phase B - neutre après compensation</li>
+<li><strong>Ph3-N (V)</strong> : Tension phase C - neutre après compensation</li>
+<li>Ces tensions doivent être proches et idéalement autour de 230V</li>
+</ul>
+
+<p><strong>Puissances réactives injectées</strong> :</p>
+
+<ul>
+<li><strong>Q_A (kVAr)</strong> : Puissance réactive injectée sur phase A</li>
+<li><strong>Q_B (kVAr)</strong> : Puissance réactive injectée sur phase B</li>
+<li><strong>Q_C (kVAr)</strong> : Puissance réactive injectée sur phase C</li>
+</ul>
+
+<p><strong>Badges d'état</strong> :</p>
+
+<ul>
+<li>🟡 <strong>"Limité par puissance max"</strong> : La compensation demandée dépasse la puissance maximale configurée → envisagez d'augmenter maxPower_kVA</li>
+<li>🟢 <strong>"Actif"</strong> : L'EQUI8 fonctionne normalement</li>
+</ul>
+
+<h3 id="64-srg2-regulation-de-tension-triphasee">6.4. SRG2 - Régulation de Tension Triphasée</h3>
+
+<p>8.3 SRG2 - Régulateur de Tension Triphasé</p>
+
+<h4>Qu'est-ce que le SRG2 ?</h4>
+
+<p>Le SRG2 est un stabilisateur automatique de tension qui :</p>
+
+<ul>
+<li><strong>Régule indépendamment chaque phase</strong> (A, B, C) pour maintenir une tension stable</li>
+<li><strong>Dispose de 5 positions de commutation</strong> par phase (LO2, LO1, Bypass, BO1, BO2)</li>
+<li><strong>S'adapte automatiquement</strong> à la tension d'entrée avec hystérésis pour éviter les oscillations</li>
+<li><strong>Vise à maintenir 230V</strong> stable sur chaque phase en sortie</li>
+</ul>
+
+<p><strong>Applications</strong> :</p>
+
+<ul>
+<li>Compensation des chutes de tension importantes</li>
+<li>Stabilisation en cas de production PV fluctuante</li>
+<li>Amélioration de la qualité de la tension en bout de ligne</li>
+<li>Conformité aux normes EN 50160</li>
+</ul>
+
+<h4>Types de SRG2</h4>
+
+<p>Le type de SRG2 est <strong>automatiquement adapté</strong> au système de tension de votre réseau :</p>
+
+<p><strong>SRG2-400</strong> (pour réseau 400V tétraphasé) :</p>
+
+<ul>
+<li>Régulation : <strong>±7% / ±3.5%</strong></li>
+<li>Seuils par défaut : 246V, 238V, Bypass, 222V, 214V</li>
+<li>Utilisé pour les réseaux avec conducteur neutre</li>
+</ul>
+
+<p><strong>SRG2-230</strong> (pour réseau 230V triphasé) :</p>
+
+<ul>
+<li>Régulation : <strong>±6% / ±3%</strong></li>
+<li>Seuils par défaut : 244V, 236V, Bypass, 224V, 216V</li>
+<li>Utilisé pour les réseaux phase-phase sans neutre</li>
+</ul>
+
+<blockquote>💡 <strong>Astuce</strong> : Lors du changement de système de tension (230V ↔ 400V), tous les SRG2 sont automatiquement reconfigurés avec les paramètres appropriés.</blockquote>
+
+<h4>Comment l'utiliser ?</h4>
+
+<ol>
+<li><strong>Ouvrir l'onglet SRG2</strong> dans le panneau de simulation</li>
+<li><strong>Cliquer sur "+ Ajouter"</strong> pour créer un nouveau régulateur</li>
+<li><strong>Sélectionner un nœud</strong> où installer le SRG2
+  <ul><li>Peut être installé sur n'importe quel nœud du réseau</li></ul>
+</li>
+<li><strong>Configurer les paramètres</strong> (optionnel, les valeurs par défaut sont optimales) :
+  <ul>
+    <li><strong>Seuils de régulation</strong> : LO2, LO1, BO1, BO2 (en Volts)</li>
+    <li><strong>Coefficients</strong> : Pourcentages d'augmentation/réduction de tension</li>
+  </ul>
+</li>
+<li><strong>Activer le SRG2</strong> en basculant le switch vert</li>
+<li><strong>Lancer la simulation</strong> en cliquant sur <strong>"Simuler"</strong></li>
+</ol>
+
+<h4>Vérification des limites de puissance</h4>
+
+<p>Le panneau SRG2 affiche automatiquement les <strong>puissances aval foisonnées</strong> pour chaque régulateur :</p>
+
+<p><strong>Badges de statut</strong> :</p>
+
+<ul>
+<li>🟢 <strong>"Dans les limites"</strong> : Puissance aval OK, le SRG2 peut fonctionner normalement</li>
+<li>🟡 <strong>"Proche limite (X%)"</strong> : Plus de 80% de la limite atteinte → surveiller</li>
+<li>🔴 <strong>"Limite dépassée (X%)"</strong> : Plus de 100% de la limite → le SRG2 ne peut pas réguler correctement</li>
+</ul>
+
+<p><strong>Limites techniques</strong> :</p>
+
+<ul>
+<li><strong>Injection max : 85 kVA</strong> (cas production PV > charges en aval)</li>
+<li><strong>Prélèvement max : 110 kVA</strong> (cas charges > production en aval)</li>
+</ul>
+
+<blockquote>⚠️ <strong>Attention</strong> : Si la limite est dépassée, répartissez les charges sur plusieurs départs ou installez plusieurs SRG2 sur le réseau.</blockquote>
+
+<h4>Lecture des résultats SRG2</h4>
+
+<p><strong>Tensions d'entrée</strong> :</p>
+
+<ul>
+<li><strong>Entrée A, B, C (V)</strong> : Tensions mesurées avant régulation</li>
+<li>Permet de voir l'état initial du réseau</li>
+</ul>
+
+<p><strong>États des commutateurs</strong> :</p>
+
+<p>Chaque phase affiche son état de commutation :</p>
+
+<ul>
+<li><strong>LO2</strong> : Baisse forte (-7% ou -6%)</li>
+<li><strong>LO1</strong> : Baisse modérée (-3.5% ou -3%)</li>
+<li><strong>BYP</strong> : Bypass, pas de modification (0%)</li>
+<li><strong>BO1</strong> : Boost modéré (+3.5% ou +3%)</li>
+<li><strong>BO2</strong> : Boost fort (+7% ou +6%)</li>
+</ul>
+
+<p><strong>Coefficients appliqués</strong> :</p>
+
+<ul>
+<li><strong>Coeff A, B, C (%)</strong> : Pourcentage de correction appliqué sur chaque phase</li>
+<li>Exemple : +7% sur phase A signifie tension augmentée de 7%</li>
+</ul>
+
+<p><strong>Tensions de sortie</strong> :</p>
+
+<ul>
+<li><strong>Sortie A, B, C (V)</strong> : Tensions régulées après traitement par le SRG2</li>
+<li>Objectif : proche de 230V pour chaque phase</li>
+</ul>
+
+<p><strong>Puissance aval</strong> :</p>
+
+<ul>
+<li><strong>Puissance aval (kVA)</strong> : Puissance totale calculée en aval du SRG2</li>
+<li>Comparée aux limites 85/110 kVA</li>
+</ul>
+
+<p><strong>Badges d'état</strong> :</p>
+
+<ul>
+<li>🔴 <strong>"Limite puissance atteinte"</strong> : Dépassement des 85/110 kVA</li>
+<li>🟢 <strong>"Actif"</strong> : Le SRG2 fonctionne normalement</li>
+</ul>
+
+<h2 id="7-conformite-et-support">7. Conformité et Support</h2>
+
+<h3 id="71-normes-et-limites-reglementaires">7.1. Normes et Limites Réglementaires</h3>
+
+<p>⚠️ Normes et conformité</p>
+
+<h4 id="limites-reglementaires">Limites réglementaires</h4>
+
+<ul>
+<li><strong>Chute de tension max</strong> : 3% selon NF C 15-100</li>
+<li><strong>Facteur de puissance</strong> : Généralement entre 0.8 et 1.0</li>
+<li><strong>Sections minimales</strong> : Selon usage et protection</li>
+</ul>
+
+<h4 id="cas-particuliers">Cas particuliers</h4>
+
+<ul>
+<li><strong>Remontée de tension</strong> : En cas de production PV importante</li>
+<li><strong>Déséquilibre</strong> : Répartition des phases sur les charges monophasées</li>
+<li><strong>Harmoniques</strong> : Impact des charges non linéaires</li>
+</ul>
+
+<h3 id="72-resolution-des-problemes-courants">7.2. Résolution des Problèmes courants</h3>
+
+<p>🛠 Résolution des problèmes</p>
+
+<h4 id="circuit-non-conforme">Circuit non conforme</h4>
+
+<ol>
+<li><strong>Vérifiez la section</strong> : Augmentez si nécessaire</li>
+<li><strong>Contrôlez la longueur</strong> : Réduisez le chemin si possible</li>
+<li><strong>Répartissez les charges</strong> : Équilibrez sur plusieurs départs</li>
+</ol>
+
+<h4 id="erreurs-de-calcul">Erreurs de calcul</h4>
+
+<ol>
+<li><strong>Vérifiez les connexions</strong> : Tous les nœuds doivent être reliés</li>
+<li><strong>Contrôlez les données</strong> : Puissances et sections cohérentes</li>
+<li><strong>Rechargez le projet</strong> : En cas d'état incohérent</li>
+</ol>
+
+<h4 id="performance">Performance</h4>
+
+<ul>
+<li><strong>Projets volumineux</strong> : Limitez le nombre de nœuds (< 100 recommandé)</li>
+<li><strong>Calculs lents</strong> : Simplifiez le réseau si nécessaire</li>
+</ul>
+
+<h4 id="equi8-ne-sactive-pas">EQUI8 ne s'active pas</h4>
+
+<p>Si l'EQUI8 apparaît grisé ou refuse de s'activer :</p>
+
+<ol>
+<li><strong>Vérifier le système de tension</strong> : Doit être en <strong>400V tétraphasé</strong>
+  <ul><li>Menu → Paramètres généraux → Système de tension = "400V tétraphasé"</li></ul>
+</li>
+<li><strong>Vérifier le type de connexion du nœud</strong> : Doit être <strong>MONO_230V_PN</strong>
+  <ul><li>Double-clic sur le nœud → Vérifier "Type de connexion"</li></ul>
+</li>
+<li><strong>Activer le mode monophasé réparti</strong> :
+  <ul><li>Menu → Paramètres généraux → Cocher "Mode monophasé réparti"</li></ul>
+</li>
+<li><strong>Configurer un déséquilibre > 0%</strong> :
+  <ul><li>Ajuster le curseur "Déséquilibre" dans Paramètres généraux</li></ul>
+</li>
+<li><strong>Vérifier les impédances</strong> :
+  <ul><li>Zph (Phase) et Zn (Neutre) doivent être <strong>> 0.15Ω</strong></li>
+  <li>Configuration dans le panneau EQUI8</li></ul>
+</li>
+</ol>
+
+<blockquote>💡 <strong>Astuce</strong> : Le panneau EQUI8 affiche des boutons d'aide rapide pour activer automatiquement le mode déséquilibré si nécessaire.</blockquote>
+
+<h4 id="srg2-affiche-quotlimite-puissance-atteintequot">SRG2 affiche "Limite puissance atteinte"</h4>
+
+<p>Si le badge rouge de limite de puissance s'affiche :</p>
+
+<ol>
+<li><strong>Vérifier les puissances aval foisonnées</strong> :
+  <ul><li>Consultez l'indicateur dans le panneau SRG2 (en kVA)</li></ul>
+</li>
+<li><strong>Réduire les charges ou productions en aval</strong> :
+  <ul>
+    <li>Diminuer la puissance des charges connectées après le SRG2</li>
+    <li>Réduire la puissance PV si en mode injection</li>
+  </ul>
+</li>
+<li><strong>Répartir les charges sur plusieurs départs</strong> :
+  <ul><li>Diviser le réseau pour équilibrer les puissances</li></ul>
+</li>
+<li><strong>Installer plusieurs SRG2</strong> :
+  <ul><li>Placer des régulateurs sur plusieurs branches du réseau</li></ul>
+</li>
+</ol>
+
+<blockquote>📌 <strong>Rappel des limites</strong> : Injection max = 85 kVA / Prélèvement max = 110 kVA</blockquote>
+
+<h4 id="les-resultats-de-simulation-ne-saffichent-pas">Les résultats de simulation ne s'affichent pas</h4>
+
+<p>Si la simulation ne produit pas de résultats :</p>
+
+<ol>
+<li><strong>Vérifier qu'au moins un équipement est activé</strong> :
+  <ul><li>Le switch vert doit être activé sur un EQUI8 ou un SRG2</li></ul>
+</li>
+<li><strong>Cliquer sur "Simuler"</strong> :
+  <ul><li>Bouton en bas du panneau de simulation</li></ul>
+</li>
+<li><strong>Vérifier le badge de convergence</strong> :
+  <ul><li>Doit afficher "Convergé" en vert</li></ul>
+</li>
+<li><strong>Si "Non convergé"</strong> :
+  <ul>
+    <li>Simplifier le réseau (moins de nœuds en aval)</li>
+    <li>Ajuster les paramètres des équipements</li>
+    <li>Réduire le déséquilibre (< 30%)</li>
+  </ul>
+</li>
+</ol>
+
+<h3 id="73-support-technique">7.3. Support technique</h3>
+
+<p>📞 Support technique</p>
+
+<p>Pour toute question ou problème :</p>
+
+<ol>
+<li>Vérifiez ce manuel en premier lieu</li>
+<li>Contrôlez la cohérence de vos données</li>
+<li>Sauvegardez votre projet avant modifications importantes</li>
+</ol>
+
+<hr>
+
+<p><em>Application développée par F. Lefevre - Conforme aux normes NF C 15-100</em></p>
+</div>
+    </main>
+  </div>
+  <button id="backtotop" class="backtotop">↑</button>
+  <script>
+(function(){
+  const state = { theme: localStorage.getItem('theme') || 'light' };
+  document.documentElement.setAttribute('data-theme', state.theme);
+  const themeBtn = document.getElementById('themeToggle');
+  if(themeBtn){ themeBtn.addEventListener('click', ()=>{
+    state.theme = state.theme === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', state.theme);
+    localStorage.setItem('theme', state.theme);
+  }); }
+
+  const content = document.querySelector('.content');
+  const headings = [...content.querySelectorAll('h2, h3')];
+  const toc = document.getElementById('toc');
+  const ul = toc.querySelector('div'); 
+  if (!ul) {
+    const ul = document.createElement('div'); 
+    toc.appendChild(ul);
+  }
+
+
+  headings.forEach(h => {
+    const id = h.id || h.textContent.trim().toLowerCase().replace(/[^a-z0-9\s-]/g,'').replace(/[\s_-]+/g,'-');
+    h.id = id;
+    const sec = document.createElement('div');
+    sec.className = 'section';
+    h.replaceWith(sec);
+    sec.appendChild(h);
+
+    const actions = document.createElement('div');
+    actions.className = 'section-actions';
+    const collapse = document.createElement('button'); collapse.className='iconbtn'; collapse.title='Replier/déplier'; collapse.textContent='▼';
+    const link = document.createElement('button'); link.className='iconbtn'; link.title='Copier le lien'; link.textContent='⎘';
+    actions.appendChild(collapse); actions.appendChild(link);
+    sec.appendChild(actions);
+
+    const body = document.createElement('div');
+    body.className = 'section-body';
+    let nxt = sec.nextSibling;
+    while(nxt && !(nxt.nodeType===1 && /H[23]/.test(nxt.tagName))){
+      const move = nxt; nxt = nxt.nextSibling; body.appendChild(move);
+    }
+    sec.after(body);
+
+    collapse.addEventListener('click', ()=>{
+      sec.classList.toggle('collapsed');
+      collapse.textContent = sec.classList.contains('collapsed') ? '▶' : '▼';
+    });
+    link.addEventListener('click', async ()=>{
+      const url = location.origin + location.pathname + '#' + id;
+      try{ await navigator.clipboard.writeText(url); link.textContent='✓'; setTimeout(()=>link.textContent='⎘', 1000);}catch(e){ prompt('Copiez le lien :', url); }
+    });
+
+  });
+
+  const links = [...document.querySelectorAll('#toc a')];
+  const obs = new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        const id = e.target.id; links.forEach(l=> l.classList.toggle('active', l.getAttribute('href')==='#'+id));
+      }
+    });
+  },{ rootMargin:'-40% 0px -55% 0px', threshold: [0, 1]});
+  content.querySelectorAll('h2, h3').forEach(h=> obs.observe(h));
+
+  const q = document.getElementById('search');
+  let lastMarks = [];
+  function clearMarks(){ lastMarks.forEach(m=>{ const t=m.textContent; m.replaceWith(document.createTextNode(t)); }); lastMarks=[]; }
+  q.addEventListener('input', ()=>{
+    clearMarks();
+    const term = q.value.trim();
+    if(!term){ return; }
+    const re = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g,'\\<li>Amélioration de la qualité de la tension en bout de ligne</li>\n<li>'), 'gi');
+    document.querySelectorAll('.content p, .content li').forEach(node=>{
+      node.childNodes.forEach(n=>{
+        if(n.nodeType===3){
+          const frag = document.createDocumentFragment();
+          let lastIndex = 0; let m; const text = n.textContent;
+          while((m = re.exec(text))){
+            const pre = text.slice(lastIndex, m.index); if(pre) frag.appendChild(document.createTextNode(pre));
+            const mark = document.createElement('span'); mark.className='mark'; mark.textContent = m[0]; lastMarks.push(mark); frag.appendChild(mark);
+            lastIndex = m.index + m[0].length;
+          }
+          frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+          if(frag.childNodes.length>1){ n.replaceWith(frag); }
+        }
+      });
+    });
+  });
+
+  const back = document.getElementById('backtotop');
+  window.addEventListener('scroll', ()=>{\n    back.classList.toggle('show', window.scrollY > 400);\n  });\n  back.addEventListener('click', ()=> window.scrollTo({top:0, behavior:'smooth'}));\n\n  document.getElementById('expandAll').addEventListener('click', ()=>{\n    document.querySelectorAll('.section.collapsed').forEach(s=> s.classList.remove('collapsed'));\n  });\n  document.getElementById('collapseAll').addEventListener('click', ()=>{\n    document.querySelectorAll('.section').forEach(s=> s.classList.add('collapsed'));\n  });\n})();\n</script>\n</body>\n</html>
