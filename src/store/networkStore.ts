@@ -911,13 +911,14 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   setShowVoltages: (show) => set({ showVoltages: show }),
 
   changeVoltageSystem: () => {
-    const { currentProject, updateAllCalculations } = get();
+    const { currentProject, updateAllCalculations, simulationEquipment } = get();
     if (!currentProject) return;
 
     const newVoltageSystem: VoltageSystem = 
       currentProject.voltageSystem === 'TRIPHASÉ_230V' ? 'TÉTRAPHASÉ_400V' : 'TRIPHASÉ_230V';
     
     const newNominal = newVoltageSystem === 'TRIPHASÉ_230V' ? 230 : 400;
+    const is400V = newVoltageSystem === 'TÉTRAPHASÉ_400V';
 
     const updatedNodes = currentProject.nodes.map(node => ({
       ...node,
@@ -930,6 +931,29 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       nominalVoltage_V: newNominal,
     };
 
+    // Adapter les SRG2 selon le nouveau système de tension
+    const updatedSRG2Devices = (simulationEquipment.srg2Devices || []).map(srg2 => {
+      const defaultConfig = is400V ? DEFAULT_SRG2_400_CONFIG : DEFAULT_SRG2_230_CONFIG;
+      return {
+        ...srg2,
+        type: is400V ? 'SRG2-400' as const : 'SRG2-230' as const,
+        seuilLO2_V: defaultConfig.seuilLO2_V!,
+        seuilLO1_V: defaultConfig.seuilLO1_V!,
+        seuilBO1_V: defaultConfig.seuilBO1_V!,
+        seuilBO2_V: defaultConfig.seuilBO2_V!,
+        coefficientLO2: defaultConfig.coefficientLO2!,
+        coefficientLO1: defaultConfig.coefficientLO1!,
+        coefficientBO1: defaultConfig.coefficientBO1!,
+        coefficientBO2: defaultConfig.coefficientBO2!,
+      };
+    });
+
+    // Désactiver les EQUI8 en 230V (pas de neutre en triphasé phase-phase)
+    const updatedNeutralCompensators = simulationEquipment.neutralCompensators.map(comp => ({
+      ...comp,
+      enabled: is400V ? comp.enabled : false
+    }));
+
     const updatedProject = {
       ...currentProject,
       voltageSystem: newVoltageSystem,
@@ -937,10 +961,39 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
       transformerConfig: updatedTransformer,
     };
 
-    set({ currentProject: updatedProject });
+    set({ 
+      currentProject: updatedProject,
+      simulationEquipment: {
+        ...simulationEquipment,
+        srg2Devices: updatedSRG2Devices,
+        neutralCompensators: updatedNeutralCompensators
+      }
+    });
 
     // Recalcul automatique
     updateAllCalculations();
+    
+    // Relancer la simulation si des équipements sont actifs
+    const hasActiveEquipment = updatedSRG2Devices.some(s => s.enabled) || 
+                               updatedNeutralCompensators.some(c => c.enabled);
+    if (hasActiveEquipment) {
+      get().runSimulation();
+    }
+    
+    // Toast informatif
+    const srg2Count = updatedSRG2Devices.length;
+    const equi8Count = updatedNeutralCompensators.length;
+    
+    if (srg2Count > 0 || equi8Count > 0) {
+      const messages: string[] = [];
+      if (srg2Count > 0) {
+        messages.push(`${srg2Count} SRG2 adapté(s) en ${is400V ? 'SRG2-400' : 'SRG2-230'}`);
+      }
+      if (equi8Count > 0 && !is400V) {
+        messages.push(`${equi8Count} EQUI8 désactivé(s) (pas de neutre en 230V)`);
+      }
+      toast.info(messages.join(' | '));
+    }
   },
 
   setFoisonnementCharges: (value: number) => {
