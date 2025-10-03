@@ -44,6 +44,26 @@ export const TopMenu = ({
     isSimulationActive,
     toggleSimulationActive,
   } = useNetworkStore();
+
+  // Calcul des puissances totales et foisonnées
+  const totalChargesNonFoisonnees = currentProject?.nodes.reduce((sum, node) => 
+    sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0
+  ) || 0;
+
+  const totalProductionsNonFoisonnees = currentProject?.nodes.reduce((sum, node) => 
+    sum + node.productions.reduce((prodSum, prod) => prodSum + prod.S_kVA, 0), 0
+  ) || 0;
+
+  const chargesFoisonnees = totalChargesNonFoisonnees * (
+    (simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined 
+      ? simulationPreview.foisonnementCharges 
+      : currentProject?.foisonnementCharges || 0) / 100
+  );
+
+  const productionsFoisonnees = totalProductionsNonFoisonnees * (
+    (currentProject?.foisonnementProductions || 0) / 100
+  );
+
   const handleExportPDF = async () => {
     if (!currentProject || !selectedScenario) {
       toast.error("Aucun projet ou scénario sélectionné.");
@@ -146,6 +166,16 @@ export const TopMenu = ({
           <Button variant="ghost" size="sm" onClick={onSettings} className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground">
             <Settings className="h-4 w-4 mr-1" />
             Paramètres
+          </Button>
+
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => window.open('/MANUEL_UTILISATEUR.md', '_blank')}
+            className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
+          >
+            <FileText className="h-4 w-4 mr-1" />
+            Manuel
           </Button>
         </div>
       </div>
@@ -272,6 +302,9 @@ export const TopMenu = ({
                         {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined ? simulationPreview.foisonnementCharges : currentProject.foisonnementCharges}%
                         {simulationPreview.isActive && simulationPreview.foisonnementCharges !== undefined && <span className="text-xs ml-1 text-orange-200">(sim)</span>}
                       </span>
+                      <span className="text-xs text-primary-foreground/70 mt-0.5">
+                        {chargesFoisonnees.toFixed(1)} kVA
+                      </span>
                     </div>
                   </div>
 
@@ -290,6 +323,9 @@ export const TopMenu = ({
                       </div>
                       <span className="text-xs mt-1 font-medium">
                         {currentProject.foisonnementProductions}%
+                      </span>
+                      <span className="text-xs text-primary-foreground/70 mt-0.5">
+                        {productionsFoisonnees.toFixed(1)} kVA
                       </span>
                     </div>
                   </div>
