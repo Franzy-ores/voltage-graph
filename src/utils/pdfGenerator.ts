@@ -308,33 +308,26 @@ export class PDFGenerator {
       this.checkPageBreak(50);
       this.addBoldText('Répartition par phase :', 10);
       
-      // Calculer les totaux par phase
-      let chargePhaseA = 0, chargePhaseB = 0, chargePhaseC = 0;
-      let prodPhaseA = 0, prodPhaseB = 0, prodPhaseC = 0;
+      // Utiliser la répartition manuelle globale du projet
+      const distCharges = data.project.manualPhaseDistribution?.charges || { A: 33.33, B: 33.33, C: 33.33 };
+      const distProds = data.project.manualPhaseDistribution?.productions || { A: 33.33, B: 33.33, C: 33.33 };
       
-      connectedNodesData.forEach(node => {
-        // Distribution des charges selon les pourcentages
-        const pA = node.phaseDistribution?.charges?.A ?? 0.333;
-        const pB = node.phaseDistribution?.charges?.B ?? 0.333;
-        const pC = node.phaseDistribution?.charges?.C ?? 0.333;
-        
-        const totalCharges = node.clients.reduce((sum, c) => sum + c.S_kVA, 0);
-        chargePhaseA += totalCharges * pA;
-        chargePhaseB += totalCharges * pB;
-        chargePhaseC += totalCharges * pC;
-        
-        // Distribution des productions
-        const pA_prod = node.phaseDistribution?.productions?.A ?? 0.333;
-        const pB_prod = node.phaseDistribution?.productions?.B ?? 0.333;
-        const pC_prod = node.phaseDistribution?.productions?.C ?? 0.333;
-        
-        const totalProds = node.productions.reduce((sum, p) => sum + p.S_kVA, 0);
-        prodPhaseA += totalProds * pA_prod;
-        prodPhaseB += totalProds * pB_prod;
-        prodPhaseC += totalProds * pC_prod;
-      });
+      // Calculer les totaux globaux
+      const totalCharges = connectedNodesData.reduce((sum, node) => 
+        sum + node.clients.reduce((clientSum, client) => clientSum + client.S_kVA, 0), 0);
+      const totalProds = connectedNodesData.reduce((sum, node) => 
+        sum + node.productions.reduce((prodSum, prod) => prodSum + prod.S_kVA, 0), 0);
       
-      // Appliquer le foisonnement
+      // Appliquer les pourcentages de répartition par phase
+      const chargePhaseA = totalCharges * (distCharges.A / 100);
+      const chargePhaseB = totalCharges * (distCharges.B / 100);
+      const chargePhaseC = totalCharges * (distCharges.C / 100);
+      
+      const prodPhaseA = totalProds * (distProds.A / 100);
+      const prodPhaseB = totalProds * (distProds.B / 100);
+      const prodPhaseC = totalProds * (distProds.C / 100);
+      
+      // Appliquer le foisonnement après la répartition
       const foison_charges = data.project.foisonnementCharges / 100;
       const foison_prods = data.project.foisonnementProductions / 100;
       
@@ -351,11 +344,11 @@ export class PDFGenerator {
       this.currentY += 5;
     }
 
-    // Compensateurs de neutre
+    // Compensateurs de neutre EQUI8
     if (data.simulationResults?.equipment?.neutralCompensators && 
         data.simulationResults.equipment.neutralCompensators.length > 0) {
-      this.checkPageBreak(60);
-      this.addBoldText('Compensateurs de neutre :', 11);
+      this.checkPageBreak(80);
+      this.addBoldText('Compensateurs de neutre EQUI8 :', 11);
       this.currentY += 2;
       
       data.simulationResults.equipment.neutralCompensators.forEach(comp => {
@@ -363,20 +356,43 @@ export class PDFGenerator {
         const nodeName = node?.name || comp.nodeId;
         const statusText = comp.isLimited ? 'Saturé' : (comp.enabled ? 'Actif' : 'Inactif');
         
-        this.addBoldText(`• ${nodeName}`, 10);
+        this.addBoldText(`• ${nodeName} - État: ${statusText}`, 10);
         this.addText(`  Puissance: ${comp.maxPower_kVA.toFixed(1)} kVAr (Tolérance: ${comp.tolerance_A.toFixed(0)}A)`, 9);
-        this.addText(`  État: ${statusText}`, 9);
+        this.addText(`  Impédances: Zph=${comp.Zph_Ohm.toFixed(3)}Ω, Zn=${comp.Zn_Ohm.toFixed(3)}Ω`, 9);
+        this.currentY += 2;
         
-        if (comp.iN_initial_A !== undefined && comp.currentIN_A !== undefined) {
-          this.addText(`  I_N avant: ${comp.iN_initial_A.toFixed(1)} A → après: ${comp.currentIN_A.toFixed(1)} A`, 9);
+        // Résultats EQUI8
+        if (comp.enabled && comp.currentIN_A !== undefined) {
+          this.addText(`  Résultats EQUI8:`, 9);
+          this.addText(`    I-EQUI8: ${comp.currentIN_A.toFixed(1)} A`, 8);
+          
           if (comp.reductionPercent !== undefined) {
-            this.addText(`  Réduction: ${comp.reductionPercent.toFixed(1)}%`, 9);
+            this.addText(`    Réduction: ${comp.reductionPercent.toFixed(1)}%`, 8);
           }
-        }
-        
-        if (comp.u1p_V !== undefined && comp.u2p_V !== undefined && comp.u3p_V !== undefined) {
-          this.addText(`  Tensions après compensation:`, 9);
-          this.addText(`    Phase A: ${comp.u1p_V.toFixed(1)} V, Phase B: ${comp.u2p_V.toFixed(1)} V, Phase C: ${comp.u3p_V.toFixed(1)} V`, 8);
+          
+          // Tensions phase-neutre après compensation
+          if (comp.u1p_V !== undefined && comp.u2p_V !== undefined && comp.u3p_V !== undefined) {
+            this.addText(`    Tensions (Ph-N):`, 8);
+            this.addText(`      Ph1: ${comp.u1p_V.toFixed(1)} V, Ph2: ${comp.u2p_V.toFixed(1)} V, Ph3: ${comp.u3p_V.toFixed(1)} V`, 7);
+          }
+          
+          // Métriques de tension
+          if (comp.umoy_init_V !== undefined && comp.ecart_init_V !== undefined && comp.ecart_equi8_V !== undefined) {
+            this.addText(`    Umoy init: ${comp.umoy_init_V.toFixed(1)} V`, 8);
+            this.addText(`    Écart init: ${comp.ecart_init_V.toFixed(1)} V → Écart EQUI8: ${comp.ecart_equi8_V.toFixed(1)} V`, 8);
+          }
+          
+          // Courants de neutre
+          if (comp.iN_initial_A !== undefined && comp.iN_absorbed_A !== undefined) {
+            this.addText(`    I_N initial: ${comp.iN_initial_A.toFixed(1)} A`, 8);
+            this.addText(`    I_N absorbé: ${comp.iN_absorbed_A.toFixed(1)} A`, 8);
+          }
+          
+          // Puissances réactives par phase
+          if (comp.compensationQ_kVAr) {
+            this.addText(`    Puissances réactives:`, 8);
+            this.addText(`      Q_A: ${comp.compensationQ_kVAr.A.toFixed(1)} kVAr, Q_B: ${comp.compensationQ_kVAr.B.toFixed(1)} kVAr, Q_C: ${comp.compensationQ_kVAr.C.toFixed(1)} kVAr`, 7);
+          }
         }
         
         this.currentY += 4;
@@ -388,7 +404,7 @@ export class PDFGenerator {
     // Régulateurs SRG2
     if (data.simulationResults?.equipment?.srg2Devices && 
         data.simulationResults.equipment.srg2Devices.length > 0) {
-      this.checkPageBreak(80);
+      this.checkPageBreak(100);
       this.addBoldText('Régulateurs SRG2 :', 11);
       this.currentY += 2;
       
@@ -401,44 +417,42 @@ export class PDFGenerator {
         
         this.addBoldText(`• ${srg2.name || nodeName} - Type: ${typeText}`, 10);
         this.addText(`  Mode: ${modeText} - État: ${statusText}`, 9);
+        this.addText(`  Puissance max: Injection ${srg2.puissanceMaxInjection_kVA.toFixed(0)} kVA / Prélèvement ${srg2.puissanceMaxPrelevement_kVA.toFixed(0)} kVA`, 9);
+        this.currentY += 2;
         
-        // Récupérer les résultats de simulation depuis simulationResults
-        const srg2Result = data.simulationResults?.nodeMetricsPerPhase?.find(m => m.nodeId === srg2.nodeId);
-        
-        if (srg2Result) {
-          const result: any = {
-            phaseResults: {
-              A: { inputVoltage_V: srg2Result.voltagesPerPhase.A, outputVoltage_V: srg2Result.voltagesPerPhase.A, switchState: 'BYP', appliedCoefficient: 100 },
-              B: { inputVoltage_V: srg2Result.voltagesPerPhase.B, outputVoltage_V: srg2Result.voltagesPerPhase.B, switchState: 'BYP', appliedCoefficient: 100 },
-              C: { inputVoltage_V: srg2Result.voltagesPerPhase.C, outputVoltage_V: srg2Result.voltagesPerPhase.C, switchState: 'BYP', appliedCoefficient: 100 }
-            },
-            hasConstraints: false,
-            isPowerLimitReached: false
-          };
+        // Résultats de régulation (si actif)
+        if (srg2.enabled && srg2.tensionEntree && srg2.etatCommutateur && srg2.coefficientsAppliques) {
+          this.addText(`  Résultats de régulation:`, 9);
           
-          // Résultats par phase
-          if (result.phaseResults) {
-            this.addText(`  Résultats par phase:`, 9);
-            
-            ['A', 'B', 'C'].forEach(phase => {
-              const phaseKey = phase as 'A' | 'B' | 'C';
-              const phaseResult = result.phaseResults![phaseKey];
-              
-              if (phaseResult) {
-                const switchState = phaseResult.switchState || 'BYP';
-                const coeff = phaseResult.appliedCoefficient || 100;
-                const sign = coeff >= 100 ? '+' : '';
-                const coeffPercent = coeff - 100;
-                
-                this.addText(`    Phase ${phase}: Entrée ${phaseResult.inputVoltage_V.toFixed(1)}V → Sortie ${phaseResult.outputVoltage_V.toFixed(1)}V (${switchState} ${sign}${coeffPercent.toFixed(1)}%)`, 8);
-              }
-            });
+          // Tensions d'entrée
+          this.addText(`    Tensions d'entrée:`, 8);
+          this.addText(`      A: ${srg2.tensionEntree.A.toFixed(1)}V, B: ${srg2.tensionEntree.B.toFixed(1)}V, C: ${srg2.tensionEntree.C.toFixed(1)}V`, 7);
+          
+          // États commutateurs
+          this.addText(`    États commutateurs:`, 8);
+          this.addText(`      A: ${srg2.etatCommutateur.A}, B: ${srg2.etatCommutateur.B}, C: ${srg2.etatCommutateur.C}`, 7);
+          
+          // Coefficients appliqués
+          const formatCoeff = (coeff: number) => {
+            const sign = coeff >= 0 ? '+' : '';
+            return `${sign}${coeff.toFixed(1)}%`;
+          };
+          this.addText(`    Coefficients appliqués:`, 8);
+          this.addText(`      A: ${formatCoeff(srg2.coefficientsAppliques.A)}, B: ${formatCoeff(srg2.coefficientsAppliques.B)}, C: ${formatCoeff(srg2.coefficientsAppliques.C)}`, 7);
+          
+          // Tensions de sortie (si disponibles)
+          if (srg2.tensionSortie) {
+            this.addText(`    Tensions de sortie:`, 8);
+            this.addText(`      A: ${srg2.tensionSortie.A.toFixed(1)}V, B: ${srg2.tensionSortie.B.toFixed(1)}V, C: ${srg2.tensionSortie.C.toFixed(1)}V`, 7);
           }
           
-          // Contraintes et limites
-          const constraintText = result.hasConstraints ? 'Oui' : 'Non';
-          const powerLimitText = result.isPowerLimitReached ? 'Oui' : 'Non';
-          this.addText(`  Contraintes actives: ${constraintText} - Limite puissance: ${powerLimitText}`, 9);
+          // Contraintes
+          if (srg2.limitePuissanceAtteinte || srg2.contraintesSRG230) {
+            const constraints = [];
+            if (srg2.limitePuissanceAtteinte) constraints.push('Limite puissance');
+            if (srg2.contraintesSRG230) constraints.push('Contraintes SRG2-230');
+            this.addText(`    Contraintes: ${constraints.join(', ')}`, 8);
+          }
         }
         
         this.currentY += 4;
