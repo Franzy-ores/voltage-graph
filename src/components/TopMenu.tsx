@@ -171,7 +171,7 @@ export const TopMenu = ({
           <Button 
             variant="ghost" 
             size="sm" 
-            onClick={() => window.open('/Manuel_Utilisateur.pdf', '_blank')}
+            onClick={() => window.open('/manuel-utilisateur.html', '_blank')}
             className="text-primary-foreground hover:bg-white/10 hover:text-primary-foreground"
           >
             <FileText className="h-4 w-4 mr-1" />
