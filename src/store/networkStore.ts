@@ -1336,7 +1336,23 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
 
   toggleResultsPanel: () => set(state => ({ resultsPanelOpen: !state.resultsPanelOpen })),
-  toggleResultsPanelFullscreen: () => set(state => ({ resultsPanelFullscreen: !state.resultsPanelFullscreen })),
+  toggleResultsPanelFullscreen: () => {
+    const currentState = get().resultsPanelFullscreen;
+    set(state => ({ resultsPanelFullscreen: !state.resultsPanelFullscreen }));
+    
+    // Si on passe de plein écran (true) à normal (false), recentrer la carte
+    if (currentState === true) {
+      // Dispatch l'événement zoomToProject avec un léger délai pour laisser le DOM se mettre à jour
+      setTimeout(() => {
+        const project = get().currentProject;
+        if (project?.geographicBounds) {
+          window.dispatchEvent(new CustomEvent('zoomToProject', { 
+            detail: project.geographicBounds 
+          }));
+        }
+      }, 100);
+    }
+  },
   toggleFocusMode: () => set(state => ({ 
     focusMode: !state.focusMode,
     resultsPanelOpen: !state.focusMode ? false : state.resultsPanelOpen
