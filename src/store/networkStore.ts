@@ -252,20 +252,9 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
     productions: { A: 33.33, B: 33.33, C: 33.34 },
     constraints: { min: -20, max: 20, total: 100 }
   },
-  nodes: [
-    {
-      id: "source",
-      name: "Source",
-      lat: 46.6167,
-      lng: 6.8833,
-      connectionType: voltageSystem === "TRIPHASÉ_230V" ? "TRI_230V_3F" : "TÉTRA_3P+N_230_400V",
-      clients: [],
-      productions: [],
-      isSource: true
-    }
-  ],
+  nodes: [],
   cables: [],
-  cableTypes: defaultCableTypes
+  cableTypes: [...defaultCableTypes]
 });
 
 export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, get) => ({
@@ -275,16 +264,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   },
   isSimulationActive: false,
   // State
-  currentProject: (() => {
-    const project = createDefaultProject();
-    console.log('🔍 Initial project created:', { 
-      projectId: project.id, 
-      nodesCount: project.nodes.length,
-      hasSource: project.nodes.some(n => n.isSource),
-      nodes: project.nodes
-    });
-    return project;
-  })(),
+  currentProject: createDefaultProject(),
   selectedScenario: 'MIXTE',
   calculationResults: {
     PRÉLÈVEMENT: null,
@@ -318,13 +298,7 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
   // Actions
   createNewProject: (name, voltageSystem) => {
     const project = createDefaultProject2(name, voltageSystem);
-    console.log('🔍 New project created:', { 
-      projectId: project.id, 
-      nodesCount: project.nodes.length,
-      hasSource: project.nodes.some(n => n.isSource),
-      nodes: project.nodes
-    });
-    set({
+    set({ 
       currentProject: project,
       selectedNodeId: null,
       selectedCableId: null,
