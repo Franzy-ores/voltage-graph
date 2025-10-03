@@ -678,19 +678,31 @@ export const ResultsPanel = ({ results, selectedScenario, isCollapsed = false }:
                   
                   // Calculer la tension ligne pour l'affichage
                   const lineVoltage = (() => {
-                    const config = (() => {
-                      switch (node.connectionType) {
-                        case 'MONO_230V_PN':
-                        case 'MONO_230V_PP':
-                          return { isThreePhase: false };
-                        case 'TRI_230V_3F':
-                        case 'TÉTRA_3P+N_230_400V':
-                        default:
-                          return { isThreePhase: true };
-                      }
-                    })();
+                    // En mode polyphasé équilibré, V_phase_V contient déjà la tension ligne-ligne
+                    // En mode monophasé déséquilibré, V_phase_V contient la tension phase-neutre
+                    const isBalancedMode = currentProject?.loadModel === 'polyphase_equilibre' || 
+                                           !currentProject?.loadModel; // par défaut équilibré
                     
-                    return config.isThreePhase ? metric.V_phase_V * Math.sqrt(3) : metric.V_phase_V;
+                    if (isBalancedMode) {
+                      // Mode équilibré : V_phase_V est déjà la tension ligne-ligne (400V)
+                      return metric.V_phase_V;
+                    } else {
+                      // Mode déséquilibré : V_phase_V est la tension phase-neutre (230V)
+                      // Convertir en tension ligne si triphasé
+                      const config = (() => {
+                        switch (node.connectionType) {
+                          case 'MONO_230V_PN':
+                          case 'MONO_230V_PP':
+                            return { isThreePhase: false };
+                          case 'TRI_230V_3F':
+                          case 'TÉTRA_3P+N_230_400V':
+                          default:
+                            return { isThreePhase: true };
+                        }
+                      })();
+                      
+                      return config.isThreePhase ? metric.V_phase_V * Math.sqrt(3) : metric.V_phase_V;
+                    }
                   })();
                   
                   // Déterminer la conformité de tension
