@@ -29,11 +29,8 @@ export class SimulationCalculator extends ElectricalCalculator {
   private static readonly PRODUCTION_DISCONNECT_VOLTAGE = 253;
   public static readonly CONVERGENCE_TOLERANCE_V = 0.01;
   
-  private simCosPhi: number;
-  
-  constructor(cosPhi: number = 0.95) {
-    super(cosPhi);
-    this.simCosPhi = Math.min(1, Math.max(0, cosPhi));
+  constructor(cosPhiCharges: number = 0.95, cosPhiProductions: number = 1.00) {
+    super(cosPhiCharges, cosPhiProductions);
   }
 
   /**

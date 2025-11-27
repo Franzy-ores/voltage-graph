@@ -4,7 +4,8 @@ import { Complex, C, add, sub, mul, div, conj, scale, abs, fromPolar } from '@/u
 import { getNodeConnectionType } from '@/utils/nodeConnectionType';
 
 export class ElectricalCalculator {
-  private cosPhi: number;
+  private cosPhiCharges: number;
+  private cosPhiProductions: number;
 
   // Constantes pour la robustesse et maintenabilité
   private static readonly CONVERGENCE_TOLERANCE = 1e-4;
@@ -13,9 +14,11 @@ export class ElectricalCalculator {
   private static readonly MIN_VOLTAGE_SAFETY = 1e-6;
   private static readonly SMALL_IMPEDANCE_SAFETY = 1e-12;
 
-  constructor(cosPhi: number = 0.95) {
-    this.validateCosPhi(cosPhi);
-    this.cosPhi = cosPhi;
+  constructor(cosPhiCharges: number = 0.95, cosPhiProductions: number = 1.00) {
+    this.validateCosPhi(cosPhiCharges);
+    this.validateCosPhi(cosPhiProductions);
+    this.cosPhiCharges = cosPhiCharges;
+    this.cosPhiProductions = cosPhiProductions;
   }
 
   private validateCosPhi(cosPhi: number): void {
@@ -24,9 +27,14 @@ export class ElectricalCalculator {
     }
   }
 
-  setCosPhi(value: number) {
+  setCosPhiCharges(value: number) {
     this.validateCosPhi(value);
-    this.cosPhi = value;
+    this.cosPhiCharges = value;
+  }
+
+  setCosPhiProductions(value: number) {
+    this.validateCosPhi(value);
+    this.cosPhiProductions = value;
   }
 
   /**
@@ -345,8 +353,8 @@ export class ElectricalCalculator {
       return res;
     };
 
-    // Calculer cosφ effectif pour Q
-    const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
+    // Calculer cosφ effectif pour Q à partir de cosPhiCharges (charges consomment du Q)
+    const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhiCharges));
     const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
 
     for (const childId of sourceChildren) {
@@ -528,16 +536,46 @@ export class ElectricalCalculator {
       }
     }
 
+    // ===== CALCUL VECTORIEL P/Q PAR TYPE (CHARGES vs PRODUCTIONS) =====
+    // Précalcul des sin(φ) pour charges et productions
+    const sinPhiCharges = Math.sqrt(Math.max(0, 1 - this.cosPhiCharges * this.cosPhiCharges));
+    const sinPhiProductions = Math.sqrt(Math.max(0, 1 - this.cosPhiProductions * this.cosPhiProductions));
+    
+    // Maps pour stocker P et Q séparément par nœud
+    const P_node_kW = new Map<string, number>();
+    const Q_node_kVAr = new Map<string, number>();
     const S_eq = new Map<string, number>();
+    
     for (const n of nodes) {
-      // Appliquer les facteurs de foisonnement
-      const S_prel = (n.clients || []).reduce((s, c) => s + (c.S_kVA || 0), 0) * (foisonnementCharges / 100);
-      const S_pv   = (n.productions || []).reduce((s, p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
-      let val = 0;
-      if (scenario === 'PRÉLÈVEMENT') val = S_prel;
-      else if (scenario === 'PRODUCTION') val = - S_pv;
-      else val = S_prel - S_pv;
-      S_eq.set(n.id, val);
+      // 1. Calcul pour les CHARGES avec cosPhiCharges
+      const S_load_kVA = (n.clients || []).reduce((s, c) => s + (c.S_kVA || 0), 0) * (foisonnementCharges / 100);
+      const P_load_kW = S_load_kVA * this.cosPhiCharges;
+      const Q_load_kVAr = S_load_kVA * sinPhiCharges; // Q > 0 (inductif, consommé)
+      
+      // 2. Calcul pour les PRODUCTIONS avec cosPhiProductions
+      const S_prod_kVA = (n.productions || []).reduce((s, p) => s + (p.S_kVA || 0), 0) * (foisonnementProductions / 100);
+      const P_prod_kW = S_prod_kVA * this.cosPhiProductions;
+      const Q_prod_kVAr = S_prod_kVA * sinPhiProductions; // Q ≈ 0 si cos φ = 1
+      
+      // 3. Combinaison vectorielle au nœud selon le scénario
+      let P_node = 0, Q_node = 0;
+      if (scenario === 'PRÉLÈVEMENT') {
+        P_node = P_load_kW;
+        Q_node = Q_load_kVAr;
+      } else if (scenario === 'PRODUCTION') {
+        P_node = -P_prod_kW;
+        Q_node = -Q_prod_kVAr;
+      } else { // MIXTE ou FORCÉ
+        P_node = P_load_kW - P_prod_kW;
+        Q_node = Q_load_kVAr - Q_prod_kVAr;
+      }
+      
+      P_node_kW.set(n.id, P_node);
+      Q_node_kVAr.set(n.id, Q_node);
+      
+      // Calculer S_eq pour compatibilité avec le reste du code (magnitude du vecteur)
+      const S_eq_kVA = Math.sqrt(P_node * P_node + Q_node * Q_node) * Math.sign(P_node || 1);
+      S_eq.set(n.id, S_eq_kVA);
     }
 
     const children = new Map<string, string[]>();
@@ -710,13 +748,6 @@ export class ElectricalCalculator {
     const V_node = new Map<string, Complex>();
     for (const n of nodes) V_node.set(n.id, Vslack);
 
-    // Sécurité: cosΦ dans [0,1]
-    const cosPhi_eff = Math.min(1, Math.max(0, this.cosPhi));
-    if (!isFinite(this.cosPhi) || this.cosPhi < 0 || this.cosPhi > 1) {
-      console.warn('⚠️ cosΦ hors [0,1], application d\'un clamp.', { cosPhi_in: this.cosPhi, cosPhi_eff });
-    }
-    const sinPhi = Math.sqrt(Math.max(0, 1 - cosPhi_eff * cosPhi_eff));
-
     // ---- Power Flow using Backward-Forward Sweep (complex R+jX) ----
     
     if (hasSRG2Active) {
@@ -760,30 +791,32 @@ export class ElectricalCalculator {
       const S_C_map = new Map<string, Complex>();
 
       for (const n of nodes) {
-        const S_kVA_tot = S_node_total_kVA.get(n.id) || 0; // signé
-        const sign = Math.sign(S_kVA_tot) || 1;
+        // Utiliser les P et Q déjà calculés vectoriellement
+        const P_total_kW = P_node_kW.get(n.id) || 0;
+        const Q_total_kVAr = Q_node_kVAr.get(n.id) || 0;
         
-        // Séparer charges et productions pour appliquer des répartitions différentes
-        let S_A_kVA = 0, S_B_kVA = 0, S_C_kVA = 0;
+        // Répartir P et Q par phase selon les distributions
+        let P_A_kW = 0, P_B_kW = 0, P_C_kW = 0;
+        let Q_A_kVAr = 0, Q_B_kVAr = 0, Q_C_kVAr = 0;
         
-        if (S_kVA_tot > 0) {
+        if (P_total_kW > 0) {
           // Charges positives - utiliser la répartition des charges
-          S_A_kVA = S_kVA_tot * pA_charges;
-          S_B_kVA = S_kVA_tot * pB_charges;
-          S_C_kVA = S_kVA_tot * pC_charges;
+          P_A_kW = P_total_kW * pA_charges;
+          P_B_kW = P_total_kW * pB_charges;
+          P_C_kW = P_total_kW * pC_charges;
+          Q_A_kVAr = Q_total_kVAr * pA_charges;
+          Q_B_kVAr = Q_total_kVAr * pB_charges;
+          Q_C_kVAr = Q_total_kVAr * pC_charges;
         } else {
           // Productions négatives - utiliser la répartition des productions
-          S_A_kVA = S_kVA_tot * pA_productions;
-          S_B_kVA = S_kVA_tot * pB_productions;
-          S_C_kVA = S_kVA_tot * pC_productions;
+          P_A_kW = P_total_kW * pA_productions;
+          P_B_kW = P_total_kW * pB_productions;
+          P_C_kW = P_total_kW * pC_productions;
+          Q_A_kVAr = Q_total_kVAr * pA_productions;
+          Q_B_kVAr = Q_total_kVAr * pB_productions;
+          Q_C_kVAr = Q_total_kVAr * pC_productions;
         }
         
-        const P_A_kW = S_A_kVA * cosPhi_eff;
-        const Q_A_kVAr = Math.abs(S_A_kVA) * sinPhi * sign;
-        const P_B_kW = S_B_kVA * cosPhi_eff;
-        const Q_B_kVAr = Math.abs(S_B_kVA) * sinPhi * sign;
-        const P_C_kW = S_C_kVA * cosPhi_eff;
-        const Q_C_kVAr = Math.abs(S_C_kVA) * sinPhi * sign;
         S_A_map.set(n.id, C(P_A_kW * 1000, Q_A_kVAr * 1000));
         S_B_map.set(n.id, C(P_B_kW * 1000, Q_B_kVAr * 1000));
         S_C_map.set(n.id, C(P_C_kW * 1000, Q_C_kVAr * 1000));
@@ -1320,9 +1353,9 @@ export class ElectricalCalculator {
     const computeNodeS = () => {
       S_node_phase_VA.clear();
       for (const n of nodes) {
-        const S_kVA = S_node_total_kVA.get(n.id) || 0; // S_total (kVA), signé: >0 charge, <0 injection
-        const P_kW = S_kVA * cosPhi_eff;
-        const Q_kVAr = Math.abs(S_kVA) * sinPhi * Math.sign(S_kVA);
+        // Utiliser les P et Q déjà calculés vectoriellement au lieu de recalculer
+        const P_kW = P_node_kW.get(n.id) || 0;
+        const Q_kVAr = Q_node_kVAr.get(n.id) || 0;
         const S_VA_total = C(P_kW * 1000, Q_kVAr * 1000);
 
         // Contributions explicites P/Q (équipements virtuels)

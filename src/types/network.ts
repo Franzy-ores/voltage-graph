@@ -124,7 +124,9 @@ export interface Project {
   id: string;
   name: string;
   voltageSystem: VoltageSystem;
-  cosPhi: number; // facteur de puissance global
+  cosPhiCharges: number; // facteur de puissance des charges (défaut 0.95, inductif)
+  cosPhiProductions: number; // facteur de puissance des productions PV/Cogen (défaut 1.00)
+  cosPhi?: number; // @deprecated - gardé pour rétrocompatibilité, migré vers cosPhiCharges
   foisonnementCharges: number; // facteur de foisonnement des charges (0-100%)
   foisonnementProductions: number; // facteur de foisonnement des productions (0-100%)
   defaultChargeKVA: number; // charge par défaut pour nouveaux nœuds (kVA)
