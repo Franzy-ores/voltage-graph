@@ -187,7 +187,8 @@ export const TopMenu = ({
             <div className="flex items-center gap-4">
               {/* System Info */}
               <div className={`text-xs text-primary-foreground rounded-lg px-3 py-1 ${currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? 'bg-fuchsia-600' : 'bg-cyan-600'}`}>
-                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - cos φ = {currentProject.cosPhi} - 
+                {currentProject.voltageSystem === 'TÉTRAPHASÉ_400V' ? '400V' : '230V'} - 
+                cos φ charges: {currentProject.cosPhiCharges?.toFixed(2) || '0.95'} / prod: {currentProject.cosPhiProductions?.toFixed(2) || '1.00'} - 
                 Transfo: {currentProject.transformerConfig.rating} ({currentProject.transformerConfig.nominalPower_kVA} kVA)
               </div>
             </div>

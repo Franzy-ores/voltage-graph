@@ -78,7 +78,7 @@ interface NetworkActions {
   // Project actions
   createNewProject: (name: string, voltageSystem: VoltageSystem) => void;
   loadProject: (project: Project) => void;
-  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhi' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent' | 'forcedModeConfig' | 'manualPhaseDistribution'>>) => void;
+  updateProjectConfig: (updates: Partial<Pick<Project, 'name' | 'voltageSystem' | 'cosPhiCharges' | 'cosPhiProductions' | 'foisonnementCharges' | 'foisonnementProductions' | 'defaultChargeKVA' | 'defaultProductionKVA' | 'loadModel' | 'desequilibrePourcent' | 'forcedModeConfig' | 'manualPhaseDistribution'>>) => void;
   
   // Node actions
   addNode: (lat: number, lng: number) => void;
@@ -206,7 +206,8 @@ const createDefaultProject = (): Project => ({
   id: `project-${Date.now()}`,
   name: "Nouveau Projet",
   voltageSystem: "TÉTRAPHASÉ_400V",
-  cosPhi: 0.95,
+  cosPhiCharges: 0.95,
+  cosPhiProductions: 1.00,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
@@ -239,7 +240,8 @@ const createDefaultProject2 = (name: string, voltageSystem: VoltageSystem): Proj
   id: `project-${Date.now()}`,
   name,
   voltageSystem,
-  cosPhi: 0.95,
+  cosPhiCharges: 0.95,
+  cosPhiProductions: 1.00,
   foisonnementCharges: 100,
   foisonnementProductions: 100,
   defaultChargeKVA: 10,
@@ -330,6 +332,18 @@ export const useNetworkStore = create<NetworkStoreState & NetworkActions>((set, 
 
   loadProject: (project) => {
     console.log('🔄 Store.loadProject called with:', project.name);
+    
+    // Migration: ancien cosPhi vers cosPhiCharges/cosPhiProductions
+    if (project.cosPhi && !project.cosPhiCharges) {
+      console.log('📦 Migration cosPhi -> cosPhiCharges/cosPhiProductions');
+      project.cosPhiCharges = project.cosPhi;
+      project.cosPhiProductions = 1.00;
+      delete project.cosPhi;
+    }
+    
+    // Valeurs par défaut si manquantes
+    if (!project.cosPhiCharges) project.cosPhiCharges = 0.95;
+    if (!project.cosPhiProductions) project.cosPhiProductions = 1.00;
     
     // Vérifier que le projet a la structure minimale requise
     if (!project.transformerConfig) {

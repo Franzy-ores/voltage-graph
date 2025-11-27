@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Slider } from '@/components/ui/slider';
 import { Trash2, Plus, Target, Zap, Network } from 'lucide-react';
 import { useNetworkStore } from '@/store/networkStore';
 import { ConnectionType, VoltageSystem, ClientCharge, ProductionPV, LoadModel } from '@/types/network';
@@ -53,7 +54,8 @@ export const EditPanel = () => {
         setFormData({
           name: currentProject.name,
           voltageSystem: currentProject.voltageSystem,
-          cosPhi: currentProject.cosPhi,
+          cosPhiCharges: currentProject.cosPhiCharges || 0.95,
+          cosPhiProductions: currentProject.cosPhiProductions || 1.0,
           foisonnementCharges: currentProject.foisonnementCharges,
           foisonnementProductions: currentProject.foisonnementProductions,
           defaultChargeKVA: currentProject.defaultChargeKVA || 5,
@@ -508,18 +510,58 @@ export const EditPanel = () => {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="cos-phi">Facteur de puissance (cos φ)</Label>
-                <Input
-                  id="cos-phi"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="1"
-                  value={formData.cosPhi || 0.95}
-                  onChange={(e) => setFormData({ ...formData, cosPhi: parseFloat(e.target.value) || 0.95 })}
-                />
-              </div>
+              {/* Facteurs de puissance séparés */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Zap className="w-4 h-4" />
+                    Facteurs de Puissance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {/* Cos Phi Charges */}
+                  <div className="space-y-2">
+                    <Label htmlFor="cos-phi-charges">
+                      Cos φ Charges (Consommation)
+                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        min={0.8}
+                        max={1}
+                        step={0.01}
+                        value={[formData.cosPhiCharges || 0.95]}
+                        onValueChange={(v) => setFormData({...formData, cosPhiCharges: v[0]})}
+                        className="flex-1"
+                      />
+                      <span className="w-12 text-sm font-mono">{(formData.cosPhiCharges || 0.95).toFixed(2)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Inductif (Q {">"} 0). Typique : 0.90-0.95 pour charges domestiques/industrielles
+                    </p>
+                  </div>
+                  
+                  {/* Cos Phi Productions */}
+                  <div className="space-y-2">
+                    <Label htmlFor="cos-phi-productions">
+                      Cos φ Productions (PV/Cogénération)
+                    </Label>
+                    <div className="flex items-center gap-3">
+                      <Slider
+                        min={0.9}
+                        max={1}
+                        step={0.01}
+                        value={[formData.cosPhiProductions || 1.0]}
+                        onValueChange={(v) => setFormData({...formData, cosPhiProductions: v[0]})}
+                        className="flex-1"
+                      />
+                      <span className="w-12 text-sm font-mono">{(formData.cosPhiProductions || 1.0).toFixed(2)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Typique : 1.00 pour onduleurs PV modernes (injection à cos φ unitaire)
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
 
               <div className="space-y-2">
                 <Label htmlFor="foisonnement-charges">Foisonnement charges (%)</Label>
